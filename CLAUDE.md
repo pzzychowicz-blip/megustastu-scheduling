@@ -70,7 +70,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.4.0)
+## File structure (current — v0.5.0)
 
 ```
 megustastu-scheduling/
@@ -104,9 +104,11 @@ megustastu-scheduling/
         ├── RequestsList.jsx        upcoming/past requests + Add button
         ├── RequestFormModal.jsx    add/edit day-off / holiday modal
         ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile)
-        └── ShiftFormModal.jsx      assign employee + edit slot time / role
-                                    + yellow conflict banner when assignee
-                                    has a request covering the date
+        ├── ShiftFormModal.jsx      assign employee + edit slot time / role
+        │                           + yellow conflict banner when assignee
+        │                           has a request covering the date
+        └── Settings.jsx            shift template editor (counts, times,
+                                    FoH evening secondPersonStart)
 ```
 
 ### File structure (target — added in later sessions)
@@ -116,8 +118,7 @@ src/
 ├── hooks/
 │   └── useNowMins.js               15s clock tick
 ├── components/
-│   ├── ExportButton.jsx            PDF export (gated on completeness)
-│   └── Settings.jsx                shift template editor + general
+│   └── ExportButton.jsx            PDF export (gated on completeness)
 └── lib/
     ├── generator.js                v1.x — auto-generator (greedy + constraints)
     └── pdf-export.js               jsPDF or similar — horizontal spreadsheet
