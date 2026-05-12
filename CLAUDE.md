@@ -70,7 +70,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.1.0)
+## File structure (current — v0.3.0)
 
 ```
 megustastu-scheduling/
@@ -81,14 +81,26 @@ megustastu-scheduling/
 ├── index.html                      Vite entry
 └── src/
     ├── main.jsx                    mounts <App />
-    ├── App.jsx                     orchestration layer + __APP_SIGNATURE__
+    ├── App.jsx                     orchestration: auth-gate → AppShell
     ├── firebase.js                 dev/prod switch + coloured boot banner
+    ├── hooks/
+    │   ├── useAuth.js              Firebase Auth state + signIn / signOut
+    │   ├── usePersistence.js       Firebase RTDB reads + write-guarded CRUD
+    │   └── useWinW.js              viewport-width listener
     ├── lib/
-    │   └── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
-    │                               ROLE_COLORS, DEFAULT_SHIFT_TEMPLATE,
-    │                               OPERATING_HOURS, WEEKDAYS, DAY_PARTS
+    │   ├── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
+    │   │                           ROLE_COLORS, DEFAULT_SHIFT_TEMPLATE,
+    │   │                           OPERATING_HOURS, WEEKDAYS, DAY_PARTS
+    │   └── schedule-logic.js       week math + slot enumeration + cell-state
+    │                               derivation. Pure JS, no React.
     └── components/
-        └── atoms.jsx               Overlay, Fld, Section, TBadge, mkInp, mkBtn
+        ├── atoms.jsx               Overlay, Fld, Section, TBadge, mkInp, mkBtn
+        ├── LoginScreen.jsx         email/password sign-in form
+        ├── AppShell.jsx            authenticated shell + tab nav
+        ├── EmployeesList.jsx       roster list + Add button
+        ├── EmployeeFormModal.jsx   add/edit employee modal
+        ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile)
+        └── ShiftFormModal.jsx      assign employee + edit slot time / role
 ```
 
 ### File structure (target — added in later sessions)
@@ -96,28 +108,14 @@ megustastu-scheduling/
 ```
 src/
 ├── hooks/
-│   ├── usePersistence.js           Firebase + write-guards
-│   ├── useAuth.js                  auth state (manager-only login)
-│   ├── useNowMins.js               15s clock tick
-│   └── useWinW.js                  viewport-width → isMobile
+│   └── useNowMins.js               15s clock tick
 ├── components/
-│   ├── LoginScreen.jsx             auth gate
-│   ├── ScheduleGrid.jsx            week-view grid (days × employees)
-│   ├── ShiftFormModal.jsx          create/edit a shift
-│   ├── EmployeesList.jsx           roster view
-│   ├── EmployeeFormModal.jsx       add/edit employee (name, roles,
-│   │                               fixed days, preference)
 │   ├── RequestsList.jsx            day-off / holiday requests CRUD
 │   ├── ExportButton.jsx            PDF export (gated on completeness)
-│   ├── Settings.jsx                shift template editor + general
-│   └── atoms.jsx                   (already exists)
+│   └── Settings.jsx                shift template editor + general
 └── lib/
-    ├── schedule-logic.js           pure functions (conflict detection,
-    │                               week derivation, completeness check)
     ├── generator.js                v1.x — auto-generator (greedy + constraints)
-    ├── pdf-export.js               jsPDF or similar — horizontal spreadsheet
-    ├── constants.js                (already exists)
-    └── auth-helpers.js             manager-only auth gate helpers
+    └── pdf-export.js               jsPDF or similar — horizontal spreadsheet
 ```
 
 > File list is a **target**, not gospel. Adjust as features land. Update

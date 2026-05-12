@@ -16,16 +16,15 @@ import { getDatabase } from "firebase/database";
 import { getAuth } from "firebase/auth";
 
 // ── Configs ──────────────────────────────────────────────────────────────
-// TODO(patryk): paste real configs after creating the two Firebase projects
-// (megustastu-scheduling and megustastu-scheduling-dev), region europe-west1.
 
 const devConfig = {
-  apiKey: "AIzaSyA7K9g_vn2lJH31HkiFc5v54i5cjzjI8Ak",
-  authDomain: "megustastu-scheduling-dev.firebaseapp.com",
-  projectId: "megustastu-scheduling-dev",
-  storageBucket: "megustastu-scheduling-dev.firebasestorage.app",
-  messagingSenderId: "867805153094",
-  appId: "1:867805153094:web:590325c00749a54aac0747"
+  apiKey: "AIzaSyDZ-VQNfO_t-Fj3vlbUJBeiMeBx4OmnqXY",
+  authDomain: "megustastu-bookings-dev.firebaseapp.com",
+  databaseURL: "https://megustastu-bookings-dev-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "megustastu-bookings-dev",
+  storageBucket: "megustastu-bookings-dev.firebasestorage.app",
+  messagingSenderId: "709562849905",
+  appId: "1:709562849905:web:30bb72ea4d6469dd4519d0"
 };
 
 const prodConfig = {
