@@ -202,6 +202,26 @@ export function deriveCellState(shift, slotDef) {
   };
 }
 
+// ── Request ↔ shift conflict matching ────────────────────────────────────
+// A request "covers" a date when dateFrom <= dateIso <= dateTo (inclusive
+// on both ends). Half-day requests are NOT supported in v1 — full-day only.
+// String compare works for "YYYY-MM-DD" (ISO 8601 lexicographic = chronological).
+//
+// Returns the FIRST matching request record, or null. We don't surface a
+// list because the modal banner shows one record at a time and overlapping
+// requests for the same employee+date should not happen in practice.
+export function findRequestConflict(requestsMap, employeeId, dateIso) {
+  if (!employeeId || !dateIso) return null;
+  const all = Object.values(requestsMap || {});
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i];
+    if (r.employeeId !== employeeId) continue;
+    if (!r.dateFrom || !r.dateTo) continue;
+    if (r.dateFrom <= dateIso && dateIso <= r.dateTo) return r;
+  }
+  return null;
+}
+
 // ── Convenience: filter shifts by week ───────────────────────────────────
 // Returns only shift records whose `date` falls within [startDate, startDate+6].
 // Useful for the week view — keeps prop sizes small if the DB grows large.

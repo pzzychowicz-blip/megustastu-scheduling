@@ -70,7 +70,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.3.0)
+## File structure (current — v0.4.0)
 
 ```
 megustastu-scheduling/
@@ -89,18 +89,24 @@ megustastu-scheduling/
     │   └── useWinW.js              viewport-width listener
     ├── lib/
     │   ├── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
-    │   │                           ROLE_COLORS, DEFAULT_SHIFT_TEMPLATE,
+    │   │                           ROLE_COLORS, REQUEST_TYPES,
+    │   │                           DEFAULT_SHIFT_TEMPLATE,
     │   │                           OPERATING_HOURS, WEEKDAYS, DAY_PARTS
     │   └── schedule-logic.js       week math + slot enumeration + cell-state
-    │                               derivation. Pure JS, no React.
+    │                               derivation + findRequestConflict.
+    │                               Pure JS, no React.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, TBadge, mkInp, mkBtn
         ├── LoginScreen.jsx         email/password sign-in form
         ├── AppShell.jsx            authenticated shell + tab nav
         ├── EmployeesList.jsx       roster list + Add button
         ├── EmployeeFormModal.jsx   add/edit employee modal
+        ├── RequestsList.jsx        upcoming/past requests + Add button
+        ├── RequestFormModal.jsx    add/edit day-off / holiday modal
         ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile)
         └── ShiftFormModal.jsx      assign employee + edit slot time / role
+                                    + yellow conflict banner when assignee
+                                    has a request covering the date
 ```
 
 ### File structure (target — added in later sessions)
@@ -110,7 +116,6 @@ src/
 ├── hooks/
 │   └── useNowMins.js               15s clock tick
 ├── components/
-│   ├── RequestsList.jsx            day-off / holiday requests CRUD
 │   ├── ExportButton.jsx            PDF export (gated on completeness)
 │   └── Settings.jsx                shift template editor + general
 └── lib/

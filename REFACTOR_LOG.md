@@ -5,6 +5,91 @@ an entry. Newest first.
 
 ---
 
+## v0.4.0 — Requests module + conflict warnings
+**Date:** 2026-05-12
+**Behavioural change:** Yes — Requests tab is live and the assignment form
+warns on conflicts.
+**Scope:** Manager-entered day-off / holiday records, with a non-blocking
+yellow warning when the assignee on a shift cell has a request that covers
+the date.
+
+### Files added
+- `src/components/RequestFormModal.jsx` — add/edit form in `<Overlay>`.
+  Fields: employee picker (active only), type segmented control
+  (Day off / Holiday), `dateFrom` + `dateTo` (both required, `dateTo >=
+  dateFrom`), optional notes. Picking a `dateFrom` after the current
+  `dateTo` auto-bumps `dateTo` to match — single-day requests stay
+  one-click.
+- `src/components/RequestsList.jsx` — list view. Header with upcoming /
+  past counts + Add button. Upcoming sorted soonest-first; past in a
+  collapsible section sorted most-recent-first. Each row clickable.
+  Empty-state CTA when zero requests.
+
+### Files modified
+- `src/lib/constants.js` — added `REQUEST_TYPES` (array of
+  `{ key, label, palette }`). Two entries for v1; structurally extensible.
+- `src/lib/schedule-logic.js` — added `findRequestConflict(requests,
+  employeeId, dateIso)`. Returns the first request whose
+  `dateFrom <= dateIso <= dateTo` (inclusive, lexicographic on YYYY-MM-DD)
+  for that employee, or null. Half-day requests are NOT supported in v1.
+- `src/components/AppShell.jsx` — wired the Requests tab to
+  `<RequestsList />`; passed `data.requests` down to `<ScheduleGrid />`.
+- `src/components/ScheduleGrid.jsx` — added `requests` prop, threaded
+  through to `<ShiftFormModal />`. Help text updated.
+- `src/components/ShiftFormModal.jsx` — added `requests` prop and a
+  yellow conflict banner under the assignee picker. Banner appears when
+  the currently-picked employee has a matching request; save still
+  proceeds (locked decision: warn, do NOT block).
+- `src/App.jsx` — bumped `__APP_SIGNATURE__` to `0.4.0`, sha `requests`.
+
+### Locked-decision answers (this session)
+| Q | A |
+|---|---|
+| Request types in v1 | `dayoff` + `holiday` only. Extensible via `REQUEST_TYPES`. |
+| Half-day requests | Not supported in v1. Full-day only. |
+| Visibility on grid | None. Requests live on the Requests tab. Conflicts surface only inside the assignment form. |
+
+### Key design decisions
+- **Conflict UI = banner only, in the modal.** Per Patryk: requests are
+  not visible from the schedule grid (no day-header icon, no cell tint).
+  The yellow banner appears in `ShiftFormModal` whenever the picked
+  assignee has a covering request — including when *opening* an
+  existing shift, not just when adding a new one. This catches earlier
+  assignments that became conflicts after the request was entered.
+- **Date storage as `YYYY-MM-DD` strings.** Same convention as `/shifts/{id}.date`
+  — timezone-free, sortable, and lexicographic compare equals chronological
+  compare. `findRequestConflict` exploits this for a string-only check.
+- **Request "covers" a date inclusively on both ends.** A request
+  `2026-05-15 → 2026-05-15` is a single-day request that conflicts on
+  the 15th only.
+- **Past requests stay in the DB.** Soft-archive via the `dateTo < today`
+  partition rather than auto-deletion. Manager keeps audit trail;
+  collapsible UI keeps the list short.
+- **Picker excludes archived employees.** Same rule as the assignee picker
+  in `ShiftFormModal`. If an archived employee has a historical request,
+  it still renders in the list with strikethrough — only the *picker* hides
+  archived people.
+
+### Verification
+- [ ] Requests tab now renders the live list (no more "coming soon"
+      placeholder).
+- [ ] Add a request — modal opens, employee dropdown shows active
+      employees only, Save disabled until employee + dates are set.
+- [ ] Single-day request: pick a `dateFrom`, `dateTo` auto-bumps to match.
+- [ ] Edit an existing request — fields pre-fill correctly.
+- [ ] Delete an existing request — confirm dialog → record disappears.
+- [ ] Past requests collapse under "Past (N) · Show".
+- [ ] Schedule tab: assign that employee on a date inside the request's
+      range — yellow banner appears under the assignee dropdown.
+- [ ] Save still proceeds with the conflict (no block).
+- [ ] Open the same shift again — the banner is still present (warning
+      is computed live from `requests`, not stored on the shift record).
+- [ ] Pick a different employee with no conflict — banner disappears.
+- [ ] DevTools: `window.__MGT_SCHED_BUILD__.version === "0.4.0"`.
+- [ ] `npm run build` succeeds. (Verified — 586ms, 57 modules.)
+
+---
+
 ## v0.3.0 — Schedule grid + shift assignment
 **Date:** 2026-05-12
 **Behavioural change:** Yes — full weekly schedule view with click-to-assign.

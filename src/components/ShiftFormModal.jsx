@@ -7,6 +7,7 @@
 //   slotDef    (object)        — slot definition from slotsForDay()
 //   shift      (object | null) — existing shift record, or null if cell is empty
 //   employees  ({ [id]: employee }) — for the assignee picker
+//   requests   ({ [id]: request })  — for the conflict-warning banner
 //   isMobile   (bool)
 //   onClose    (fn)
 //   onSave     (fn)            — receives the shift payload
@@ -22,9 +23,17 @@
 //     record if start/end/role were edited.
 
 import { useEffect, useMemo, useState } from "react";
-import { S, BTN, ROLE_COLORS } from "../lib/constants.js";
+import { S, BTN, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn } from "./atoms.jsx";
-import { formatDayHeader, parseIsoDate } from "../lib/schedule-logic.js";
+import { formatDayHeader, parseIsoDate, findRequestConflict } from "../lib/schedule-logic.js";
+
+// Lookup once per render — REQUEST_TYPES is small.
+function requestTypeLabel(key) {
+  for (let i = 0; i < REQUEST_TYPES.length; i++) {
+    if (REQUEST_TYPES[i].key === key) return REQUEST_TYPES[i].label;
+  }
+  return key;
+}
 
 // Build the initial form state from slotDef + shift.
 function initialForm(slotDef, shift) {
@@ -37,7 +46,7 @@ function initialForm(slotDef, shift) {
 }
 
 export default function ShiftFormModal({
-  open, dateIso, slotDef, shift, employees, isMobile,
+  open, dateIso, slotDef, shift, employees, requests, isMobile,
   onClose, onSave, onDelete,
 }) {
   const [form, setForm] = useState(function () { return initialForm(slotDef || {}, shift); });
@@ -145,6 +154,32 @@ export default function ShiftFormModal({
     )
     : null;
 
+  // Conflict-warning banner. Yellow, non-blocking — manager judgment overrides
+  // (locked v1 decision: warn, do NOT block saves).
+  const conflict = form.employeeId
+    ? findRequestConflict(requests, form.employeeId, dateIso)
+    : null;
+
+  const conflictBanner = conflict
+    ? (
+      <div
+        style={{
+          marginTop: 6,
+          padding: "8px 10px",
+          background: "rgba(255,204,0,0.18)",
+          border: "1px solid rgba(255,159,10,0.55)",
+          color: "#7a4d00",
+          borderRadius: 10,
+          fontSize: 12,
+        }}
+      >
+        ⚠ This employee has a <strong>{requestTypeLabel(conflict.type)}</strong> request
+        covering {dateIso}{conflict.notes ? " — " + conflict.notes : ""}. You can
+        still save; this is just a warning.
+      </div>
+    )
+    : null;
+
   // Role picker (evening only) — chip group.
   const rolePicker = slotDef.isDay
     ? (
@@ -203,6 +238,7 @@ export default function ShiftFormModal({
           {employeeOptions}
         </select>
         {noEligibleNote}
+        {conflictBanner}
       </Fld>
 
       {rolePicker}
