@@ -5,6 +5,107 @@ an entry. Newest first.
 
 ---
 
+## v0.6.0 — PDF export
+**Date:** 2026-05-12
+**Behavioural change:** Yes — "Export PDF" button lives in the schedule
+grid's week-nav bar. Disabled (with a `title` tooltip) until every cell
+in the displayed week has an employee assigned. On click, downloads a
+landscape-A4 weekly rota.
+**Scope:** Locked v1 decision was "PDF in horizontal spreadsheet layout,
+available only when the schedule is fully complete (no empty cells)" —
+this entry delivers exactly that.
+
+### Files added
+- `src/lib/pdf-export.js` — pure (no React, no Firebase). `exportWeekPdf({
+  weekStart, slots, weekShifts, employees })` builds a jsPDF document and
+  triggers a download. Table head row = day headers (`Mon 12 May` etc.);
+  left column = slot label + default times (`FoH Evening 1\n17:00–23:00`);
+  data cells = `Name · Role` for evening slots, bare `Name` for day shifts.
+  Footer on every page: `Generated YYYY-MM-DD HH:mm`, bottom-right.
+- `src/components/ExportButton.jsx` — small button. Calls
+  `isWeekComplete(weekShifts, weekStart, slots)` for gating; falls back
+  to ghost styling + 0.5 opacity + `cursor: not-allowed` when disabled.
+
+### Files modified
+- `src/lib/schedule-logic.js` — added `isWeekComplete(weekShifts,
+  weekStartDate, slots)`. Pure helper: iterates dates × slots and
+  returns false on the first slot with no matching shift or no
+  `employeeId`. Used by ExportButton; could be reused later by the
+  auto-generator's "is this week solved?" check.
+- `src/components/ScheduleGrid.jsx` — imported ExportButton; right-hand
+  group of the nav bar now wraps the week label + button together so the
+  layout stays cohesive on narrow viewports.
+- `src/App.jsx` — bumped `__APP_SIGNATURE__` to `0.6.0`, sha `pdf-export`.
+- `package.json` — `jspdf ^4.2.1` + `jspdf-autotable ^5.0.7`. jsPDF
+  ships with html2canvas + DOMPurify baked in (for `doc.html()`, which
+  we don't use), so the transitive cost is ~150KB gz. We dodge this by
+  **dynamic-importing `pdf-export.js`** inside ExportButton — the main
+  bundle stays at 147KB gz (identical to v0.5.0), and the 138KB gz
+  pdf-export chunk only loads on first click. Acceptable: a manager
+  exports at most once a week.
+- `CLAUDE.md` — file-structure section bumped to v0.6.0; `pdf-export.js`
+  and `ExportButton.jsx` moved from "target" into current.
+
+### Locked-decision answers (this session)
+| Q | A |
+|---|---|
+| Page orientation | Landscape A4 — matches "horizontal spreadsheet" locked decision. |
+| Contact info | Skipped — the employee model doesn't include a phone field. Easy to add later if needed. |
+| Requests footer | None. Manager prints the rota; requests live on the Requests tab in-app. |
+| "Complete" definition | Every (date, slot) must have a non-null `employeeId`. Empty cells block export. |
+| Cell content format | `Name · Role` for evening slots (Bar / Floor / Chef / Plating / Pot). Bare `Name` for day shifts where `role = null` per the v1 model. |
+| Filename | `MGT_Week_YYYY-MM-DD_to_YYYY-MM-DD.pdf` (ISO week range). |
+
+### Key design decisions
+- **Pure `pdf-export.js`.** The export function takes only data — no
+  React, no hooks, no `__APP_SIGNATURE__` import. Trivially unit-
+  testable (in principle; we don't have a test suite yet). The single
+  side effect is `doc.save()` which triggers the browser download.
+- **Completeness check lives in `schedule-logic.js`, not in the button.**
+  Keeps the gating logic where the auto-generator (v1.x) can reuse it
+  for "is this week solved?". The button just renders the result.
+- **`employees` is the full map, not pre-filtered.** Archived employees
+  who appear on shifts still render with their name. Strikethrough or
+  badging in the PDF would be over-engineering — the printed rota is
+  for staff who are working that week.
+- **Defensive `if (!emp) return ""`.** A stale `isWeekComplete` call
+  against a later-updated shifts map could in theory let an empty cell
+  through. Empty string is the cleanest failure mode; nothing crashes.
+- **`jspdf-autotable` v5 named-import API.** v5 changed the import shape
+  vs. v3 — `import { autoTable } from "jspdf-autotable"; autoTable(doc,
+  opts)` rather than the old prototype-patching style. Vite handles
+  both, but the named-import form is clearer.
+- **Footer stamped on every page** rather than only the last. autoTable
+  can paginate if the table overflows; a per-page stamp keeps each sheet
+  self-documenting after printing.
+- **Dynamic import for code-splitting.** ExportButton's click handler
+  calls `import("../lib/pdf-export.js")` rather than top-level importing
+  it. Vite/Rollup honors this as a chunk boundary, so the jspdf +
+  html2canvas dependency tree only ships when the user actually exports.
+  There's a small first-click latency (a few hundred ms) for the chunk
+  to fetch; subsequent clicks are instant. Worth it for a feature used
+  ~once a week.
+
+### Verification
+- [ ] `npm run build` succeeds. Main bundle unchanged at 147KB gz; a new
+      `pdf-export-*.js` chunk (138KB gz) is emitted for lazy loading.
+- [ ] Export button visible in the Schedule tab's nav bar (right of the
+      week label).
+- [ ] On a week with any empty cells: button is ghost-styled, disabled,
+      tooltip reads "Fill all cells to export". Clicking does nothing.
+- [ ] Fill every cell on the week → button becomes primary-styled and
+      enabled; tooltip changes to "Download this week as PDF".
+- [ ] Click → browser downloads `MGT_Week_2026-05-XX_to_2026-05-XX.pdf`.
+- [ ] PDF opens in landscape A4. Title is "Me Gustas Tú — Week of [range]".
+- [ ] Table head shows 7 day headers (`Mon 12 May` etc.); body shows
+      slot rows with `Name · Role` (evening) or bare `Name` (day).
+- [ ] Footer reads `Generated YYYY-MM-DD HH:mm` in bottom-right.
+- [ ] Schedule still renders normally; the existing modal flows are
+      untouched.
+- [ ] DevTools: `window.__MGT_SCHED_BUILD__.version === "0.6.0"`.
+
+---
+
 ## v0.5.0 — Settings (shift template editor)
 **Date:** 2026-05-12
 **Behavioural change:** Yes — Settings tab is live. Manager can edit

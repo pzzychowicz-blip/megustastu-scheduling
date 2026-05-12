@@ -236,3 +236,19 @@ export function shiftsForWeek(shiftsMap, weekStartDate) {
   }
   return out;
 }
+
+// ── Week completeness check (gates PDF export) ───────────────────────────
+// Returns true iff EVERY (date, slot) in the week has a shift record with
+// a non-null employeeId. Used by ExportButton — the locked v1 decision is
+// to refuse exporting partial weeks (the printed rota would be misleading).
+export function isWeekComplete(weekShifts, weekStartDate, slots) {
+  const dates = weekDates(weekStartDate);
+  for (let d = 0; d < dates.length; d++) {
+    const dIso = isoDate(dates[d]);
+    for (let s = 0; s < slots.length; s++) {
+      const shift = findShiftForSlot(weekShifts, dIso, slots[s]);
+      if (!shift || !shift.employeeId) return false;
+    }
+  }
+  return true;
+}
