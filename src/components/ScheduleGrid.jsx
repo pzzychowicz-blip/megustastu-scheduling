@@ -35,6 +35,7 @@ import {
   addDays,
 } from "../lib/schedule-logic.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
+import ExportButton from "./ExportButton.jsx";
 
 // Section row dividers (visual grouping in the desktop grid).
 function isSectionBoundary(prevSlot, slot) {
@@ -196,8 +197,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         <button onClick={goToday} style={{ ...BTN.base, ...BTN.secondary, padding: "6px 12px", fontSize: 13 }}>Today</button>
         <button onClick={goNext}  style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>Next ›</button>
       </div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#1c1c1e" }}>
-        {formatWeekRange(weekStart)}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#1c1c1e" }}>
+          {formatWeekRange(weekStart)}
+        </div>
+        <ExportButton
+          weekStart={weekStart}
+          slots={slots}
+          weekShifts={weekShifts}
+          employees={employees}
+        />
       </div>
     </div>
   );

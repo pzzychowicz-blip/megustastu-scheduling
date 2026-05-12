@@ -70,13 +70,13 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.5.0)
+## File structure (current — v0.6.0)
 
 ```
 megustastu-scheduling/
 ├── CLAUDE.md                       this file
 ├── REFACTOR_LOG.md                 version history + decisions
-├── package.json                    React 19, Vite, Firebase
+├── package.json                    React 19, Vite, Firebase, jsPDF
 ├── vite.config.js                  @vitejs/plugin-react (automatic JSX)
 ├── index.html                      Vite entry
 └── src/
@@ -92,9 +92,11 @@ megustastu-scheduling/
     │   │                           ROLE_COLORS, REQUEST_TYPES,
     │   │                           DEFAULT_SHIFT_TEMPLATE,
     │   │                           OPERATING_HOURS, WEEKDAYS, DAY_PARTS
-    │   └── schedule-logic.js       week math + slot enumeration + cell-state
-    │                               derivation + findRequestConflict.
-    │                               Pure JS, no React.
+    │   ├── schedule-logic.js       week math + slot enumeration + cell-state
+    │   │                           derivation + findRequestConflict +
+    │   │                           isWeekComplete. Pure JS, no React.
+    │   └── pdf-export.js           landscape-A4 weekly rota → file download
+    │                               via jsPDF + jspdf-autotable. Pure JS.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, TBadge, mkInp, mkBtn
         ├── LoginScreen.jsx         email/password sign-in form
@@ -107,8 +109,10 @@ megustastu-scheduling/
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role
         │                           + yellow conflict banner when assignee
         │                           has a request covering the date
-        └── Settings.jsx            shift template editor (counts, times,
-                                    FoH evening secondPersonStart)
+        ├── Settings.jsx            shift template editor (counts, times,
+        │                           FoH evening secondPersonStart)
+        └── ExportButton.jsx        Export-PDF button in the week-nav bar;
+                                    disabled until every cell is filled
 ```
 
 ### File structure (target — added in later sessions)
@@ -117,11 +121,8 @@ megustastu-scheduling/
 src/
 ├── hooks/
 │   └── useNowMins.js               15s clock tick
-├── components/
-│   └── ExportButton.jsx            PDF export (gated on completeness)
 └── lib/
-    ├── generator.js                v1.x — auto-generator (greedy + constraints)
-    └── pdf-export.js               jsPDF or similar — horizontal spreadsheet
+    └── generator.js                v1.x — auto-generator (greedy + constraints)
 ```
 
 > File list is a **target**, not gospel. Adjust as features land. Update
