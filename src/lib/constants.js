@@ -168,6 +168,31 @@ export const BTN = Object.freeze({
   },
 });
 
+// ── Request types ────────────────────────────────────────────────────────
+// v1 has only "dayoff" + "holiday". The list is intentionally an array of
+// {key,label,palette} so adding "sick" / "personal" later is one line.
+// Palettes use the existing STATUS_COLORS hues for visual consistency.
+export const REQUEST_TYPES = Object.freeze([
+  {
+    key: "dayoff",
+    label: "Day off",
+    palette: {
+      bg: "rgba(142,142,147,0.18)",
+      text: "#3a3a3c",
+      border: "rgba(142,142,147,0.45)",
+    },
+  },
+  {
+    key: "holiday",
+    label: "Holiday",
+    palette: {
+      bg: "rgba(52,199,89,0.20)",
+      text: "#1f7a3a",
+      border: "rgba(52,199,89,0.50)",
+    },
+  },
+]);
+
 // ── Day-part labels (used by grid + form) ────────────────────────────────
 export const DAY_PARTS = Object.freeze({
   day: { label: "Day", short: "D" },

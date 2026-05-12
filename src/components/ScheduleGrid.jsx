@@ -42,7 +42,7 @@ function isSectionBoundary(prevSlot, slot) {
   return prevSlot.section !== slot.section || prevSlot.dayPart !== slot.dayPart;
 }
 
-export default function ScheduleGrid({ shifts, employees, shiftTemplate, actions, isMobile }) {
+export default function ScheduleGrid({ shifts, employees, requests, shiftTemplate, actions, isMobile }) {
   // Active template — DB-customized values when present, defaults otherwise.
   const template = shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
 
@@ -326,8 +326,9 @@ export default function ScheduleGrid({ shifts, employees, shiftTemplate, actions
 
       <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>
         Click any cell to assign someone or edit the time / role. Cells marked
-        with “*” have times that differ from the template defaults. Conflict
-        warnings against day-off requests land once the Requests tab does.
+        with “*” have times that differ from the template defaults. A yellow
+        banner appears in the assignment form when the picked employee has a
+        day-off or holiday request that overlaps the date.
       </p>
 
       <ShiftFormModal
@@ -336,6 +337,7 @@ export default function ScheduleGrid({ shifts, employees, shiftTemplate, actions
         slotDef={modalCell ? modalCell.slotDef : null}
         shift={modalCell ? modalCell.shift : null}
         employees={employees}
+        requests={requests}
         isMobile={isMobile}
         onClose={closeModal}
         onSave={handleSave}

@@ -19,6 +19,7 @@ import { useState } from "react";
 import { S, BTN } from "../lib/constants.js";
 import { usePersistence } from "../hooks/usePersistence.js";
 import EmployeesList from "./EmployeesList.jsx";
+import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
 
 // Tab keys + display order. Add new tabs here when they land.
@@ -145,6 +146,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
       <ScheduleGrid
         shifts={data.shifts}
         employees={data.employees}
+        requests={data.requests}
         shiftTemplate={data.shiftTemplate}
         actions={actions}
         isMobile={isMobile}
@@ -158,14 +160,22 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         isMobile={isMobile}
       />
     );
+  } else if (tab === "requests") {
+    body = (
+      <RequestsList
+        requests={data.requests}
+        employees={data.employees}
+        actions={actions}
+        isMobile={isMobile}
+      />
+    );
   } else {
-    // Requests / Settings — placeholders
+    // Settings — placeholder until v0.5.x
     body = (
       <div style={{ ...S.surfaceSoft, textAlign: "center", padding: 32 }}>
         <p style={S.body}>This tab is coming in a future version.</p>
         <p style={{ ...S.muted, marginTop: 6 }}>
-          {tab === "requests"  ? "Day-off / holiday requests land in v0.4.x." : null}
-          {tab === "settings"  ? "Shift template editor + general settings land in v0.5.x." : null}
+          Shift template editor + general settings land in v0.5.x.
         </p>
       </div>
     );
