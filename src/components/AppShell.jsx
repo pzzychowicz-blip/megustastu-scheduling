@@ -6,8 +6,7 @@
 //   - Renders a loading state until all five paths have hydrated.
 //   - Renders the write-warning banner when a save is refused.
 //   - Top-of-card tab nav: Schedule | Employees | Requests | Settings.
-//     Only the Employees tab is functional in v0.2.0; the others are
-//     placeholders that land in subsequent versions.
+//     All four tabs are functional as of v0.5.0.
 //
 // Props:
 //   user      — Firebase User object (from useAuth)
@@ -21,6 +20,7 @@ import { usePersistence } from "../hooks/usePersistence.js";
 import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
+import Settings from "./Settings.jsx";
 
 // Tab keys + display order. Add new tabs here when they land.
 const TABS = [
@@ -170,14 +170,13 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
       />
     );
   } else {
-    // Settings — placeholder until v0.5.x
+    // Settings — shift template editor (v0.5.0)
     body = (
-      <div style={{ ...S.surfaceSoft, textAlign: "center", padding: 32 }}>
-        <p style={S.body}>This tab is coming in a future version.</p>
-        <p style={{ ...S.muted, marginTop: 6 }}>
-          Shift template editor + general settings land in v0.5.x.
-        </p>
-      </div>
+      <Settings
+        shiftTemplate={data.shiftTemplate}
+        saveShiftTemplate={actions.saveShiftTemplate}
+        isMobile={isMobile}
+      />
     );
   }
 

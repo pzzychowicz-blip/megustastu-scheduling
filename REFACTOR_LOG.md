@@ -5,6 +5,90 @@ an entry. Newest first.
 
 ---
 
+## v0.5.0 — Settings (shift template editor)
+**Date:** 2026-05-12
+**Behavioural change:** Yes — Settings tab is live. Manager can edit
+counts, start/end times, and FoH evening `secondPersonStart` for the
+four template blocks (FoH day, FoH evening, Kitchen day, Kitchen
+evening). Writes flow to `/shiftTemplate`; `ScheduleGrid` already reads
+from there and falls back to `DEFAULT_SHIFT_TEMPLATE`.
+**Scope:** Single screen replaces the placeholder. Two `<Section>` cards
+(FoH, Kitchen) × two day-part rows each. Each row: Count, Start, End,
+plus a "2nd person starts" select on FoH evening (18:00 / 19:00).
+Explicit Save button + Reset to defaults (with confirm).
+
+### Files added
+- `src/components/Settings.jsx` — local form state (deep-cloned from
+  `shiftTemplate || DEFAULT_SHIFT_TEMPLATE` on mount), per-block
+  inline validation (`count >= 1`, `start < end`), dirty flag drives
+  the Save button. Reset writes `DEFAULT_SHIFT_TEMPLATE` to Firebase
+  via `saveShiftTemplate`. Responsive grid: two-column on mobile,
+  side-by-side on desktop.
+
+### Files modified
+- `src/components/AppShell.jsx` — imported `Settings`; replaced the
+  v0.5.x placeholder with `<Settings shiftTemplate / saveShiftTemplate
+  / isMobile />`; refreshed the header comment ("all four tabs are
+  functional as of v0.5.0").
+- `src/App.jsx` — bumped `__APP_SIGNATURE__` to `0.5.0`, sha `settings`.
+- `CLAUDE.md` — file-structure section bumped to v0.5.0; `Settings.jsx`
+  moved from "target" into current.
+
+### Locked-decision answers (this session)
+| Q | A |
+|---|---|
+| Per-day-of-week override | Global only for v0.5.0. Per-day override is a meaningful data-model change; deferred to v1.x. |
+| Expose `OPERATING_HOURS` | No. It has no consumers in the codebase yet — surface it when something actually depends on it. |
+| Count decrease → orphan `/shifts/{id}` | Leave them alone. Records persist; grid simply stops rendering positions ≥ count. Cleanup is a v1.x maintenance pass. |
+| Save UX | Explicit Save button (disabled until dirty AND valid). Not auto-save. |
+
+### Key design decisions
+- **Local-form / never re-sync from props.** The form is seeded once on
+  mount from `shiftTemplate || DEFAULT_SHIFT_TEMPLATE`. We deliberately
+  do NOT re-sync if the prop changes mid-edit — manager-only app, single
+  editor, and if the prop changes it's because we just saved (form
+  already matches). Simpler than building a stale-write reconciliation.
+- **Deep-clone on seed.** `DEFAULT_SHIFT_TEMPLATE` is shallow-frozen via
+  `Object.freeze` (nested objects are mutable). Cloning via
+  `JSON.parse(JSON.stringify(...))` avoids any chance of mutating the
+  constant by reference. Same on Reset.
+- **String compare for time validation.** `block.start >= block.end` on
+  the raw `"HH:MM"` strings works because the format is fixed-width and
+  zero-padded — lexicographic compare equals chronological compare.
+  Mirrors `schedule-logic.js`'s YYYY-MM-DD trick.
+- **No `lib/` helper for validation.** The four blocks share a single
+  `blockError()` function inside `Settings.jsx`. Pulling it into
+  `schedule-logic.js` would be premature — nothing else needs it yet.
+- **Save is optimistic.** `saveShiftTemplate` is fire-and-forget (the
+  hook does `.catch(console.warn)`). We flip `dirty` to false on click;
+  if the write fails it surfaces via the write-warning banner. Matches
+  the rest of the app (EmployeeFormModal, RequestFormModal).
+- **Reset writes immediately.** Reset to defaults both updates local
+  form state AND calls `saveShiftTemplate(defaults)` — the manager
+  expects an instantaneous reset, not a "now press Save". A
+  `window.confirm` checkpoint guards against accidental clicks.
+- **`SECTIONS.{foh,kitchen}.label` drives card titles.** Renaming a
+  section in `constants.js` propagates here automatically.
+
+### Verification
+- [ ] Settings tab renders the editor (no more placeholder).
+- [ ] First-ever load (no `/shiftTemplate` in Firebase) seeds from
+      `DEFAULT_SHIFT_TEMPLATE`; Save button starts disabled.
+- [ ] Change a Count to 3 → Save enables → click → Firebase
+      `/shiftTemplate` is set → grid re-renders with 3 slots in that
+      section/day-part.
+- [ ] Set FoH evening "2nd person starts" to 19:00 → schedule grid
+      shows the 2nd FoH evening slot starting 19:00.
+- [ ] Validation: set Start = End → red helper text → Save disabled.
+- [ ] Validation: set Count = 0 → red helper text → Save disabled.
+- [ ] Reset to defaults → confirm dialog → on OK, form snaps to
+      defaults AND Firebase `/shiftTemplate` is overwritten.
+- [ ] Mobile viewport (< 768px): each block's inputs lay out two-up.
+- [ ] DevTools: `window.__MGT_SCHED_BUILD__.version === "0.5.0"`.
+- [ ] `npm run build` succeeds with no warnings.
+
+---
+
 ## v0.4.0 — Requests module + conflict warnings
 **Date:** 2026-05-12
 **Behavioural change:** Yes — Requests tab is live and the assignment form
