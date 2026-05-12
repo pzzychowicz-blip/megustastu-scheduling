@@ -1,0 +1,356 @@
+# CLAUDE.md
+
+Instructions for Claude (and Claude Code) when working in this repository.
+
+---
+
+## Project
+
+**Me Gustas Tú (MGT) Staff Scheduling** — private internal web app for a
+restaurant in the Canary Islands. Manager submits employees, requests, and
+assigns weekly shifts. Sister app to **MGT Bookings** (separate repo,
+separate Firebase project, same UI conventions).
+
+- **Owner / sole developer:** Patryk Zychowicz (pz.zychowicz@gmail.com)
+- **Stack:** React 19, Vite, Firebase Realtime Database + Auth, deployed on Vercel
+- **Repo:** `github.com/pzzychowicz-blip/megustastu-scheduling` *(to be created)*
+- **Live:** `https://megustastu-scheduling.vercel.app/` *(to be created)*
+- **Current version:** see `src/App.jsx` → `__APP_SIGNATURE__.version` (single source of truth)
+- **Sister project for style/pattern reference:** `github.com/pzzychowicz-blip/megustastu-bookings`
+
+---
+
+## Locked v1 decisions (session 1 — 2026-05-12)
+
+### Functional
+- **Auth:** Manager-only login. One Firebase Auth account = Patryk. No
+  staff portal, no custom claims, no Cloud Function.
+- **Operating window:** 11:00–23:00 (evening ends at 23:00 to cover close + cleanup).
+- **Default shift template** (editable in-app via Settings):
+
+  | Section | Day shift | Evening shift |
+  |---|---|---|
+  | Front of House | 1 person, 11:00–17:00 (covers Bar + Floor) | 1st 17:00–23:00, 2nd 18:00 or 19:00 – 23:00 (manager picks per day) |
+  | Kitchen | 1 person, 11:00–16:00 (covers Chef + Plating + Pot) | 3 people, 16:00–23:00 (Chef, Plating, Pot — one each) |
+
+- **Roles:** Bar, Floor, Chef, Plating, Pot.
+- **Day-shift role coverage:** a single person performs all FoH roles
+  (day FoH) or all Kitchen roles (day Kitchen). Evening shifts have one
+  specific role per person.
+- **Employee profile fields:** name, roles (multi-select from the 5),
+  fixed-days toggle (default OFF; when ON, lists the contractual workdays),
+  shift preference (day / evening / either).
+- **Work pattern:** 5 working days → 2 days off. The 2 off-days CAN be
+  split (e.g. Mon+Tue work, Wed+Thu off, Fri-Sun work). Enforced by the
+  generator only — manual edits can override.
+- **Requests module:** manager enters all day-off and holiday records on
+  staff's behalf (staff communicate via WhatsApp / in person).
+- **Export:** PDF in horizontal spreadsheet layout. Available **only when
+  the schedule is fully complete** (no empty cells).
+- **Auto-generator:** **Deferred to v1.x** (likely v1.2 or v1.3). v1.0
+  ships manual scheduling. When built, the generator is greedy +
+  constraint-aware and leaves cells empty rather than violating rules.
+- **Conflict warnings, not blocks:** assigning a staff member outside
+  their stated availability shows a yellow banner; the save still
+  proceeds. Manager judgment overrides.
+
+### Architectural
+- React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
+  auto-deploy from `main`.
+- Plain JavaScript only. No TypeScript.
+- JSX literal syntax (NOT `React.createElement` or `RC`). Vite's
+  automatic JSX runtime via `@vitejs/plugin-react`.
+- No `import React from "react"` — only specific hooks:
+  `import { useState, useEffect } from "react"`.
+- `const` by default, `let` only when reassignment is needed, NEVER `var`.
+- Multi-file structure (hooks/, components/, lib/) — not a monolithic file.
+- Mandatory Firebase **write-guard pattern** on every write (see below).
+- Mandatory Firebase **dev/prod project split** from day one (see below).
+- ≤4 simultaneous `backdropFilter: blur()` instances — hard limit.
+
+---
+
+## File structure (current — v0.1.0)
+
+```
+megustastu-scheduling/
+├── CLAUDE.md                       this file
+├── REFACTOR_LOG.md                 version history + decisions
+├── package.json                    React 19, Vite, Firebase
+├── vite.config.js                  @vitejs/plugin-react (automatic JSX)
+├── index.html                      Vite entry
+└── src/
+    ├── main.jsx                    mounts <App />
+    ├── App.jsx                     orchestration layer + __APP_SIGNATURE__
+    ├── firebase.js                 dev/prod switch + coloured boot banner
+    ├── lib/
+    │   └── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
+    │                               ROLE_COLORS, DEFAULT_SHIFT_TEMPLATE,
+    │                               OPERATING_HOURS, WEEKDAYS, DAY_PARTS
+    └── components/
+        └── atoms.jsx               Overlay, Fld, Section, TBadge, mkInp, mkBtn
+```
+
+### File structure (target — added in later sessions)
+
+```
+src/
+├── hooks/
+│   ├── usePersistence.js           Firebase + write-guards
+│   ├── useAuth.js                  auth state (manager-only login)
+│   ├── useNowMins.js               15s clock tick
+│   └── useWinW.js                  viewport-width → isMobile
+├── components/
+│   ├── LoginScreen.jsx             auth gate
+│   ├── ScheduleGrid.jsx            week-view grid (days × employees)
+│   ├── ShiftFormModal.jsx          create/edit a shift
+│   ├── EmployeesList.jsx           roster view
+│   ├── EmployeeFormModal.jsx       add/edit employee (name, roles,
+│   │                               fixed days, preference)
+│   ├── RequestsList.jsx            day-off / holiday requests CRUD
+│   ├── ExportButton.jsx            PDF export (gated on completeness)
+│   ├── Settings.jsx                shift template editor + general
+│   └── atoms.jsx                   (already exists)
+└── lib/
+    ├── schedule-logic.js           pure functions (conflict detection,
+    │                               week derivation, completeness check)
+    ├── generator.js                v1.x — auto-generator (greedy + constraints)
+    ├── pdf-export.js               jsPDF or similar — horizontal spreadsheet
+    ├── constants.js                (already exists)
+    └── auth-helpers.js             manager-only auth gate helpers
+```
+
+> File list is a **target**, not gospel. Adjust as features land. Update
+> this section in the same commit that creates / removes / renames files.
+
+---
+
+## Data model (drafted; refine as features land)
+
+```
+/employees/{employeeId}
+  → { name, roles: [Role], fixedDays?: {mon,tue,wed,thu,fri,sat,sun},
+      preference: "day"|"evening"|"either", active }
+
+/shiftTemplate
+  → { foh:     { day: {start,end,count},
+                 evening: {start,end,count,secondPersonStart} },
+      kitchen: { day: {start,end,count},
+                 evening: {start,end,count} } }
+
+/shifts/{shiftId}
+  → { date, section: "foh"|"kitchen", dayPart: "day"|"evening",
+      role: Role|null, start, end, employeeId: string|null }
+   // role=null for day shifts (one person covers all section roles)
+
+/requests/{requestId}
+  → { employeeId, type: "dayoff"|"holiday", dateFrom, dateTo, notes? }
+
+/settings
+  → { operatingStart: "11:00", operatingEnd: "23:00", ... }
+```
+
+---
+
+## Code conventions
+
+### Modern declarations
+- Use `const` by default; `let` only when reassignment is needed.
+- **Never `var`.** (Bookings project converted 380 vars in a single
+  refactor phase; do not repeat that history here — start modern.)
+
+### JSX, not RC
+- All JSX uses literal JSX syntax (`<div>...</div>`).
+- Do **not** add `import React from "react"` — Vite's automatic JSX
+  runtime handles this.
+- Import only specific hooks: `import { useState, useEffect } from "react"`.
+
+### Filename rules (hard)
+- Any file containing JSX must use the `.jsx` extension.
+- Pure-logic hooks/libs use `.js`.
+- Vite/oxc rejects JSX in `.js` files at startup. Verify via `npm run build`.
+
+### One unit per file
+- One hook per file in `src/hooks/`. Filename matches export (`useXxx.{js,jsx}`).
+- One component per file in `src/components/`. PascalCase filename matches export.
+- Exception: `atoms.jsx` exports several tightly-coupled primitives together.
+
+### Conditional rendering
+- Prefer ternaries: `cond ? <X /> : null`.
+- Avoid `cond && <X />` — historical convention from Bookings; reduces a
+  class of falsy-render bugs (e.g., `0 && <X />` rendering `0`).
+
+### Comments
+- Heavy commenting is expected — single-developer codebase with long
+  context gaps between sessions.
+- Section headers use `// ── Name ──...` for grep-ability.
+- Phase notes use `// Phase X (vY.Y.Y): ...` at the top of moved blocks.
+
+### Style tokens
+- All colours, spacing, button styles, badge styles flow through
+  `src/lib/constants.js` exports (`S`, `BTN`, `STATUS_COLORS`, `ROLE_COLORS`).
+- Reusable JSX atoms in `src/components/atoms.jsx`: `Overlay`, `Fld`,
+  `Section`, `TBadge`, `mkInp`, `mkBtn`.
+- New UI **composes from atoms**, not redefines them.
+
+---
+
+## UI style — matches MGT Bookings
+
+### Aesthetic
+- Translucent / glass surfaces, iOS-inspired.
+- Card background: `rgba(255,255,255,0.45)`.
+- Borders: `rgba(255,255,255,0.35)`.
+- Accent: `#007AFF` (iOS blue).
+- Rounded corners: `borderRadius: 12` on inputs / buttons / cards.
+- Inset shadows on inputs for depth.
+
+### Layout
+- Mobile = full-screen sheet, desktop = centered card for modals.
+- Use the `Overlay` atom for every modal — it owns the canonical blur and
+  the mobile-vs-desktop branching.
+
+### Performance gotcha — backdrop-filter blur
+- `backdropFilter: blur(...)` is expensive. **Hard limit: ≤4 simultaneous
+  blur instances visible at once.** The Bookings app had a production
+  bug with 51 instances; do not reintroduce. Reuse `Overlay` (which has
+  the canonical blur) rather than adding new blurred surfaces.
+
+---
+
+## Critical patterns
+
+### Firebase write-guard pattern — MANDATORY
+
+Every Firebase write must be guarded by a `dataLoaded` ref that flips
+`true` only after the initial `onValue` callback returns. Without this,
+an effect that fires before Firebase loads can save `[]` over real data.
+
+```js
+const shiftsLoaded = useRef(false);
+
+function saveShifts(next, isSilent) {
+  if (!shiftsLoaded.current) {
+    console.warn("[SAFE] Refused to write — initial read has not completed.");
+    if (!isSilent) setWriteWarning("...");
+    return;
+  }
+  if (Array.isArray(next) && next.length === 0
+      && firstLoadCount.current !== null && firstLoadCount.current > 0) {
+    console.warn("[SAFE] Refused to write empty array.");
+    if (!isSilent) setWriteWarning("...");
+    return;
+  }
+  set(ref(db, "shifts"), next).catch(function () {});
+}
+```
+
+Apply to **every** Firebase write: `shifts`, `employees`, `requests`,
+`settings`, `shiftTemplate`. Auto-effects (anything that writes without
+direct user action) must pass `isSilent=true` to suppress the
+user-facing banner on refusal.
+
+**Origin:** post-v13-deploy data-loss incident in MGT Bookings. The
+auto-extend effect fired `saveBookings([])` on mount before `onValue`
+returned. Do **not** repeat. Build this pattern in from the first commit.
+
+### Dev/prod Firebase split — from day one
+
+`src/firebase.js` switches configs based on `import.meta.env.DEV`:
+
+- `npm run dev` → DEV project (safe to experiment).
+- `npm run build` → PROD project (Vercel uses this).
+
+Both configs are hardcoded in `firebase.js`. Firebase web API keys are
+NOT secrets — Database Rules are the actual security layer.
+
+### Single central save path
+- Any code path that modifies shifts should pass through a single helper
+  (e.g., `shiftsAfterAction(shifts, savedId, isNew)`) so future
+  conflict-detection / re-derivation logic has one place to hook into.
+
+---
+
+## Workflow
+
+### Versioning
+- Source of truth: `src/App.jsx` → `__APP_SIGNATURE__.version`.
+- Propagates to: console boot banner, `window.__MGT_SCHED_BUILD__`,
+  Settings → General label.
+- Every meaningful change bumps the patch version.
+- Schema: `MAJOR.MINOR.PATCH`. Major/minor only on user-visible feature
+  shifts; structural refactors bump patch.
+
+### REFACTOR_LOG.md discipline
+- Every version that ships gets an entry in `REFACTOR_LOG.md` at repo root.
+- Entries include: date, files changed, behavioural-change status, line
+  delta, scope, key design decisions, verification results.
+
+### Trigger phrases (in chat)
+- **"give me the deployment version"** — produce a production-ready file
+  with Firebase integration, auth, cleanup logic, logout.
+- **"give me changelog"** — generate a PDF changelog.
+- **"sum up this thread"** — produce a markdown thread summary suitable
+  for attaching to the next thread.
+
+### Preview file naming (when iterating before deployment)
+- Pattern: `scheduling_v{X}_preview {N}.jsx` (incremented chronologically,
+  never overwrite).
+
+### Deployment
+1. Replace the relevant file(s) in `src/`.
+2. Commit with descriptive message (e.g. "v0.4.2 — employee form polish").
+3. Push to `main` branch.
+4. Vercel auto-deploys.
+5. Confirm console boot banner shows the new version.
+
+---
+
+## Stability rule
+
+If Patryk requests something that leads to future instability or bad
+architecture, **push back and suggest a better approach**. Do not blindly
+follow instructions. Patryk is a self-taught beginner and explicitly
+expects this kind of pushback.
+
+## Clarifications
+
+If anything is unclear, **ask before implementing**. Do not assume
+missing details.
+
+## Conversation budget
+
+After ~25 messages in a single chat, remind Patryk to start a new
+conversation. Carry context forward via a `"sum up this thread"` summary
+attached to the next thread.
+
+---
+
+## Gotchas and constraints
+
+| Issue | Constraint |
+|---|---|
+| Backdrop-filter performance | ≤4 simultaneous `backdropFilter: blur()` instances |
+| Empty-array writes | Refused by save guards if `firstLoadCount > 0`; design around this |
+| `formRef.current` vs `form` | Event handlers read the ref; renders read the state |
+| Firebase free plan | No automatic backups. Don't rely on Firebase rollback. |
+| DEV writes to PROD | Prevented by the `firebase.js` env switch — never bypass it |
+| Day-shift role storage | `role: null` on day-shift slots; one person covers all section roles |
+| PDF export gating | Only enabled when every cell in the week is filled |
+
+---
+
+## Out of scope (v1)
+
+- **Staff portal / per-staff logins** — manager-only auth.
+- **Auto-generator** — deferred to v1.x; v1.0 is manual scheduling only.
+- **Multi-tenancy** — single-restaurant app; no plans to generalise.
+- **Native mobile app** — web-only; mobile handled by responsive layout.
+- **Time tracking / clock in–out** — separate concern.
+- **Payroll** — separate concern.
+- **Shift swaps between staff** — manager edits manually for v1.
+- **Booking-volume-aware staffing** — future integration with MGT
+  Bookings, not v1.
+- **Notifications (email / SMS / push)** — future.
+- **Tests** — no test suite; verification is via manual QA + AST audits.
+- **TypeScript** — plain JavaScript only.
