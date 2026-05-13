@@ -29,6 +29,7 @@ import {
   findShiftForSlot,
   deriveCellState,
 } from "./schedule-logic.js";
+import { SECTIONS } from "./constants.js";
 
 function pad2(n) { return String(n).padStart(2, "0"); }
 
@@ -37,9 +38,38 @@ function nowStamp() {
   return isoDate(now) + " " + pad2(now.getHours()) + ":" + pad2(now.getMinutes());
 }
 
+// Phase v0.7.0: section-divider row factory. Produces a single full-width
+// header cell using jspdf-autotable's `colSpan` mechanic, which collapses a
+// row down to one cell that spans the column count (1 label + 7 days = 8).
+// Visual cue between FoH and Kitchen slot groups in the printout.
+function sectionDividerRow(sectionKey, totalCols) {
+  return [{
+    content: SECTIONS[sectionKey].label,
+    colSpan: totalCols,
+    styles: {
+      fillColor: [230, 230, 230],
+      textColor: [60, 60, 60],
+      fontStyle: "bold",
+      halign: "left",
+    },
+  }];
+}
+
 // Build the (1 + 7)-column table rows from slots × dates.
+//
+// Slots arrive grouped by section + day-part (FoH day → FoH evening →
+// Kitchen day → Kitchen evening) from `slotsForDay(template)`. v0.7.0
+// injects a divider row at every section boundary, including before the
+// first slot, so both FoH and Kitchen get a labelled header band.
 function buildTableBody(slots, dates, weekShifts, employees) {
-  return slots.map(function (slot) {
+  const totalCols = 1 + dates.length;
+  const rows = [];
+  let lastSection = null;
+  slots.forEach(function (slot) {
+    if (slot.section !== lastSection) {
+      rows.push(sectionDividerRow(slot.section, totalCols));
+      lastSection = slot.section;
+    }
     // Left column: "FoH Evening 1\n17:00–23:00".
     const labelCell = slot.humanLabel + "\n" + slot.defaultStart + "–" + slot.defaultEnd;
     const dayCells = dates.map(function (d) {
@@ -54,8 +84,9 @@ function buildTableBody(slots, dates, weekShifts, employees) {
       if (cell.role) return emp.name + " · " + cell.role;
       return emp.name;
     });
-    return [labelCell, ...dayCells];
+    rows.push([labelCell, ...dayCells]);
   });
+  return rows;
 }
 
 export function exportWeekPdf({ weekStart, slots, weekShifts, employees }) {
