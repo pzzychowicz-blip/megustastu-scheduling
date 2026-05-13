@@ -5,6 +5,105 @@ an entry. Newest first.
 
 ---
 
+## v0.7.0 — Polish (PDF section divider + Operating Hours editor)
+**Date:** 2026-05-13
+**Behavioural change:** Yes — two small UX additions:
+1. Exported PDFs now show a labelled section header band between the
+   FoH and Kitchen slot groups (and before the first FoH group), making
+   the printout much easier to scan at a glance.
+2. Settings tab gains an "Operating hours" card at the top. Values
+   persist to `/settings` in Firebase and constrain the shift-template
+   start/end times — narrowing the operating window surfaces inline
+   errors on any template row that no longer fits, and blocks Save
+   until the manager either widens the window or shrinks the row.
+
+**Scope:** Polish pass before the v1.x auto-generator. No new tabs, no
+new persistence paths (the `/settings` path was already wired through
+`usePersistence.js` but had no consumer). One v0.7.0 release rolls both
+items up.
+
+### Files modified
+- `src/lib/pdf-export.js` — `buildTableBody` rewritten to track
+  section transitions and inject a divider row (`SECTIONS[section].label`,
+  `colSpan: 8`, light-grey fill, bold, left-aligned). New
+  `sectionDividerRow(sectionKey, totalCols)` helper. Imports `SECTIONS`
+  from `lib/constants.js`. No autoTable option changes — relies on
+  jspdf-autotable v5's first-class support for per-row `colSpan` cells.
+- `src/components/Settings.jsx` — accepts `settings` + `saveSettings`
+  props. New `hoursForm` / `hoursDirty` local state seeded from
+  `settings` or `OPERATING_HOURS`. New `hoursError(hours)` validator
+  + extended `blockError(block, hours)` that enforces template start
+  ≥ `operatingStart` and end ≤ `operatingEnd`. New "Operating hours"
+  `<Section>` rendered above the FoH card. Save handler routes to
+  `saveSettings` and/or `saveShiftTemplate` based on which form is
+  dirty. Reset to defaults now resets both forms (with a single
+  confirm).
+- `src/components/AppShell.jsx` — passes `settings={data.settings}` and
+  `saveSettings={actions.saveSettings}` into `<Settings />`.
+- `src/App.jsx` — bumped `__APP_SIGNATURE__` to `0.7.0`, sha `polish`,
+  build `2026-05-13`.
+- `CLAUDE.md` — file-structure block bumped to v0.7.0; `Settings.jsx`
+  and `pdf-export.js` annotations updated.
+
+### Locked-decision answers (this session)
+| Q | A |
+|---|---|
+| Divider rendering | jspdf-autotable `colSpan` row (single cell spans all 8 columns). Light-grey fill, bold text, left-aligned. |
+| Leading divider before FoH | Yes — symmetry with the Kitchen divider; both sections get a labelled band. Re-evaluate after the first printed rota. |
+| Operating-hours data shape | `{ operatingStart: "HH:MM", operatingEnd: "HH:MM" }` at `/settings`. Falls back to `OPERATING_HOURS` constant on first run. |
+| Validation strategy | When the operating-hours form itself is invalid, template-row checks skip the operating-window constraint to avoid cascading misleading errors. Manager fixes hours first, then row errors auto-clear. |
+| Save UX | One Save button at the bottom of the page. Internally routes to `saveSettings` and/or `saveShiftTemplate` based on per-form dirty flags. Empty writes naturally avoided. |
+| Reset behaviour | One Reset button resets both forms in a single confirm prompt. Writes both paths immediately (matches v0.5.0 behaviour). |
+
+### Key design decisions
+- **`SECTIONS` is the divider label source.** `pdf-export.js` already
+  consumed slot data which carries `section`, but the human label
+  (`"Front of House"` / `"Kitchen"`) lives on `SECTIONS[key].label`.
+  Importing `SECTIONS` directly keeps the constant the single source
+  of truth — rename a section there and the PDF heading follows.
+- **Two dirty flags, one Save button.** Operating hours and the shift
+  template live at different Firebase paths, but a manager thinks of
+  them as one config screen. A single Save call routes to the right
+  write helper(s) based on which form was touched. Saves never write
+  spurious empty objects because each branch is dirty-gated.
+- **Operating-window validation skipped when hours are invalid.**
+  Without this, an in-progress edit like `operatingStart=23:00,
+  operatingEnd=11:00` would light up every template row with
+  "Start cannot be earlier than 23:00", which is noise. Compute
+  `hoursError(hoursForm)` first; only pass hours into block validators
+  when they're internally consistent.
+- **Reset resets both forms.** The v0.5.0 Reset only touched the
+  shift template; v0.7.0 broadens it to operating hours too. A single
+  confirm dialog covers both — manager intent for "reset to defaults"
+  is unambiguous.
+- **No new persistence wiring.** `saveSettings` was already in
+  `usePersistence`'s `actions` export from v0.3.0 onward, just never
+  passed through. Reusing it preserves the write-guard pattern with
+  zero new surface area.
+
+### Verification
+- [ ] `npm run build` succeeds; main bundle within a few KB of v0.6.0
+      (no new top-level dependencies).
+- [ ] `npm run dev`; sign in; green DEV banner + blue v0.7.0 banner.
+- [ ] Schedule tab: fill every cell in a week → Export PDF. Confirm
+      a "Front of House" header row precedes the first FoH slot and
+      a "Kitchen" header row precedes the first Kitchen slot.
+- [ ] Settings tab: new "Operating hours" card at top with two time
+      inputs defaulting to 11:00 / 23:00.
+- [ ] Edit operating start to 12:00 → Save → page reload → values
+      persist.
+- [ ] Set operating start to 14:00 → FoH day row shows
+      "Start cannot be earlier than operating start (14:00)." →
+      Save button visibly disabled.
+- [ ] Revert operating start to 11:00 → errors clear → Save
+      re-enables.
+- [ ] Reset to defaults → confirm prompt fires → both cards revert.
+- [ ] Mobile viewport (< 768px): operating-hours inputs lay out
+      two-up; modal not affected.
+- [ ] DevTools: `window.__MGT_SCHED_BUILD__.version === "0.7.0"`.
+
+---
+
 ## v0.6.0 — PDF export
 **Date:** 2026-05-12
 **Behavioural change:** Yes — "Export PDF" button lives in the schedule

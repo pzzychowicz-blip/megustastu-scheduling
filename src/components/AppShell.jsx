@@ -170,11 +170,16 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
       />
     );
   } else {
-    // Settings — shift template editor (v0.5.0)
+    // Settings — shift template editor (v0.5.0) + operating hours (v0.7.0).
+    // /settings (operating hours) and /shiftTemplate are distinct Firebase
+    // paths; Settings.jsx owns both forms and routes Save to the right
+    // write helper based on which form is dirty.
     body = (
       <Settings
         shiftTemplate={data.shiftTemplate}
         saveShiftTemplate={actions.saveShiftTemplate}
+        settings={data.settings}
+        saveSettings={actions.saveSettings}
         isMobile={isMobile}
       />
     );

@@ -70,7 +70,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.6.0)
+## File structure (current — v0.7.0)
 
 ```
 megustastu-scheduling/
@@ -97,6 +97,7 @@ megustastu-scheduling/
     │   │                           isWeekComplete. Pure JS, no React.
     │   └── pdf-export.js           landscape-A4 weekly rota → file download
     │                               via jsPDF + jspdf-autotable. Pure JS.
+    │                               FoH/Kitchen section divider rows.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, TBadge, mkInp, mkBtn
         ├── LoginScreen.jsx         email/password sign-in form
@@ -109,8 +110,10 @@ megustastu-scheduling/
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role
         │                           + yellow conflict banner when assignee
         │                           has a request covering the date
-        ├── Settings.jsx            shift template editor (counts, times,
-        │                           FoH evening secondPersonStart)
+        ├── Settings.jsx            operating-hours editor + shift template
+        │                           editor (counts, times, FoH evening
+        │                           secondPersonStart). Template times
+        │                           validated against operating window.
         └── ExportButton.jsx        Export-PDF button in the week-nav bar;
                                     disabled until every cell is filled
 ```
