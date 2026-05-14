@@ -103,7 +103,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.10.0)
+## File structure (current — v0.10.1)
 
 ```
 megustastu-scheduling/
@@ -154,6 +154,11 @@ megustastu-scheduling/
         │                           role (Bar/Floor, Chef/Plating/Pot).
         │                           v0.9.0: picker sorts specialists
         │                           first (role-count asc, then name).
+        │                           v0.10.1: "Show staff on day off /
+        │                           holiday" control converted from a
+        │                           checkbox to the Toggle atom; hidden-
+        │                           count surfaces in the Toggle's
+        │                           `helper` slot.
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
@@ -241,6 +246,19 @@ src/
 - Avoid `cond && <X />` — historical convention from Bookings; reduces a
   class of falsy-render bugs (e.g., `0 && <X />` rendering `0`).
 
+### Boolean controls (locked v0.10.1)
+- **Prefer the `Toggle` atom over `<input type="checkbox">`** for any
+  boolean setting. The Toggle is iOS-style, the whole row is tappable,
+  and it composes its label + helper text consistently.
+- Exceptions (where a native checkbox is still fine):
+  - Multi-select grids where the manager picks several items at once
+    (e.g., role pickers, weekday pickers).
+  - Any future native `<form>` integration that submits checkbox
+    values.
+- When in doubt, default to `Toggle`. The visual language is more
+  consistent with the rest of the app and matches the design
+  direction (iOS-inspired translucent surfaces).
+
 ### Comments
 - Heavy commenting is expected — single-developer codebase with long
   context gaps between sessions.
@@ -251,7 +269,8 @@ src/
 - All colours, spacing, button styles, badge styles flow through
   `src/lib/constants.js` exports (`S`, `BTN`, `STATUS_COLORS`, `ROLE_COLORS`).
 - Reusable JSX atoms in `src/components/atoms.jsx`: `Overlay`, `Fld`,
-  `Section`, `TBadge`, `mkInp`, `mkBtn`.
+  `Section`, `Collapsible` (v0.10.0), `Toggle` (v0.10.0), `TBadge`,
+  `mkInp`, `mkBtn`.
 - New UI **composes from atoms**, not redefines them.
 
 ---
@@ -384,6 +403,12 @@ Standard flow:
 11. Patryk reviews + merges. Vercel auto-deploys from `main`.
 12. Confirm the console boot banner / `window.__MGT_SCHED_BUILD__.version`
     matches the new version on production.
+13. **Sync the local working folder** (locked v0.10.1):
+    `git -C /Users/patrykzychowicz/Desktop/megustastu-scheduling pull --ff-only origin main`.
+    Keeps the local checkout always on `main` so `npm run dev` and any
+    manual file inspection reflect the shipped state without manual
+    hunting. The local folder never rides a feature branch — branches
+    live only in the `.claude/worktrees/` subfolders.
 
 **Why one-per-branch:**
 - Reverts are surgical — a single bad version reverts cleanly without

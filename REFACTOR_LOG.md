@@ -5,6 +5,117 @@ an entry. Newest first.
 
 ---
 
+## v0.10.1 — Toggle conversion in ShiftFormModal + workflow rules
+
+**Date:** 2026-05-14
+**Behavioural change:** No functional change — control shape only.
+The "Show staff on day off / holiday" control inside the shift picker
+flips from `<input type="checkbox">` to the `Toggle` atom (added in
+v0.10.0). Plus two workflow rule codifications in `CLAUDE.md`.
+
+Three items in one patch:
+
+1. **Last checkbox → Toggle.** v0.10.0 introduced the `Toggle` atom but
+   only Settings used it. `ShiftFormModal`'s lone checkbox was the
+   remaining inconsistency. Converted for visual coherence (same atom
+   dark mode will lean on next) and to surface the "N hidden" count
+   in the Toggle's `helper` slot for a cleaner row.
+2. **"Prefer Toggle over checkbox" convention.** Codified in
+   `CLAUDE.md` → Code conventions → Boolean controls. Exceptions:
+   multi-select grids (role pickers, weekday pickers) and native
+   `<form>` integrations.
+3. **Post-merge local-folder sync rule.** New step 13 in the
+   Deployment ship sequence. After each PR merges, the local
+   working folder at `/Users/patrykzychowicz/Desktop/megustastu-scheduling`
+   is fast-forwarded from `origin/main`. The local folder always
+   rides `main`, never a feature branch (branches live only in
+   `.claude/worktrees/` subfolders).
+
+**Scope:** UI consistency polish + two workflow rules. No new
+features, no data model changes, no new persistence paths.
+
+### Files modified
+
+- `src/components/ShiftFormModal.jsx` — import `Toggle` from
+  `./atoms.jsx`. Replace the `<label> + <input type="checkbox">`
+  block (`requestToggle`) with a `<div style={{ marginTop: 8 }}>`
+  wrapping `<Toggle checked={showRequestBlocked}
+  onChange={setShowRequestBlocked} label="Show staff on day off /
+  holiday" helper={hidden > 0 ? "N hidden" : null} />`. Render
+  condition unchanged.
+- `src/App.jsx` — `__APP_SIGNATURE__` → `0.10.1`, sha
+  `toggle-polish`, build `2026-05-14`.
+- `CLAUDE.md` —
+  - File-structure header bumped to v0.10.1.
+  - `ShiftFormModal.jsx` annotation extended with the v0.10.1 line.
+  - New Code-conventions sub-section **Boolean controls** (prefer
+    Toggle over checkbox; lists the exceptions).
+  - Style-tokens atom list now lists `Collapsible (v0.10.0)` and
+    `Toggle (v0.10.0)` (previously missed in the v0.10.0 update).
+  - Deployment ship-sequence step 13 added (post-merge local-folder
+    sync).
+- `REFACTOR_LOG.md` — this entry prepended.
+
+### Locked-decision answers (this version)
+
+| Q | A |
+|---|---|
+| Version classification | Patch (`v0.10.1`) — UX consistency polish, no feature shift. Dark mode remains earmarked for `v0.11.0`. |
+| Hidden-count placement | Inside the Toggle's `helper` prop ("N hidden") so the row stays clean. Helper passes `null` when count is zero, collapsing the line. |
+| Surface treatment | No wrapper styling — the previous checkbox had none either (just a plain `<label>`). The Toggle atom owns its own row spacing. The separate `conflictBanner` (yellow warning on save-time override) is a different element and stays untouched. |
+| Convention exceptions | Multi-select grids (role/day pickers) + native `<form>` integrations keep `<input type="checkbox">`. |
+| Local-folder sync trigger | After PR merges. Step 13 in ship sequence. Retroactive: ran once after PR #8 (v0.10.0) merged, which had left the local folder stale since v0.6.0. |
+
+### Key design decisions
+
+- **Single source of truth for boolean controls.** Standardising on
+  the Toggle atom means dark-mode (v0.11.0), any future settings
+  toggles, and any new override prompts inherit the same look and
+  tap behaviour. The lone checkbox in `ShiftFormModal` would have
+  felt out of place once the third or fourth Toggle landed.
+- **`helper` slot beats inline count span.** The previous
+  "(N hidden)" inline span lived inside the label and competed
+  with the label text. Lifting it to a smaller helper line below
+  the label gives it visual hierarchy without adding noise when
+  the count is zero (helper collapses).
+- **Toggle `onChange` is the bool, not the event.** Cleaner setter
+  wiring: `onChange={setShowRequestBlocked}` instead of
+  `onChange={(e) => setShowRequestBlocked(e.target.checked)}`.
+  Matches the v0.10.0 Settings auto-save handler pattern.
+- **No wrapper styling change.** Resist the urge to add a soft
+  warning background here. The decisive yellow warning is the
+  separate `conflictBanner` that fires when an override is actually
+  selected — that's where the visual emphasis belongs.
+- **Local-folder sync as a deployment step, not a preference.**
+  Codifying it in CLAUDE.md → Deployment makes it a required
+  finishing step, not a "Patryk should remember to" item. Future
+  sessions inherit the rule.
+
+### Verification
+
+- `npm run build` — clean.
+- Manual QA (`npm run dev` against DEV Firebase project):
+  - Boot banner shows `v0.10.1`, sha `toggle-polish`.
+  - Schedule grid → click a cell whose date is covered by at least
+    one employee's day-off / holiday request → modal opens.
+  - The "Show staff on day off / holiday" row renders as the
+    Toggle atom (iOS pill switch), not a checkbox. Helper line
+    underneath reads "N hidden" while OFF.
+  - Toggling ON → switch animates, helper line disappears, hidden
+    employees appear in the picker. Selecting one surfaces the
+    existing `conflictBanner` (yellow warning) — unchanged by
+    this version.
+  - Toggling OFF → helper reappears, employees hide again.
+  - Whole row is tap-targetable on mobile.
+  - No regression on v0.8.0 picker filter semantics: role match
+    still hard-filters, same-date still hard-filters, save-time
+    guard still fires.
+- Local folder sync rule verified: `git -C /Users/patrykzychowicz/Desktop/megustastu-scheduling pull --ff-only origin main`
+  ran cleanly after PR #8 merge, bringing the local folder from
+  v0.6.0 to v0.10.0 in one fast-forward.
+
+---
+
 ## v0.10.0 — Settings tab redesign (single-open accordion)
 
 **Date:** 2026-05-14
