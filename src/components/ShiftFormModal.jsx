@@ -39,7 +39,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { S, BTN, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
-import { Overlay, Fld, mkInp, mkBtn } from "./atoms.jsx";
+import { Overlay, Fld, Toggle, mkInp, mkBtn } from "./atoms.jsx";
 import {
   formatDayHeader,
   parseIsoDate,
@@ -270,24 +270,22 @@ export default function ShiftFormModal({
   // v0.8.0: toggle reveals employees hidden by the request filter. Only
   // render when at least one was hidden — keeps the modal clean when no
   // requests cover this date.
+  // v0.10.1: converted to Toggle atom for consistency with the v0.10.0
+  // Settings Display toggle. Hidden-count moved into the `helper` slot.
   const requestToggle = eligible.requestHiddenCount > 0 || showRequestBlocked
     ? (
-      <label
-        style={{
-          display: "flex", alignItems: "center", gap: 6,
-          marginTop: 8, fontSize: 12, color: "#3a3a3c", cursor: "pointer",
-        }}
-      >
-        <input
-          type="checkbox"
+      <div style={{ marginTop: 8 }}>
+        <Toggle
           checked={showRequestBlocked}
-          onChange={function (e) { setShowRequestBlocked(e.target.checked); }}
+          onChange={setShowRequestBlocked}
+          label="Show staff on day off / holiday"
+          helper={
+            !showRequestBlocked && eligible.requestHiddenCount > 0
+              ? eligible.requestHiddenCount + " hidden"
+              : null
+          }
         />
-        Show staff on day off / holiday
-        {!showRequestBlocked && eligible.requestHiddenCount > 0
-          ? <span style={S.muted}> ({eligible.requestHiddenCount} hidden)</span>
-          : null}
-      </label>
+      </div>
     )
     : null;
 
