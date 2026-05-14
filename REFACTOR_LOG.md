@@ -5,6 +5,153 @@ an entry. Newest first.
 
 ---
 
+## v0.10.0 — Settings tab redesign (single-open accordion)
+
+**Date:** 2026-05-14
+**Behavioural change:** Yes — Settings tab restructured into a
+single-open accordion. Layout-only change for Operating Hours / FoH /
+Kitchen; the Display section gains a new behaviour (auto-save on
+toggle change, bypassing the bottom Save button).
+
+The Settings tab was starting to feel list-y: four stacked cards in a
+single scrollable column, with more toggles imminent (v0.11.0 dark
+mode and beyond). v0.10.0 restructures the surface so:
+
+1. **Accordion (single-open).** Each section is a Collapsible. One
+   open at a time. Operating Hours opens by default — top of list and
+   the section that gates template-row validation.
+2. **Per-section dirty dot.** Each Collapsible header carries a small
+   blue dot when its form differs from the saved state. Hours /
+   FoH / Kitchen each get their own dot. Display has no dot (it
+   auto-saves).
+3. **Display section auto-saves.** The "Show role pills on schedule
+   cells" control becomes a Toggle atom (iOS pill switch) wired to
+   `saveSettings({ ...settings, showRolePills })` on every change.
+   No Save click required. Rationale: Display toggles have instant
+   visual effect on the schedule grid, so deferring the write behind
+   a Save button felt off-pattern.
+4. **Save click force-opens the first error section.** Today's
+   validators light up under each input; in a collapsed accordion
+   they're invisible. When Save is clicked while `hasErrors === true`,
+   the first section with an error opens automatically so the
+   manager sees the validator output without hunting.
+5. **Reserved Display structure for v0.11.0 dark mode.** Display
+   stacks Toggle rows; v0.11.0's dark-mode toggle drops in as a
+   sibling with zero layout churn.
+
+**Scope:** UI restructure + one tiny behavioural divergence in Display.
+No data model changes. No new persistence paths. No new dependencies.
+
+### Files modified
+
+- `src/components/atoms.jsx` — two new exported primitives:
+  - `Collapsible({ title, open, onToggle, dirty, children })` —
+    accordion section. Controlled `open` (parent owns single-open
+    state). Header row is clickable, with a chevron + optional dirty
+    dot. Body only mounts when `open === true`. Reuses
+    `S.surfaceSoft` styling; adds no new `backdropFilter` (blur
+    instance count unchanged).
+  - `Toggle({ checked, onChange, label, helper, disabled })` —
+    iOS-style switch row. Whole row is clickable (not just the
+    knob), keyboard-accessible via Enter/Space, ARIA
+    `role="switch"`. 48×28 px track, white 24×24 knob with shadow.
+- `src/components/Settings.jsx` — full restructure of the render
+  layer. State changes: `hoursForm` shrinks to
+  `{ operatingStart, operatingEnd }` (showRolePills lifted out and
+  read directly from `settings`); `openSection` state added (default
+  `"hours"`); legacy `dirty` boolean dropped in favour of derived
+  `fohDirty` / `kitchenDirty` via new `blockDirty(a, b)` helper.
+  Handler changes: `onShowRolePillsChange(nextValue)` writes
+  immediately via `saveSettings`; `handleSave` now force-opens the
+  first error section if `hasErrors`. `handleReset` writes the
+  default `showRolePills: true` alongside the reset operating hours.
+  Render changes: four `<Section>` wrappers replaced with
+  `<Collapsible>` wrappers inside a `flex column / gap: 12`
+  container; Display body is a single `<Toggle>` row.
+- `src/App.jsx` — `__APP_SIGNATURE__` → `0.10.0`, sha
+  `settings-accordion`, build `2026-05-14`.
+- `CLAUDE.md` — file-structure block bumped to v0.10.0; `atoms.jsx`
+  annotation lists Collapsible + Toggle; `Settings.jsx` annotation
+  describes the accordion shape and Display auto-save. New locked
+  decision under Functional describing the Settings accordion
+  layout and the Display auto-save divergence.
+
+### Locked-decision answers (this session)
+
+| Q | A |
+|---|---|
+| Layout pattern | Single-open accordion (chosen over sub-tabs, side-nav, flat-with-better-hierarchy). |
+| Templates location | Stay in Settings — no new top-level "Templates" tab. |
+| Dark-mode slot reservation | Yes — Display section structured as a stack of Toggle rows; v0.11.0 drops in as a sibling. |
+| Display control style | iOS toggle switch (Toggle atom), not a checkbox. |
+| Display save behaviour | Auto-save on change. No Save click required, no dirty dot for Display. |
+| Default open section | Operating Hours (top of list; gates template validation). |
+| Open-section persistence | Not persisted across reloads; reopens to Operating Hours each visit. |
+| Per-section dirty dot | Yes for Hours / FoH / Kitchen. No for Display (auto-saves). |
+| Save-with-errors UX | Force-open the first section carrying an error so the inline validator becomes visible. |
+
+### Key design decisions
+
+- **One open at a time matches mobile reality.** The app is used
+  mostly on a phone behind the bar. A multi-open accordion would
+  drag the Save button below the fold on most edits. Single-open
+  keeps the work surface compact.
+- **Lift `showRolePills` out of `hoursForm`.** Mixing it with
+  operating-window state was workable in v0.9.0 (everything wrote to
+  `/settings`, one dirty flag, one Save click). With auto-save it
+  becomes confusing: which fields go to Firebase on a Toggle change?
+  Reading directly from `settings.showRolePills` removes the
+  ambiguity — local form state holds only fields that wait for
+  Save.
+- **Derived FoH/Kitchen dirty flags, kept boolean `hoursDirty`.**
+  `blockDirty(a, b)` is cheap (string compares on four fields), so
+  per-render derivation costs nothing and gives free correctness:
+  edit a field, change it back, the dot turns off. `hoursDirty` is
+  kept as a boolean flag (matching the existing pattern) because
+  the cost of the change versus the readability win wasn't worth
+  it. Acceptable inconsistency — the user can't tell the difference.
+- **Toggle handler spreads `settings`, not `hoursForm`.** A Display
+  toggle change must not silently commit mid-edit operating-hour
+  values. Spreading the saved `settings` prop and overwriting only
+  `showRolePills` keeps each section's writes scoped.
+- **Save-with-errors force-opens the first erroring section.** The
+  cheaper alternative — disable Save until valid — was the v0.9.0
+  behaviour, but in an accordion it traps the user when the error
+  is in a collapsed section. The chosen behaviour gives them
+  feedback in one click. (We still keep the disabled visual state
+  for the no-edits case.)
+- **No new `backdropFilter` in Collapsible.** The header is a flat
+  surface inside the existing `S.card` blur. Adding more blur
+  would push toward the ≤4 simultaneous instances limit.
+
+### Verification
+
+- `npm run build` — clean. Bundle size delta logged in commit msg.
+- DEV-mode QA (manual) on a Vercel preview build:
+  - Boot banner shows `v0.10.0`, sha `settings-accordion`.
+  - Default open section is Operating Hours; the others render
+    collapsed as header strips.
+  - Single-open behaviour: tapping a closed header opens it and
+    collapses the previously open one; tapping an open header
+    collapses it (no section open).
+  - Dirty dots: editing Operating Hours `end` lights the dot on
+    Operating Hours only. Editing FoH count lights FoH only.
+    Editing Kitchen evening start lights Kitchen only. Display
+    never shows a dot.
+  - Display auto-save: toggling "Show role pills" OFF writes
+    immediately; reload confirms persistence; the schedule grid
+    pills disappear.
+  - Save-with-errors force-open: with all sections collapsed,
+    setting `kitchen.evening.end` to "25:00" via the input and
+    clicking Save opens the Kitchen section, surfaces the error,
+    and writes nothing.
+  - Mobile (<768px): headers are tap-targetable, internal grids
+    preserve their 2-column wrap.
+  - PDF export still gated on `isWeekComplete`. Role pills still
+    gate correctly on the schedule grid via direct `settings.showRolePills` read.
+
+---
+
 ## v0.9.0 — Polish (PDF evening trim · specialists-first picker · role-pills toggle)
 
 **Date:** 2026-05-14

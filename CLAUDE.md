@@ -79,6 +79,13 @@ separate Firebase project, same UI conventions).
     holding any of the section's roles.
   - **Original v1 banner (v0.4.0):** kept and still fires when the
     show-all toggle reveals a request-conflicted assignee.
+- **Settings layout (v0.10.0):** single-open accordion. Section order
+  is Operating Hours → Display → FoH → Kitchen. Operating Hours opens
+  by default. Per-section dirty dot in headers for Hours / FoH /
+  Kitchen. Display section bypasses the Save button — toggles inside
+  it auto-save immediately on change because their visual effect is
+  instant on the schedule grid. Clicking Save while errors exist
+  force-opens the first section carrying an error.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -96,7 +103,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.9.0)
+## File structure (current — v0.10.0)
 
 ```
 megustastu-scheduling/
@@ -129,7 +136,8 @@ megustastu-scheduling/
     │                               v0.9.0: evening cells = name only,
     │                               evening row labels = start time only.
     └── components/
-        ├── atoms.jsx               Overlay, Fld, Section, TBadge, mkInp, mkBtn
+        ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
+        │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
         ├── LoginScreen.jsx         email/password sign-in form
         ├── AppShell.jsx            authenticated shell + tab nav
         ├── EmployeesList.jsx       roster list + Add button
@@ -152,6 +160,13 @@ megustastu-scheduling/
         │                           validated against operating window.
         │                           v0.9.0: + Display card with
         │                           showRolePills toggle.
+        │                           v0.10.0: single-open accordion
+        │                           (Operating Hours, Display, FoH,
+        │                           Kitchen). Per-section dirty dot in
+        │                           Collapsible headers. Display section
+        │                           uses Toggle atom and auto-saves on
+        │                           change (no Save click). Save click
+        │                           force-opens the first error section.
         └── ExportButton.jsx        Export-PDF button in the week-nav bar;
                                     disabled until every cell is filled
 ```
