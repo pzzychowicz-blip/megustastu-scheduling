@@ -43,9 +43,14 @@ function isSectionBoundary(prevSlot, slot) {
   return prevSlot.section !== slot.section || prevSlot.dayPart !== slot.dayPart;
 }
 
-export default function ScheduleGrid({ shifts, employees, requests, shiftTemplate, actions, isMobile }) {
+export default function ScheduleGrid({ shifts, employees, requests, shiftTemplate, settings, actions, isMobile }) {
   // Active template — DB-customized values when present, defaults otherwise.
   const template = shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
+
+  // v0.9.0: role-pill visibility on schedule cells. Default ON when
+  // /settings hasn't been written yet, OR when the field is missing
+  // from an older saved object — only an explicit `false` hides them.
+  const showRolePills = !settings || settings.showRolePills !== false;
 
   // Slot definitions for the week (same every day until per-day overrides land).
   const slots = useMemo(function () { return slotsForDay(template); }, [template]);
@@ -90,7 +95,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     const status = cell.employeeId ? "assigned" : "open";
     const palette = STATUS_COLORS[status];
 
-    const roleChip = cell.role
+    // v0.9.0: pill gated by the Settings toggle. `cell.role` is always
+    // null for day shifts (per the v1 model) so the toggle only ever
+    // affects evening cells.
+    const roleChip = cell.role && showRolePills
       ? (
         <span
           style={{
@@ -335,9 +343,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
 
       <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>
         Click any cell to assign someone or edit the time / role. Cells marked
-        with “*” have times that differ from the template defaults. A yellow
-        banner appears in the assignment form when the picked employee has a
-        day-off or holiday request that overlaps the date.
+        with “*” have times that differ from the template defaults. The
+        assignee dropdown hides staff with a day-off or holiday request on
+        that date (a toggle in the modal restores them) and anyone already
+        scheduled elsewhere on the same date.
       </p>
 
       <ShiftFormModal
@@ -347,6 +356,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         shift={modalCell ? modalCell.shift : null}
         employees={employees}
         requests={requests}
+        weekShifts={weekShifts}
         isMobile={isMobile}
         onClose={closeModal}
         onSave={handleSave}

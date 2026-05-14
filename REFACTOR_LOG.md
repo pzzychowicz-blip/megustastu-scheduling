@@ -5,6 +5,280 @@ an entry. Newest first.
 
 ---
 
+## v0.9.0 — Polish (PDF evening trim · specialists-first picker · role-pills toggle)
+
+**Date:** 2026-05-14
+**Behavioural change:** Yes — three small UX refinements:
+
+1. **PDF evening trim.** Exported rotas drop the `· Role` suffix from
+   evening cells (the role is implicit from the row — Kitchen Evening 1
+   is the Chef row by the v0.8.0 default-role policy) and the end-time
+   from evening row labels (it's always the close of service). Day rows
+   and day cells unchanged.
+2. **Picker sorts specialists first.** Within the v0.8.0 role-filtered
+   set, employees with fewer total roles rank higher. Tiebreak
+   alphabetical. The intuition: an employee with one role is the most
+   suitable fit for a slot needing that role (no competing demands
+   across the week). Falls out naturally for day shifts too.
+3. **Role-pills toggle.** New "Display" card in Settings with a
+   `showRolePills` checkbox. When OFF, the small coloured pill next to
+   each filled cell's assignee name disappears. Default ON. Persists
+   to `/settings.showRolePills`. Employees-tab role badges and the
+   role-picker controls inside modals are unaffected (those are
+   controls, not display).
+
+**Scope:** All polish — no new persistence paths, no new dependencies,
+no architectural shifts. Continuation of the v0.7.0 / v0.8.0 cadence
+before the v1.x auto-generator.
+
+### Files modified
+
+- `src/lib/pdf-export.js` — `buildTableBody` row-label generation
+  conditional on `slot.dayPart === "evening"` (start-only) vs
+  default (`start–end`). Cell-content generator drops the
+  `cell.role` branch entirely; always returns `emp.name`.
+- `src/components/ShiftFormModal.jsx` — extended the existing
+  `eligible` useMemo sort. New local `roleCount(e)` helper; sort
+  callback compares role-count first, then alphabetical name.
+- `src/components/Settings.jsx` — extended `hoursForm` with
+  `showRolePills` (defaults to `true` when `/settings` is missing
+  the field, preserving an explicit stored `false`). New `<Section
+  title="Display">` card with a checkbox + helper text. `handleReset`
+  resets `showRolePills` to `true` alongside the operating-hours
+  defaults. Header docstring updated to note v0.9.0 scope.
+- `src/components/AppShell.jsx` — passes `settings={data.settings}`
+  into `<ScheduleGrid>`.
+- `src/components/ScheduleGrid.jsx` — accepts `settings` prop. New
+  `showRolePills` local derived (`!settings || settings.showRolePills
+  !== false` — defensive against an absent or default-true setting).
+  `roleChip` JSX gated on `cell.role && showRolePills`.
+- `src/App.jsx` — `__APP_SIGNATURE__` → `0.9.0`, sha `polish-2`,
+  build `2026-05-14`.
+- `CLAUDE.md` — file-structure block bumped to v0.9.0;
+  `Settings.jsx` / `ShiftFormModal.jsx` / `pdf-export.js`
+  annotations extended. The PDF locked-decision in the functional
+  section now describes the evening-row trim explicitly.
+
+### Locked-decision answers (this session)
+
+| Q | A |
+|---|---|
+| PDF strip scope | Evening only. Evening cells lose role suffix; evening row labels drop the end-time. Day rows + day cells untouched. |
+| Picker tiebreak | Specialists first (`roles.length` asc). Alphabetical secondary key. |
+| Toggle scope | Schedule grid cells only. Employees list badges + request-type badges unaffected. |
+| Toggle default | ON (visible by default; manager opts out). |
+| Toggle persistence | `/settings.showRolePills: boolean`. Whole-object write via existing `saveSettings`. |
+| Settings layout | New `<Section title="Display">` card below "Operating hours". Preserves the per-card narrow-scope pattern. |
+
+### Key design decisions
+
+- **`slot.dayPart` is the right discriminator for the PDF.** Day slots
+  carry `dayPart: "day"`, evening `dayPart: "evening"` — both already
+  set by `slotsForDay()`. No new prop on the slot record needed.
+- **Drop the `cell.role` branch entirely.** A future feature
+  reintroducing per-cell role rendering would have to re-add the
+  branch — but the v1 model says the slot column already identifies
+  the role, so the branch is dead weight, not a parking spot.
+- **`roles.length` as a suitability proxy.** It's the simplest
+  metric that captures "an employee with one role is the tightest
+  fit for that role." Won't surface a "primary role" concept
+  (employee model doesn't have one). If we add one later, we can
+  promote it ahead of the role-count key without breaking the API.
+- **Explicit boolean check on `showRolePills` init.** `settings.showRolePills || true` would silently flip a stored `false`
+  back to `true` because `||` falls back on falsy. The form must
+  treat `false` as a deliberate manager choice. Same pattern was
+  used in v0.7.0 for `operatingStart` (where `|| OPERATING_HOURS.start`
+  was OK because `""` is the only falsy string we care about).
+- **Schedule-grid default is OPEN (show pills).** When `/settings`
+  is empty on a fresh install, we shouldn't render an emptier UI
+  than the manager has ever asked for. The default-true posture
+  also means existing deployments don't suddenly lose their pills
+  after this update.
+- **Day cells are unaffected by the toggle.** Day shift `cell.role`
+  is always `null` (v1 day-shift one-person-covers-all-roles model),
+  so the toggle has nothing to gate on day cells. No special-casing
+  needed.
+- **No `usePersistence.js` changes.** `saveSettings` is a whole-
+  object write helper. Adding a field to the form is invisible
+  to the persistence layer.
+
+### Verification
+
+- [ ] `npm run build` succeeds; main bundle within ~1 KB of v0.8.0.
+- [ ] `npm run dev`; sign in; blue v0.9.0 banner;
+      `window.__MGT_SCHED_BUILD__.version === "0.9.0"`.
+- [ ] PDF: fill every cell of a week → Export. Confirm
+      Kitchen Evening + FoH Evening row labels show `17:00` /
+      `16:00` only (no end-time); Kitchen Day / FoH Day row labels
+      keep the full range (`11:00–16:00`, `11:00–17:00`).
+- [ ] PDF cells: evening cells show assignee NAME only (no
+      `· Bar` / `· Chef`). Day cells unchanged.
+- [ ] Picker: 3 employees A=[Pot], B=[Pot,Chef], C=[Pot,Chef,Plating]
+      → Kitchen Evening 3 picker order: A, B, C. Within ties,
+      alphabetical.
+- [ ] Settings tab: new "Display" card below Operating Hours,
+      checkbox checked by default.
+- [ ] Uncheck → Save → Schedule grid role pills disappear.
+- [ ] Reload → toggle stays unchecked.
+- [ ] Re-check → Save → pills reappear.
+- [ ] Employees tab: role badges always visible (toggle has no
+      effect there).
+- [ ] Mobile viewport: Display card stacks cleanly below Operating
+      Hours; checkbox and helper text readable.
+
+---
+
+## v0.8.0 — Schedule UX overhaul
+
+**Date:** 2026-05-14
+**Behavioural change:** Yes — six related changes to the schedule grid
+and shift-assignment modal:
+
+1. **Slot order flipped.** Schedule grid (and consequently the PDF
+   export) now renders Kitchen first, then FoH. Order within each
+   section: Day → Evening.
+2. **Evening default roles.** New shifts on FoH Evening slot 0/1
+   prefill role to Bar/Floor; Kitchen Evening 0/1/2 prefill to
+   Chef/Plating/Pot. Slot index past the section's role count → `null`
+   (manager picks). Existing shift records always keep their stored
+   role.
+3. **Role-filtered picker.** Evening slot picker only lists employees
+   who hold the slot's role; day slot picker only lists employees
+   holding any of the section's roles.
+4. **Request-conflict hide-by-default + toggle.** Employees with a
+   day-off / holiday request covering the date are hidden from the
+   picker. A "Show staff on day off / holiday" checkbox (only visible
+   when at least one such employee exists) restores them and brings
+   back the yellow conflict banner from v0.4.0 so the manager can
+   override.
+5. **Dark mode** deliberately deferred to v0.9.0 — it's a cross-cutting
+   CSS effort that deserves its own session.
+6. **STRICT same-date exclusion.** A single employee cannot hold two
+   shifts on the same date (covers day + evening on the same Tuesday).
+   Picker filter + save-time guard with red banner.
+7. **Picker order item 7.** Same as item 1 — schedule layout flipped.
+
+**Scope:** All schedule UX. Touches the slot enumerator, the shift
+modal, and the schedule grid mount. No persistence-layer changes.
+
+### Files modified
+
+- `src/lib/schedule-logic.js` — `slotsForDay()` reorders blocks to
+  Kitchen Day → Kitchen Evening → FoH Day → FoH Evening; each slot
+  now carries a `defaultRole` field set by the new
+  `defaultRoleForSlot(section, dayPart, index)` helper. Added
+  `findSameDayShift(shiftsMap, employeeId, dateIso, excludeShiftId)`
+  pure helper for the new STRICT rule. Slot `key` strings unchanged
+  → existing `/shifts/{id}` records still match by slot identity.
+- `src/components/ShiftFormModal.jsx` — new `weekShifts` prop. New
+  local state: `showRequestBlocked` (toggle) and `saveError` (red
+  banner). `initialForm` prefills role from `slotDef.defaultRole` for
+  new shifts. `useEffect` re-init auto-flips `showRequestBlocked` on
+  if the existing shift's assignee has a covering request, so the
+  select doesn't render a value not in its options. Eligible-employees
+  list is a single `useMemo` applying role + same-day + request
+  filters in one pass; tracks `requestHiddenCount` so the toggle only
+  appears when it has an effect. `handleSave` re-checks same-day at
+  submit time and refuses with `saveError` if the picker filter was
+  bypassed.
+- `src/components/ScheduleGrid.jsx` — passes `weekShifts={weekShifts}`
+  into `<ShiftFormModal>`. Footer help text updated to describe the
+  new picker behaviour.
+- `src/App.jsx` — bumped `__APP_SIGNATURE__` to `0.8.0`, sha
+  `schedule-ux`, build `2026-05-14`.
+- `CLAUDE.md` — file-structure block bumped to v0.8.0; expanded
+  `ShiftFormModal.jsx` and `schedule-logic.js` annotations; revised
+  the "Conflict warnings, not blocks" section to capture the new
+  three-tier semantics (hard same-date, hide+toggle request, hard
+  role mismatch); added explicit "Slot display order" and
+  "Evening default roles" sub-items under Locked v1 decisions.
+
+### Locked-decision answers (this session)
+
+| Q | A |
+|---|---|
+| Item 1/2 — default role overflow | When the Settings template count goes above the section's role count, slot index ≥ count → `defaultRole: null`. No silent cycling. |
+| Item 3 — role-filter scope | Hard filter at the picker level. Manager can still pick "Unassigned". |
+| Item 4 — request conflict UX | Hide-by-default + "Show staff on day off / holiday" toggle. Toggle restores the yellow v0.4.0 banner when an override is selected. |
+| Item 4 — auto-flip on existing | If an existing shift's assignee currently has a covering request, the modal opens with the toggle pre-ON. Avoids broken select state. |
+| Item 6 — "same day" scope | Same DATE. A person on the FoH Day shift cannot also be on the FoH/Kitchen Evening shift the same date. |
+| Item 6 — strict-mode override path | None. Strict. (Manager workaround: clear the other shift first.) |
+| Item 7 — PDF order follows | Yes. Single source of truth: `slotsForDay()`. PDF divider rows still labelled via `SECTIONS[section].label` so the flip is automatic. |
+
+### Key design decisions
+
+- **`findSameDayShift` lives in `schedule-logic.js`.** Pure helper, no
+  React. Reused by both the picker filter and the save-time guard.
+  Will be reused again by the v1.x auto-generator as a hard
+  constraint.
+- **Single `useMemo` filter pipeline.** Role → same-day → request,
+  in that order, in one pass. Tracks `requestHiddenCount` for the
+  toggle so the UI only renders the override checkbox when it has
+  an effect. Avoids stacked filter components and the readability
+  cost they bring.
+- **Auto-flip `showRequestBlocked` on re-init.** If a manager opens an
+  existing shift whose assignee has since had a covering request
+  added, hiding them would leave the `<select>` with a value not in
+  its option list (a "broken" state where the rendered selection
+  doesn't reflect `form.employeeId`). Auto-flipping the toggle ON in
+  that case keeps the select coherent. Manager can untoggle to hide
+  them again.
+- **Save guard is belt + braces.** The picker filter already hides
+  same-day-conflicting employees, but a stale dropdown (e.g., another
+  tab made an assignment between the modal opening and Save being
+  clicked) could still produce a clash. `handleSave` re-checks
+  `findSameDayShift` and refuses with a red banner. No silent
+  corruption.
+- **`defaultRole` is on the slot, not the modal.** The pure helper
+  `defaultRoleForSlot()` keeps the role-default policy outside React
+  — the auto-generator (v1.x) reads `slot.defaultRole` the same way
+  the modal does.
+- **Existing shift records always win on role.** `initialForm`
+  prefills role from `slotDef.defaultRole` ONLY when `shift === null`
+  (new shift). A previously-saved shift with `role === null` may
+  represent a deliberate manager state — overwriting it on every
+  modal open would be presumptuous.
+- **PDF flip is automatic.** `pdf-export.js` reads slots in
+  `slotsForDay()` order, and the divider rows label themselves via
+  `SECTIONS[slot.section].label`. No `pdf-export.js` changes needed
+  — the reorder cascades.
+
+### Verification
+
+- [ ] `npm run build` succeeds. Main bundle within a few KB of v0.7.0.
+- [ ] `npm run dev`; sign in; blue v0.8.0 banner;
+      `window.__MGT_SCHED_BUILD__.version === "0.8.0"`.
+- [ ] Schedule grid: Kitchen rows appear above FoH rows. Day rows
+      above Evening rows within each section.
+- [ ] Click a Kitchen Evening 1 empty cell → modal opens with role
+      prefilled to **Chef**. Editable.
+- [ ] Click a Kitchen Evening 3 empty cell (after bumping Settings
+      count to 3) → role prefilled to **Pot**.
+- [ ] Click a Kitchen Evening 4 empty cell (after count bump to 4)
+      → role left blank.
+- [ ] FoH Evening 1 → defaults to **Bar**; FoH Evening 2 → **Floor**;
+      FoH Evening 3 (count=3) → blank.
+- [ ] With 4 employees (varied roles) and one on holiday: open a
+      FoH Evening 1 picker → only active Bar-holding employees
+      appear; the holiday person is hidden.
+- [ ] Tick "Show staff on day off / holiday" → holiday person
+      reappears in the dropdown; selecting them shows the yellow
+      conflict banner.
+- [ ] Assign Maria to FoH Evening 1 Tuesday. Open Kitchen Evening 1
+      Tuesday → Maria is gone from the dropdown (same-day filter).
+      Open FoH Day Tuesday → Maria is gone.
+- [ ] Save guard: with two browser tabs open, assign Maria in tab A,
+      then in tab B open a different slot still showing Maria as
+      eligible (stale state), pick her, hit Save → red banner appears,
+      save refused.
+- [ ] Edit an existing shift with an assignee who has a covering
+      request → modal opens with toggle pre-ON, yellow banner visible,
+      select renders the correct name.
+- [ ] Export PDF → "Kitchen" divider row appears first, then
+      "Front of House".
+
+---
+
 ## v0.7.0 — Polish (PDF section divider + Operating Hours editor)
 **Date:** 2026-05-13
 **Behavioural change:** Yes — two small UX additions:

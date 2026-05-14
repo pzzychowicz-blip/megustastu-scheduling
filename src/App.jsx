@@ -21,9 +21,9 @@ import AppShell from "./components/AppShell.jsx";
 
 // ── App signature ────────────────────────────────────────────────────────
 export const __APP_SIGNATURE__ = Object.freeze({
-  version: "0.7.0",
-  build: "2026-05-13",
-  sha: "polish",
+  version: "0.9.0",
+  build: "2026-05-14",
+  sha: "polish-2",
 });
 
 // Expose for DevTools / debugging.

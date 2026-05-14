@@ -1,11 +1,13 @@
 // src/components/Settings.jsx
 // Settings tab body. v0.5.0 scope: shift template editor.
 // v0.7.0: + Operating Hours editor (writes to /settings).
+// v0.9.0: + Display preferences (writes to /settings.showRolePills).
 //
 // What it edits:
 //   /shiftTemplate (singleton) → { foh: { day, evening }, kitchen: { day, evening } }
 //     Each block has { start, end, count }. FoH evening also has secondPersonStart.
-//   /settings      (singleton) → { operatingStart, operatingEnd }   (v0.7.0)
+//   /settings      (singleton) → { operatingStart, operatingEnd,    (v0.7.0)
+//                                  showRolePills }                  (v0.9.0)
 //
 // Locked decisions:
 //   v0.5.0:
@@ -115,10 +117,19 @@ export default function Settings({
 
   // v0.7.0: Operating-hours form. Falls back to the OPERATING_HOURS
   // constant when Firebase /settings hasn't been populated yet.
+  // v0.9.0: same form also carries the display toggle(s). The form
+  // shape mirrors the `/settings` Firebase singleton — adding a field
+  // is a one-line change here and zero changes in the persistence
+  // layer (saveSettings writes the whole object).
   const [hoursForm, setHoursForm] = useState(function () {
     return {
       operatingStart: (settings && settings.operatingStart) || OPERATING_HOURS.start,
       operatingEnd:   (settings && settings.operatingEnd)   || OPERATING_HOURS.end,
+      // v0.9.0: explicit boolean check so an existing `false` stored in
+      // Firebase isn't silently overwritten to `true` by a `||` fallback.
+      showRolePills:  settings && typeof settings.showRolePills === "boolean"
+                        ? settings.showRolePills
+                        : true,
     };
   });
   const [hoursDirty, setHoursDirty] = useState(false);
@@ -194,13 +205,14 @@ export default function Settings({
 
   function handleReset() {
     const ok = window.confirm(
-      "Reset operating hours AND shift template to defaults? Your current values will be overwritten."
+      "Reset operating hours, display preferences AND shift template to defaults? Your current values will be overwritten."
     );
     if (!ok) return;
     const defaults = cloneTemplate(DEFAULT_SHIFT_TEMPLATE);
     const defaultHours = {
       operatingStart: OPERATING_HOURS.start,
       operatingEnd:   OPERATING_HOURS.end,
+      showRolePills:  true,   // v0.9.0 default
     };
     setForm(defaults);
     setHoursForm(defaultHours);
@@ -325,6 +337,36 @@ export default function Settings({
             {opsErr}
           </div>
         ) : null}
+      </Section>
+
+      {/* v0.9.0: Display preferences card. Currently a single toggle
+          (role-pills on schedule cells). Held in the same hoursForm
+          state and written to the same /settings path as operating
+          hours — adding more display toggles later costs one field
+          per toggle and no plumbing. */}
+      <Section title="Display" style={{ marginBottom: 12 }}>
+        <label
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            fontSize: 13, color: "#1c1c1e", cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={hoursForm.showRolePills}
+            onChange={function (e) {
+              const v = e.target.checked;
+              setHoursForm(function (prev) { return { ...prev, showRolePills: v }; });
+              setHoursDirty(true);
+            }}
+          />
+          Show role pills on schedule cells
+        </label>
+        <p style={{ ...S.muted, fontSize: 11, marginTop: 4 }}>
+          The small coloured tag (Bar / Floor / Chef / Plating / Pot) next
+          to each assignee's name in the schedule grid. Off hides them;
+          the Employees tab badges are unaffected.
+        </p>
       </Section>
 
       <Section title={SECTIONS.foh.label} style={{ marginBottom: 12 }}>

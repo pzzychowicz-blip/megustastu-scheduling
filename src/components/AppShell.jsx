@@ -148,6 +148,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         employees={data.employees}
         requests={data.requests}
         shiftTemplate={data.shiftTemplate}
+        settings={data.settings}
         actions={actions}
         isMobile={isMobile}
       />
