@@ -2,6 +2,10 @@
 // Settings tab body. v0.5.0 scope: shift template editor.
 // v0.7.0: + Operating Hours editor (writes to /settings).
 // v0.9.0: + Display preferences (writes to /settings.showRolePills).
+// v0.10.0: single-open accordion layout (Operating Hours, Display, FoH,
+//          Kitchen). Display section auto-saves on Toggle change — no
+//          Save click needed. Per-section dirty dot in the accordion
+//          header for Hours / FoH / Kitchen.
 //
 // What it edits:
 //   /shiftTemplate (singleton) → { foh: { day, evening }, kitchen: { day, evening } }
@@ -25,6 +29,19 @@
 //       operating window. Narrowing operating hours that no longer enclose
 //       the template lights up template-row errors and blocks Save — the
 //       manager must widen hours or shrink the template before saving.
+//   v0.10.0:
+//     - Sections are now accordion items (Collapsible atom). One open at
+//       a time. Operating Hours is the default-open section.
+//     - Display section auto-saves immediately on Toggle change. It is
+//       intentionally divergent from Hours/FoH/Kitchen (which need an
+//       explicit Save) because Display toggles have instant visual
+//       effect on the schedule grid.
+//     - Per-section dirty dot in the Collapsible header surfaces which
+//       section has unsaved edits, so a collapsed dirty section is
+//       visible without expanding.
+//     - When Save is clicked while errors exist, the first section
+//       carrying an error force-opens so the validator messages become
+//       visible (the user can't see errors in collapsed sections).
 //
 // Props:
 //   shiftTemplate     (object|null)  — from usePersistence; null on first run
@@ -42,7 +59,7 @@ import {
   DEFAULT_SHIFT_TEMPLATE,
   OPERATING_HOURS,
 } from "../lib/constants.js";
-import { Section, Fld, mkInp, mkBtn } from "./atoms.jsx";
+import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 
 // ── Deep-clone the template for local edit state ─────────────────────────
 // DEFAULT_SHIFT_TEMPLATE is shallow-frozen; nested objects are not. Cloning
@@ -95,6 +112,19 @@ function hoursError(hours) {
   return null;
 }
 
+// v0.10.0: per-block dirty comparison. Drives the FoH / Kitchen accordion
+// header dots. Compares only the fields we know about; if either side is
+// missing (shouldn't happen given DEFAULT_SHIFT_TEMPLATE fallback) we
+// treat it as not-dirty rather than always-dirty.
+function blockDirty(a, b) {
+  if (!a || !b) return false;
+  if (a.start !== b.start) return true;
+  if (a.end !== b.end) return true;
+  if (a.count !== b.count) return true;
+  if ((a.secondPersonStart || null) !== (b.secondPersonStart || null)) return true;
+  return false;
+}
+
 // Lexicographic string compare on "HH:MM" works because the format is
 // fixed-width and zero-padded. Same trick used by schedule-logic.js for
 // date strings. No Date object needed.
@@ -113,28 +143,35 @@ export default function Settings({
   const [form, setForm] = useState(function () {
     return cloneTemplate(shiftTemplate || DEFAULT_SHIFT_TEMPLATE);
   });
-  const [dirty, setDirty] = useState(false);
 
   // v0.7.0: Operating-hours form. Falls back to the OPERATING_HOURS
   // constant when Firebase /settings hasn't been populated yet.
-  // v0.9.0: same form also carries the display toggle(s). The form
-  // shape mirrors the `/settings` Firebase singleton — adding a field
-  // is a one-line change here and zero changes in the persistence
-  // layer (saveSettings writes the whole object).
+  // v0.10.0: hoursForm is now ONLY operatingStart/End. The Display
+  // section reads showRolePills directly from `settings` and auto-saves
+  // on change, so it doesn't share local form state with hours.
   const [hoursForm, setHoursForm] = useState(function () {
     return {
       operatingStart: (settings && settings.operatingStart) || OPERATING_HOURS.start,
       operatingEnd:   (settings && settings.operatingEnd)   || OPERATING_HOURS.end,
-      // v0.9.0: explicit boolean check so an existing `false` stored in
-      // Firebase isn't silently overwritten to `true` by a `||` fallback.
-      showRolePills:  settings && typeof settings.showRolePills === "boolean"
-                        ? settings.showRolePills
-                        : true,
     };
   });
   const [hoursDirty, setHoursDirty] = useState(false);
 
+  // v0.10.0: which accordion section is open. `null` means all collapsed.
+  // Default to "hours" because it's the top section and also the one that
+  // gates template-row validation.
+  const [openSection, setOpenSection] = useState("hours");
+
+  function toggleSection(key) {
+    setOpenSection(function (cur) {
+      return cur === key ? null : key;
+    });
+  }
+
   // ── Field updaters ─────────────────────────────────────────────────────
+  // v0.10.0: no longer set a manual `dirty` flag — fohDirty/kitchenDirty
+  // are derived below from blockDirty() comparison against the saved
+  // shiftTemplate prop.
   function updateField(section, dayPart, field, value) {
     setForm(function (prev) {
       return {
@@ -145,7 +182,6 @@ export default function Settings({
         },
       };
     });
-    setDirty(true);
   }
 
   function onCountChange(section, dayPart, e) {
@@ -164,6 +200,15 @@ export default function Settings({
     const value = e.target.value;
     setHoursForm(function (prev) { return { ...prev, [field]: value }; });
     setHoursDirty(true);
+  }
+
+  // v0.10.0: Display section auto-save. Toggling immediately writes to
+  // /settings. We spread `settings` (or {}) so operatingStart/End and any
+  // future fields are preserved — saveSettings does a full-path write.
+  // We do NOT include hoursForm here: the user might be mid-edit of
+  // operating hours, and committing those silently would surprise them.
+  function onShowRolePillsChange(nextValue) {
+    saveSettings({ ...(settings || {}), showRolePills: nextValue });
   }
 
   // ── Validation snapshot ────────────────────────────────────────────────
@@ -186,20 +231,42 @@ export default function Settings({
     errors.kitchenDay !== null ||
     errors.kitchenEvening !== null;
 
+  // ── Per-section dirty flags (v0.10.0) ──────────────────────────────────
+  // FoH/Kitchen derive from blockDirty comparison so the dot auto-clears
+  // once the saved `shiftTemplate` prop reflects the latest save. Falls
+  // back to DEFAULT_SHIFT_TEMPLATE when nothing has been saved yet.
+  const savedTemplate = shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
+  const fohDirty =
+    blockDirty(form.foh.day, savedTemplate.foh.day) ||
+    blockDirty(form.foh.evening, savedTemplate.foh.evening);
+  const kitchenDirty =
+    blockDirty(form.kitchen.day, savedTemplate.kitchen.day) ||
+    blockDirty(form.kitchen.evening, savedTemplate.kitchen.evening);
+
   // ── Save / Reset ───────────────────────────────────────────────────────
-  // v0.7.0: one Save button, two Firebase paths. Each path writes only
-  // when its own form is dirty — avoids spurious writes that would
-  // bounce off the empty-object guard in usePersistence.
+  // v0.10.0: if errors exist, force-open the first section carrying an
+  // error so the validator messages become visible (collapsed sections
+  // hide them). The user can't reach a Save-disabled state without
+  // visible feedback.
   function handleSave() {
-    if (hasErrors) return;
-    if (!dirty && !hoursDirty) return;
+    if (hasErrors) {
+      if (opsErr) setOpenSection("hours");
+      else if (errors.fohDay || errors.fohEvening) setOpenSection("foh");
+      else if (errors.kitchenDay || errors.kitchenEvening) setOpenSection("kitchen");
+      return;
+    }
+    if (!fohDirty && !kitchenDirty && !hoursDirty) return;
     if (hoursDirty) {
-      saveSettings(hoursForm);
+      saveSettings({
+        ...(settings || {}),
+        operatingStart: hoursForm.operatingStart,
+        operatingEnd:   hoursForm.operatingEnd,
+      });
       setHoursDirty(false);
     }
-    if (dirty) {
+    if (fohDirty || kitchenDirty) {
       saveShiftTemplate(form);
-      setDirty(false);
+      // fohDirty/kitchenDirty auto-clear once the shiftTemplate prop updates.
     }
   }
 
@@ -212,13 +279,15 @@ export default function Settings({
     const defaultHours = {
       operatingStart: OPERATING_HOURS.start,
       operatingEnd:   OPERATING_HOURS.end,
-      showRolePills:  true,   // v0.9.0 default
     };
     setForm(defaults);
     setHoursForm(defaultHours);
     saveShiftTemplate(defaults);
-    saveSettings(defaultHours);
-    setDirty(false);
+    saveSettings({
+      operatingStart: OPERATING_HOURS.start,
+      operatingEnd:   OPERATING_HOURS.end,
+      showRolePills:  true,   // v0.9.0 default
+    });
     setHoursDirty(false);
   }
 
@@ -291,7 +360,8 @@ export default function Settings({
   // ── Save button styling ────────────────────────────────────────────────
   // Native `disabled` works but the visual cue is weak. Add explicit opacity
   // + cursor override so the manager can tell at a glance.
-  const saveDisabled = (!dirty && !hoursDirty) || hasErrors;
+  const anyDirty = fohDirty || kitchenDirty || hoursDirty;
+  const saveDisabled = !anyDirty || hasErrors;
   const saveStyle = saveDisabled ? { opacity: 0.5, cursor: "not-allowed" } : undefined;
 
   // v0.7.0: operating-hours row. Two time inputs in the same row layout
@@ -302,6 +372,14 @@ export default function Settings({
     gap: isMobile ? 8 : 12,
   };
 
+  // v0.10.0: derived showRolePills for the Display Toggle. Falls back to
+  // true when /settings hasn't been populated. Explicit boolean check so a
+  // stored `false` survives the fallback (a `||` would silently flip it).
+  const showRolePills =
+    settings && typeof settings.showRolePills === "boolean"
+      ? settings.showRolePills
+      : true;
+
   return (
     <div>
       <p style={{ ...S.body, margin: "0 0 16px 0" }}>
@@ -310,74 +388,81 @@ export default function Settings({
         their own per-cell times until edited.
       </p>
 
-      {/* v0.7.0: Operating hours card.
-          Sits above the section cards because it constrains them — narrowing
-          the window will surface errors on any template row that no longer
-          fits, and the manager has to fix the window first. */}
-      <Section title="Operating hours" style={{ marginBottom: 12 }}>
-        <div style={{ ...S.fldLabel, marginBottom: 6 }}>Restaurant open</div>
-        <div style={hoursRowStyle}>
-          <Fld label="Start">
-            {mkInp({
-              type: "time",
-              value: hoursForm.operatingStart,
-              onChange: function (e) { onHoursChange("operatingStart", e); },
-            })}
-          </Fld>
-          <Fld label="End">
-            {mkInp({
-              type: "time",
-              value: hoursForm.operatingEnd,
-              onChange: function (e) { onHoursChange("operatingEnd", e); },
-            })}
-          </Fld>
-        </div>
-        {opsErr ? (
-          <div style={{ fontSize: 12, color: "#9a1f17", marginTop: 4 }}>
-            {opsErr}
-          </div>
-        ) : null}
-      </Section>
-
-      {/* v0.9.0: Display preferences card. Currently a single toggle
-          (role-pills on schedule cells). Held in the same hoursForm
-          state and written to the same /settings path as operating
-          hours — adding more display toggles later costs one field
-          per toggle and no plumbing. */}
-      <Section title="Display" style={{ marginBottom: 12 }}>
-        <label
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            fontSize: 13, color: "#1c1c1e", cursor: "pointer",
-          }}
+      {/* v0.10.0: accordion column. Sections render in fixed order;
+          openSection state controls which one is expanded. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Operating hours.
+            Sits at the top because it constrains the template — narrowing
+            the window surfaces errors on any template row that no longer
+            fits, and the manager has to fix the window first. */}
+        <Collapsible
+          title="Operating hours"
+          open={openSection === "hours"}
+          onToggle={function () { toggleSection("hours"); }}
+          dirty={hoursDirty}
         >
-          <input
-            type="checkbox"
-            checked={hoursForm.showRolePills}
-            onChange={function (e) {
-              const v = e.target.checked;
-              setHoursForm(function (prev) { return { ...prev, showRolePills: v }; });
-              setHoursDirty(true);
-            }}
+          <div style={{ ...S.fldLabel, marginBottom: 6 }}>Restaurant open</div>
+          <div style={hoursRowStyle}>
+            <Fld label="Start">
+              {mkInp({
+                type: "time",
+                value: hoursForm.operatingStart,
+                onChange: function (e) { onHoursChange("operatingStart", e); },
+              })}
+            </Fld>
+            <Fld label="End">
+              {mkInp({
+                type: "time",
+                value: hoursForm.operatingEnd,
+                onChange: function (e) { onHoursChange("operatingEnd", e); },
+              })}
+            </Fld>
+          </div>
+          {opsErr ? (
+            <div style={{ fontSize: 12, color: "#9a1f17", marginTop: 4 }}>
+              {opsErr}
+            </div>
+          ) : null}
+        </Collapsible>
+
+        {/* Display preferences.
+            v0.10.0: stack of Toggle rows. Each toggle auto-saves on change
+            (no Save click). Structured this way so v0.11.0 dark-mode drops
+            in as a sibling Toggle with zero layout churn. */}
+        <Collapsible
+          title="Display"
+          open={openSection === "display"}
+          onToggle={function () { toggleSection("display"); }}
+        >
+          <Toggle
+            checked={showRolePills}
+            onChange={onShowRolePillsChange}
+            label="Show role pills on schedule cells"
+            helper="The small coloured tag (Bar / Floor / Chef / Plating / Pot) next to each assignee's name in the schedule grid. Off hides them; the Employees tab badges are unaffected."
           />
-          Show role pills on schedule cells
-        </label>
-        <p style={{ ...S.muted, fontSize: 11, marginTop: 4 }}>
-          The small coloured tag (Bar / Floor / Chef / Plating / Pot) next
-          to each assignee's name in the schedule grid. Off hides them;
-          the Employees tab badges are unaffected.
-        </p>
-      </Section>
+          {/* Phase X (v0.10.0): future dark-mode Toggle lands here. */}
+        </Collapsible>
 
-      <Section title={SECTIONS.foh.label} style={{ marginBottom: 12 }}>
-        {renderBlock("foh", "day", "Day shift", false)}
-        {renderBlock("foh", "evening", "Evening shift", true)}
-      </Section>
+        <Collapsible
+          title={SECTIONS.foh.label}
+          open={openSection === "foh"}
+          onToggle={function () { toggleSection("foh"); }}
+          dirty={fohDirty}
+        >
+          {renderBlock("foh", "day", "Day shift", false)}
+          {renderBlock("foh", "evening", "Evening shift", true)}
+        </Collapsible>
 
-      <Section title={SECTIONS.kitchen.label} style={{ marginBottom: 12 }}>
-        {renderBlock("kitchen", "day", "Day shift", false)}
-        {renderBlock("kitchen", "evening", "Evening shift", false)}
-      </Section>
+        <Collapsible
+          title={SECTIONS.kitchen.label}
+          open={openSection === "kitchen"}
+          onToggle={function () { toggleSection("kitchen"); }}
+          dirty={kitchenDirty}
+        >
+          {renderBlock("kitchen", "day", "Day shift", false)}
+          {renderBlock("kitchen", "evening", "Evening shift", false)}
+        </Collapsible>
+      </div>
 
       <div
         style={{
