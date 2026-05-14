@@ -335,9 +335,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
 
       <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>
         Click any cell to assign someone or edit the time / role. Cells marked
-        with “*” have times that differ from the template defaults. A yellow
-        banner appears in the assignment form when the picked employee has a
-        day-off or holiday request that overlaps the date.
+        with “*” have times that differ from the template defaults. The
+        assignee dropdown hides staff with a day-off or holiday request on
+        that date (a toggle in the modal restores them) and anyone already
+        scheduled elsewhere on the same date.
       </p>
 
       <ShiftFormModal
@@ -347,6 +348,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         shift={modalCell ? modalCell.shift : null}
         employees={employees}
         requests={requests}
+        weekShifts={weekShifts}
         isMobile={isMobile}
         onClose={closeModal}
         onSave={handleSave}

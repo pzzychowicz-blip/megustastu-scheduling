@@ -76,9 +76,67 @@ export function formatWeekRange(startDate) {
 // Given a shift template, return the ordered list of slots that exist on
 // each day. Each slot definition has stable identity via
 // (section, dayPart, slotIndex) — that's the key we match shift records on.
+//
+// v0.8.0 order: Kitchen Day → Kitchen Evening → FoH Day → FoH Evening.
+// The schedule grid and the PDF export both consume slots in this order;
+// flipping it here cascades to both surfaces. Slot record IDs (the
+// `key` field) are unchanged so existing /shifts/{id} records still match.
+//
+// v0.8.0 evening default roles: slot 0 / 1 / 2 of an evening block get a
+// `defaultRole` of SECTIONS[section].roles[index], or null when index
+// exceeds the section's role list. The shift modal prefills `form.role`
+// from this for new shifts; existing shift records' `role` field is
+// always preferred.
+function defaultRoleForSlot(section, dayPart, index) {
+  if (dayPart !== "evening") return null;  // day shifts cover all roles → role stays null
+  const roles = SECTIONS[section] && SECTIONS[section].roles;
+  if (!Array.isArray(roles)) return null;
+  return roles[index] || null;
+}
 
 export function slotsForDay(template) {
   const slots = [];
+
+  // Kitchen day
+  const kitDay = template.kitchen.day;
+  for (let i = 0; i < kitDay.count; i++) {
+    slots.push({
+      key: "kitchen-day-" + i,
+      section: "kitchen",
+      dayPart: "day",
+      slotIndex: i,
+      defaultStart: kitDay.start,
+      defaultEnd: kitDay.end,
+      defaultRole: null,
+      sectionLabel: SECTIONS.kitchen.label,
+      dayPartLabel: "Day",
+      // Day-shift roles are null in the data model (one person covers all
+      // section roles). We still surface the roles list to the modal so it
+      // can show "covers Chef + Plating + Pot".
+      coversRoles: SECTIONS.kitchen.roles,
+      isDay: true,
+      humanLabel: kitDay.count > 1 ? "Kitchen Day " + (i + 1) : "Kitchen Day",
+    });
+  }
+
+  // Kitchen evening
+  const kitEve = template.kitchen.evening;
+  for (let i = 0; i < kitEve.count; i++) {
+    slots.push({
+      key: "kitchen-evening-" + i,
+      section: "kitchen",
+      dayPart: "evening",
+      slotIndex: i,
+      defaultStart: kitEve.start,
+      defaultEnd: kitEve.end,
+      defaultRole: defaultRoleForSlot("kitchen", "evening", i),
+      sectionLabel: SECTIONS.kitchen.label,
+      dayPartLabel: "Evening",
+      eligibleRoles: SECTIONS.kitchen.roles,  // Chef / Plating / Pot
+      isDay: false,
+      humanLabel: "Kitchen Evening " + (i + 1),
+    });
+  }
 
   // FoH day
   const fohDay = template.foh.day;
@@ -90,11 +148,9 @@ export function slotsForDay(template) {
       slotIndex: i,
       defaultStart: fohDay.start,
       defaultEnd: fohDay.end,
+      defaultRole: null,
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Day",
-      // Day-shift roles are null in the data model (one person covers all
-      // section roles). We still surface the roles list to the modal so it
-      // can show "covers Bar + Floor".
       coversRoles: SECTIONS.foh.roles,
       isDay: true,
       humanLabel: fohDay.count > 1 ? "FoH Day " + (i + 1) : "FoH Day",
@@ -112,47 +168,12 @@ export function slotsForDay(template) {
       slotIndex: i,
       defaultStart: start,
       defaultEnd: fohEve.end,
+      defaultRole: defaultRoleForSlot("foh", "evening", i),
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Evening",
       eligibleRoles: SECTIONS.foh.roles,   // Bar or Floor — pick one
       isDay: false,
       humanLabel: "FoH Evening " + (i + 1),
-    });
-  }
-
-  // Kitchen day
-  const kitDay = template.kitchen.day;
-  for (let i = 0; i < kitDay.count; i++) {
-    slots.push({
-      key: "kitchen-day-" + i,
-      section: "kitchen",
-      dayPart: "day",
-      slotIndex: i,
-      defaultStart: kitDay.start,
-      defaultEnd: kitDay.end,
-      sectionLabel: SECTIONS.kitchen.label,
-      dayPartLabel: "Day",
-      coversRoles: SECTIONS.kitchen.roles,
-      isDay: true,
-      humanLabel: kitDay.count > 1 ? "Kitchen Day " + (i + 1) : "Kitchen Day",
-    });
-  }
-
-  // Kitchen evening
-  const kitEve = template.kitchen.evening;
-  for (let i = 0; i < kitEve.count; i++) {
-    slots.push({
-      key: "kitchen-evening-" + i,
-      section: "kitchen",
-      dayPart: "evening",
-      slotIndex: i,
-      defaultStart: kitEve.start,
-      defaultEnd: kitEve.end,
-      sectionLabel: SECTIONS.kitchen.label,
-      dayPartLabel: "Evening",
-      eligibleRoles: SECTIONS.kitchen.roles,  // Chef / Plating / Pot
-      isDay: false,
-      humanLabel: "Kitchen Evening " + (i + 1),
     });
   }
 
@@ -200,6 +221,30 @@ export function deriveCellState(shift, slotDef) {
     shiftId: null,
     hasRecord: false,
   };
+}
+
+// ── Same-day double-booking check (v0.8.0) ───────────────────────────────
+// STRICT rule: a single employee cannot hold more than one shift on the
+// same date — covers day + evening on the same Tuesday too (a 12-hour
+// straight stretch is a labour-law red flag and almost always manager
+// error). Enforced both by filtering the picker dropdown AND by a final
+// guard in the shift modal's save handler.
+//
+// `excludeShiftId` lets the caller skip the shift currently being edited
+// so the assignment doesn't conflict with itself.
+//
+// Returns the FIRST matching shift record, or null.
+export function findSameDayShift(shiftsMap, employeeId, dateIso, excludeShiftId) {
+  if (!employeeId || !dateIso) return null;
+  const all = Object.values(shiftsMap || {});
+  for (let i = 0; i < all.length; i++) {
+    const s = all[i];
+    if (!s.employeeId || s.employeeId !== employeeId) continue;
+    if (s.date !== dateIso) continue;
+    if (excludeShiftId && s.id === excludeShiftId) continue;
+    return s;
+  }
+  return null;
 }
 
 // ── Request ↔ shift conflict matching ────────────────────────────────────

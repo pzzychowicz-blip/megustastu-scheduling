@@ -37,6 +37,15 @@ separate Firebase project, same UI conventions).
 - **Day-shift role coverage:** a single person performs all FoH roles
   (day FoH) or all Kitchen roles (day Kitchen). Evening shifts have one
   specific role per person.
+- **Slot display order (v0.8.0):** Kitchen Day → Kitchen Evening →
+  Front of House Day → Front of House Evening. Same order in the
+  schedule grid (`ScheduleGrid.jsx`) and in the PDF export
+  (`pdf-export.js`) — both drive off `slotsForDay()`.
+- **Evening default roles (v0.8.0):** FoH Evening slot 0/1 → Bar/Floor;
+  Kitchen Evening slot 0/1/2 → Chef/Plating/Pot. Slot index ≥ section's
+  role count → `defaultRole: null` (manager picks). Existing shift
+  records keep their stored role even if empty — only NEW shifts get
+  the prefill.
 - **Employee profile fields:** name, roles (multi-select from the 5),
   fixed-days toggle (default OFF; when ON, lists the contractual workdays),
   shift preference (day / evening / either).
@@ -50,9 +59,22 @@ separate Firebase project, same UI conventions).
 - **Auto-generator:** **Deferred to v1.x** (likely v1.2 or v1.3). v1.0
   ships manual scheduling. When built, the generator is greedy +
   constraint-aware and leaves cells empty rather than violating rules.
-- **Conflict warnings, not blocks:** assigning a staff member outside
-  their stated availability shows a yellow banner; the save still
-  proceeds. Manager judgment overrides.
+- **Conflict semantics (revised v0.8.0):**
+  - **Same-date double-booking is a HARD block.** A single employee
+    cannot hold two shifts on the same date (covers day + evening on
+    the same Tuesday). Enforced by both the picker filter (the
+    employee is hidden from the dropdown) and the save handler
+    (refuses with a red banner if state desyncs).
+  - **Day-off / holiday request conflicts hide-by-default.** Anyone
+    with a covering request is hidden from the picker. A toggle in
+    the modal ("Show staff on day off / holiday") restores them and
+    re-surfaces the yellow conflict banner — the manager can then
+    deliberately override per the v1 "judgment wins" principle.
+  - **Role mismatch is a HARD filter.** Evening picker only shows
+    employees who hold the slot's role. Day picker shows anyone
+    holding any of the section's roles.
+  - **Original v1 banner (v0.4.0):** kept and still fires when the
+    show-all toggle reveals a request-conflicted assignee.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -70,7 +92,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.7.0)
+## File structure (current — v0.8.0)
 
 ```
 megustastu-scheduling/
@@ -92,9 +114,11 @@ megustastu-scheduling/
     │   │                           ROLE_COLORS, REQUEST_TYPES,
     │   │                           DEFAULT_SHIFT_TEMPLATE,
     │   │                           OPERATING_HOURS, WEEKDAYS, DAY_PARTS
-    │   ├── schedule-logic.js       week math + slot enumeration + cell-state
+    │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
+    │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
-    │   │                           isWeekComplete. Pure JS, no React.
+    │   │                           findSameDayShift + isWeekComplete.
+    │   │                           Pure JS, no React.
     │   └── pdf-export.js           landscape-A4 weekly rota → file download
     │                               via jsPDF + jspdf-autotable. Pure JS.
     │                               FoH/Kitchen section divider rows.
@@ -107,9 +131,13 @@ megustastu-scheduling/
         ├── RequestsList.jsx        upcoming/past requests + Add button
         ├── RequestFormModal.jsx    add/edit day-off / holiday modal
         ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile)
-        ├── ShiftFormModal.jsx      assign employee + edit slot time / role
-        │                           + yellow conflict banner when assignee
-        │                           has a request covering the date
+        ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
+        │                           v0.8.0 picker filters: role match,
+        │                           STRICT same-date exclusion, request
+        │                           hide-by-default (with show-all toggle
+        │                           + yellow banner). Save-time same-day
+        │                           guard. Evening slots prefill default
+        │                           role (Bar/Floor, Chef/Plating/Pot).
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
