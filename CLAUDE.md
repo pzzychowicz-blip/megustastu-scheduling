@@ -344,11 +344,42 @@ NOT secrets — Database Rules are the actual security layer.
   never overwrite).
 
 ### Deployment
-1. Replace the relevant file(s) in `src/`.
-2. Commit with descriptive message (e.g. "v0.4.2 — employee form polish").
-3. Push to `main` branch.
-4. Vercel auto-deploys.
-5. Confirm console boot banner shows the new version.
+
+**Rule (locked 2026-05-14): one version per branch.** Every version bump
+ships as its own branch with its own PR — never bundle multiple
+versions on a single branch. If a previous PR is still open when work
+on the next version is ready to start, wait for it to merge first.
+
+Standard flow:
+
+1. After the previous PR merges, `git checkout main && git pull --ff-only`.
+2. Create a new branch off fresh `main` — naming convention
+   `feat/v{X.Y.Z}-{short-slug}` for features (`feat/v0.9.0-polish`),
+   `chore/{slug}` for non-version changes (docs, refactors, tooling).
+3. Make the edits in `src/`.
+4. Bump `__APP_SIGNATURE__` in `src/App.jsx`.
+5. Update `CLAUDE.md` file-structure block + locked-decisions if the
+   change affects either.
+6. Prepend an entry to `REFACTOR_LOG.md`.
+7. `npm run build` — must succeed; note the main-bundle gz size delta.
+8. Commit with descriptive message
+   (e.g. `v0.9.0 — Polish (PDF trim, specialists-first picker, role-pills toggle)`).
+9. `git push -u origin <branch>`.
+10. `gh pr create --base main --head <branch> --title "..." --body "..."`.
+11. Patryk reviews + merges. Vercel auto-deploys from `main`.
+12. Confirm the console boot banner / `window.__MGT_SCHED_BUILD__.version`
+    matches the new version on production.
+
+**Why one-per-branch:**
+- Reverts are surgical — a single bad version reverts cleanly without
+  also yanking unrelated work.
+- PR review stays scoped — reviewer doesn't need to keep two
+  versions' design decisions in their head at once.
+- Vercel preview URLs map 1:1 to versions, making smoke-tests on the
+  preview deployment unambiguous.
+
+**`gh` CLI** is installed at `/opt/homebrew/bin/gh` (not on `$PATH` —
+use absolute path or add `/opt/homebrew/bin` to your shell rc).
 
 ---
 
