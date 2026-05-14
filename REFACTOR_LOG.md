@@ -5,6 +5,129 @@ an entry. Newest first.
 
 ---
 
+## v0.9.0 — Polish (PDF evening trim · specialists-first picker · role-pills toggle)
+
+**Date:** 2026-05-14
+**Behavioural change:** Yes — three small UX refinements:
+
+1. **PDF evening trim.** Exported rotas drop the `· Role` suffix from
+   evening cells (the role is implicit from the row — Kitchen Evening 1
+   is the Chef row by the v0.8.0 default-role policy) and the end-time
+   from evening row labels (it's always the close of service). Day rows
+   and day cells unchanged.
+2. **Picker sorts specialists first.** Within the v0.8.0 role-filtered
+   set, employees with fewer total roles rank higher. Tiebreak
+   alphabetical. The intuition: an employee with one role is the most
+   suitable fit for a slot needing that role (no competing demands
+   across the week). Falls out naturally for day shifts too.
+3. **Role-pills toggle.** New "Display" card in Settings with a
+   `showRolePills` checkbox. When OFF, the small coloured pill next to
+   each filled cell's assignee name disappears. Default ON. Persists
+   to `/settings.showRolePills`. Employees-tab role badges and the
+   role-picker controls inside modals are unaffected (those are
+   controls, not display).
+
+**Scope:** All polish — no new persistence paths, no new dependencies,
+no architectural shifts. Continuation of the v0.7.0 / v0.8.0 cadence
+before the v1.x auto-generator.
+
+### Files modified
+
+- `src/lib/pdf-export.js` — `buildTableBody` row-label generation
+  conditional on `slot.dayPart === "evening"` (start-only) vs
+  default (`start–end`). Cell-content generator drops the
+  `cell.role` branch entirely; always returns `emp.name`.
+- `src/components/ShiftFormModal.jsx` — extended the existing
+  `eligible` useMemo sort. New local `roleCount(e)` helper; sort
+  callback compares role-count first, then alphabetical name.
+- `src/components/Settings.jsx` — extended `hoursForm` with
+  `showRolePills` (defaults to `true` when `/settings` is missing
+  the field, preserving an explicit stored `false`). New `<Section
+  title="Display">` card with a checkbox + helper text. `handleReset`
+  resets `showRolePills` to `true` alongside the operating-hours
+  defaults. Header docstring updated to note v0.9.0 scope.
+- `src/components/AppShell.jsx` — passes `settings={data.settings}`
+  into `<ScheduleGrid>`.
+- `src/components/ScheduleGrid.jsx` — accepts `settings` prop. New
+  `showRolePills` local derived (`!settings || settings.showRolePills
+  !== false` — defensive against an absent or default-true setting).
+  `roleChip` JSX gated on `cell.role && showRolePills`.
+- `src/App.jsx` — `__APP_SIGNATURE__` → `0.9.0`, sha `polish-2`,
+  build `2026-05-14`.
+- `CLAUDE.md` — file-structure block bumped to v0.9.0;
+  `Settings.jsx` / `ShiftFormModal.jsx` / `pdf-export.js`
+  annotations extended. The PDF locked-decision in the functional
+  section now describes the evening-row trim explicitly.
+
+### Locked-decision answers (this session)
+
+| Q | A |
+|---|---|
+| PDF strip scope | Evening only. Evening cells lose role suffix; evening row labels drop the end-time. Day rows + day cells untouched. |
+| Picker tiebreak | Specialists first (`roles.length` asc). Alphabetical secondary key. |
+| Toggle scope | Schedule grid cells only. Employees list badges + request-type badges unaffected. |
+| Toggle default | ON (visible by default; manager opts out). |
+| Toggle persistence | `/settings.showRolePills: boolean`. Whole-object write via existing `saveSettings`. |
+| Settings layout | New `<Section title="Display">` card below "Operating hours". Preserves the per-card narrow-scope pattern. |
+
+### Key design decisions
+
+- **`slot.dayPart` is the right discriminator for the PDF.** Day slots
+  carry `dayPart: "day"`, evening `dayPart: "evening"` — both already
+  set by `slotsForDay()`. No new prop on the slot record needed.
+- **Drop the `cell.role` branch entirely.** A future feature
+  reintroducing per-cell role rendering would have to re-add the
+  branch — but the v1 model says the slot column already identifies
+  the role, so the branch is dead weight, not a parking spot.
+- **`roles.length` as a suitability proxy.** It's the simplest
+  metric that captures "an employee with one role is the tightest
+  fit for that role." Won't surface a "primary role" concept
+  (employee model doesn't have one). If we add one later, we can
+  promote it ahead of the role-count key without breaking the API.
+- **Explicit boolean check on `showRolePills` init.** `settings.showRolePills || true` would silently flip a stored `false`
+  back to `true` because `||` falls back on falsy. The form must
+  treat `false` as a deliberate manager choice. Same pattern was
+  used in v0.7.0 for `operatingStart` (where `|| OPERATING_HOURS.start`
+  was OK because `""` is the only falsy string we care about).
+- **Schedule-grid default is OPEN (show pills).** When `/settings`
+  is empty on a fresh install, we shouldn't render an emptier UI
+  than the manager has ever asked for. The default-true posture
+  also means existing deployments don't suddenly lose their pills
+  after this update.
+- **Day cells are unaffected by the toggle.** Day shift `cell.role`
+  is always `null` (v1 day-shift one-person-covers-all-roles model),
+  so the toggle has nothing to gate on day cells. No special-casing
+  needed.
+- **No `usePersistence.js` changes.** `saveSettings` is a whole-
+  object write helper. Adding a field to the form is invisible
+  to the persistence layer.
+
+### Verification
+
+- [ ] `npm run build` succeeds; main bundle within ~1 KB of v0.8.0.
+- [ ] `npm run dev`; sign in; blue v0.9.0 banner;
+      `window.__MGT_SCHED_BUILD__.version === "0.9.0"`.
+- [ ] PDF: fill every cell of a week → Export. Confirm
+      Kitchen Evening + FoH Evening row labels show `17:00` /
+      `16:00` only (no end-time); Kitchen Day / FoH Day row labels
+      keep the full range (`11:00–16:00`, `11:00–17:00`).
+- [ ] PDF cells: evening cells show assignee NAME only (no
+      `· Bar` / `· Chef`). Day cells unchanged.
+- [ ] Picker: 3 employees A=[Pot], B=[Pot,Chef], C=[Pot,Chef,Plating]
+      → Kitchen Evening 3 picker order: A, B, C. Within ties,
+      alphabetical.
+- [ ] Settings tab: new "Display" card below Operating Hours,
+      checkbox checked by default.
+- [ ] Uncheck → Save → Schedule grid role pills disappear.
+- [ ] Reload → toggle stays unchecked.
+- [ ] Re-check → Save → pills reappear.
+- [ ] Employees tab: role badges always visible (toggle has no
+      effect there).
+- [ ] Mobile viewport: Display card stacks cleanly below Operating
+      Hours; checkbox and helper text readable.
+
+---
+
 ## v0.8.0 — Schedule UX overhaul
 
 **Date:** 2026-05-14

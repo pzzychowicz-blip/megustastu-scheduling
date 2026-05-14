@@ -145,7 +145,19 @@ export default function ShiftFormModal({
       return true;
     });
 
+    // v0.9.0: specialists-first sort. An employee with fewer total roles
+    // is treated as "more suitable" for any single-role slot — they don't
+    // have other roles competing for their attention across the week.
+    // Tiebreak alphabetical by name. Falls out naturally for day shifts
+    // too: a 1-role employee (eligible because their single role is one
+    // of the section's) ranks above multi-role employees, putting the
+    // tightest fit on top.
+    function roleCount(e) {
+      return Array.isArray(e.roles) ? e.roles.length : 0;
+    }
     requestOk.sort(function (a, b) {
+      const rc = roleCount(a) - roleCount(b);
+      if (rc !== 0) return rc;
       return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
     });
 

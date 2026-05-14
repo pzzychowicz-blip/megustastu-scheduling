@@ -70,8 +70,13 @@ function buildTableBody(slots, dates, weekShifts, employees) {
       rows.push(sectionDividerRow(slot.section, totalCols));
       lastSection = slot.section;
     }
-    // Left column: "FoH Evening 1\n17:00–23:00".
-    const labelCell = slot.humanLabel + "\n" + slot.defaultStart + "–" + slot.defaultEnd;
+    // Left column. v0.9.0: evening rows show start-only — the end-time
+    // is implicit (close of service) and made the rota noisier than
+    // necessary on a printed sheet. Day rows keep the full range since
+    // their end-time isn't a service boundary.
+    const labelCell = slot.dayPart === "evening"
+      ? slot.humanLabel + "\n" + slot.defaultStart
+      : slot.humanLabel + "\n" + slot.defaultStart + "–" + slot.defaultEnd;
     const dayCells = dates.map(function (d) {
       const dIso = isoDate(d);
       const existing = findShiftForSlot(weekShifts, dIso, slot);
@@ -81,7 +86,10 @@ function buildTableBody(slots, dates, weekShifts, employees) {
       // be defensive — a stale isWeekComplete call against an updated
       // shifts map could in theory let an empty cell slip through.
       if (!emp) return "";
-      if (cell.role) return emp.name + " · " + cell.role;
+      // v0.9.0: cells render the assignee name only. The role is
+      // implicit from the slot column on the left of the row
+      // (e.g., the "Kitchen Evening 1" row is the Chef row by the
+      // v0.8.0 default-role policy).
       return emp.name;
     });
     rows.push([labelCell, ...dayCells]);

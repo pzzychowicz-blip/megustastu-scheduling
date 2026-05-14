@@ -55,7 +55,11 @@ separate Firebase project, same UI conventions).
 - **Requests module:** manager enters all day-off and holiday records on
   staff's behalf (staff communicate via WhatsApp / in person).
 - **Export:** PDF in horizontal spreadsheet layout. Available **only when
-  the schedule is fully complete** (no empty cells).
+  the schedule is fully complete** (no empty cells). v0.9.0: evening
+  cells render assignee name only (the role is implicit from the row);
+  evening row labels show start time only (the end is the close of
+  service and was visual noise on the printed sheet). Day rows keep
+  the full `start–end` range.
 - **Auto-generator:** **Deferred to v1.x** (likely v1.2 or v1.3). v1.0
   ships manual scheduling. When built, the generator is greedy +
   constraint-aware and leaves cells empty rather than violating rules.
@@ -92,7 +96,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.8.0)
+## File structure (current — v0.9.0)
 
 ```
 megustastu-scheduling/
@@ -122,6 +126,8 @@ megustastu-scheduling/
     │   └── pdf-export.js           landscape-A4 weekly rota → file download
     │                               via jsPDF + jspdf-autotable. Pure JS.
     │                               FoH/Kitchen section divider rows.
+    │                               v0.9.0: evening cells = name only,
+    │                               evening row labels = start time only.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, TBadge, mkInp, mkBtn
         ├── LoginScreen.jsx         email/password sign-in form
@@ -138,10 +144,14 @@ megustastu-scheduling/
         │                           + yellow banner). Save-time same-day
         │                           guard. Evening slots prefill default
         │                           role (Bar/Floor, Chef/Plating/Pot).
+        │                           v0.9.0: picker sorts specialists
+        │                           first (role-count asc, then name).
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
         │                           validated against operating window.
+        │                           v0.9.0: + Display card with
+        │                           showRolePills toggle.
         └── ExportButton.jsx        Export-PDF button in the week-nav bar;
                                     disabled until every cell is filled
 ```
