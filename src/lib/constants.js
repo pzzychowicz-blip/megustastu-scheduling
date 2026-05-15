@@ -101,11 +101,18 @@ export const S = Object.freeze({
   muted: { margin: 0, fontSize: 12, color: "#6e6e73" },
 
   // Generic surfaces
+  // v0.10.2: strengthened so soft surfaces read as discrete blocks against
+  // the outer card (rgba(255,255,255,0.45)) instead of dissolving into it.
+  //   - background 0.55 → 0.78  (more opaque, still translucent)
+  //   - border was whitish (rgba(255,255,255,0.4)) — invisible on light
+  //     gradient; now a darker hairline (rgba(60,60,67,0.15))
+  //   - subtle elevation shadow for depth
   surfaceSoft: {
-    background: "rgba(255,255,255,0.55)",
-    border: "1px solid rgba(255,255,255,0.4)",
+    background: "rgba(255,255,255,0.78)",
+    border: "1px solid rgba(60,60,67,0.15)",
     borderRadius: 12,
     padding: 12,
+    boxShadow: "0 1px 2px rgba(0,0,0,0.03), 0 6px 16px rgba(0,0,0,0.04)",
   },
 
   // Inputs (inset shadow for depth, matches Bookings)

@@ -5,6 +5,114 @@ an entry. Newest first.
 
 ---
 
+## v0.10.2 — Schedule + Settings readability polish (pre-dark-mode)
+
+**Date:** 2026-05-15
+**Behavioural change:** None — pure visual hierarchy pass. No data
+model, persistence, or interaction changes. The Schedule grid and
+Settings accordion both gain stronger surface contrast so the layout
+holds up on the light theme. Dark mode (v0.11.0) is a colour swap on
+top of these structures, not a structural redesign.
+
+Four visual fixes that share a common cause: too many surfaces in the
+near-white opacity range (card 0.45, soft 0.55, label cells none)
+collapsed into one undifferentiated mass against the
+`#f3f5f8 → #e7ecf2` page gradient.
+
+1. **`S.surfaceSoft` strengthened.** Background 0.55 → 0.78 white;
+   border swapped from a whitish 0.4 (invisible on light bg) to a
+   dark-toned 0.15 hairline; soft elevation shadow added. Cascades
+   to every `Collapsible` (Settings accordion), `Section` atom,
+   and mobile day-card in the schedule.
+2. **Schedule section-header bands.** The tiny left-aligned uppercase
+   label spanning the grid becomes a centred banded row with its
+   own surface and a `marginTop` on subsequent sections — visually
+   splitting the four section groups (Kitchen Day, Kitchen Evening,
+   FoH Day, FoH Evening) into four discrete bands.
+3. **Date pill row.** Bare day labels above the grid become soft pills;
+   today's date is highlighted in iOS-blue. Anchors each column for
+   the eye.
+4. **Slot label cells become chips.** The left column was bare text on
+   the card. Now each label sits in a soft chip with human label on
+   top and default time muted beneath — a continuous lane of chips.
+
+Mobile inherits the constants change automatically; the sub-section
+header inside each day card is upgraded to match the desktop band
+style (centred, soft surface, uppercase tracked).
+
+**Scope:** UI readability. Zero logic changes.
+
+### Files modified
+
+- `src/lib/constants.js` — `S.surfaceSoft` reshaped (background,
+  border, boxShadow). Comment explains the v0.10.2 rationale.
+- `src/components/ScheduleGrid.jsx` —
+  - `todayIso` memo added at top of component (one Date stringify
+    per render, not 7).
+  - `renderSectionHeader(slot, isFirst)` reshaped to a centred
+    banded row with neutral tint + `marginTop` on subsequent
+    sections.
+  - Date header divs replaced with soft pills; today highlighted.
+  - Slot label cell replaced with a chip surface (label + muted
+    time).
+  - Mobile section sub-header tightened to a centred soft band.
+- `src/App.jsx` — `__APP_SIGNATURE__` → `0.10.2`, sha
+  `readability-polish`, build `2026-05-15`.
+- `CLAUDE.md` — file-structure annotations on `ScheduleGrid.jsx`
+  and `constants.js` updated with the v0.10.2 line.
+- `REFACTOR_LOG.md` — this entry prepended.
+
+### Locked-decision answers (this version)
+
+| Q | A |
+|---|---|
+| Section grouping shape | Banded background per group, centred header above. Chosen over coloured stripes / minimal divider rules because it gives the strongest at-a-glance group anchoring without competing with the role-pill colour budget. |
+| Section colour treatment | Neutral for all sections (single grey tint). Colour budget stays reserved for role pills and status palette. |
+| Date header style | Soft white pills with today highlighted in iOS-blue. Stronger than text-only, lighter than a fixed card-style bar. |
+| Version classification | Patch (`v0.10.2`). No behavioural change, but a structural visual reshape. Dark mode remains earmarked for `v0.11.0`. |
+| Vertical column rules | Deferred. The date pill row + section bands give enough column anchoring; we'll add inset-shadow column rules in a follow-up only if smoke-testing shows the anchoring isn't enough. |
+| Atom changes | None. `Collapsible` / `Toggle` / `Section` all compose from `S.surfaceSoft`, so the constants bump propagates automatically. |
+
+### Key design decisions
+
+- **Tokens first, components second.** One token change in
+  `constants.js` lifts every soft surface in the app. The
+  alternative — editing every component — would have spread the
+  change across half a dozen files and made dark mode harder.
+- **Land structural fixes BEFORE dark mode.** Solving readability
+  in the light theme means v0.11.0 is a palette swap, not a
+  redesign. CSS-variable lift happens in v0.11.0; for v0.10.2 the
+  tokens stay as inline rgba.
+- **Section bands are inline rows, not wrapping divs.** CSS grid
+  + `display: contents` means each row's cells participate in the
+  parent's column template. A wrapping div per section group
+  would break column alignment across sections. Solution: the
+  band is itself a row that spans all 8 columns
+  (`gridColumn: "1 / -1"`); its `marginTop` creates the visual
+  split.
+- **No new backdrop-filter.** The ≤4 blur instances rule stays
+  untouched. New surfaces use opaque-ish white + dark hairline
+  border + drop shadow for depth, not blur.
+
+### Verification
+
+- `npm run build` — clean (see bundle delta below).
+- Manual QA on `npm run dev`:
+  - Settings: each `Collapsible` reads as a discrete block above
+    the card, with visible border + soft elevation. Toggle-open
+    behaviour unchanged.
+  - Schedule (desktop): four centred banded section headers with
+    visible breathing room between them. Date pill row at top
+    with today highlighted. Left column is a continuous lane of
+    chips. Cells unchanged.
+  - Schedule (mobile): each day card surface is now clearly
+    visible; inner section sub-headers are centred bands.
+  - ShiftFormModal still opens; assign + save works; PDF export
+    gating intact.
+  - No console errors, no write-guard banner.
+
+---
+
 ## v0.10.1 — Toggle conversion in ShiftFormModal + workflow rules
 
 **Date:** 2026-05-14
