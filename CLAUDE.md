@@ -434,38 +434,50 @@ NOT secrets — Database Rules are the actual security layer.
 ### Local preview server — MANDATORY (locked 2026-05-16)
 
 **For any session that touches visual code** (styling, layout, UI tokens,
-PDF export, component structure), **start a local preview server at the
+PDF export, component structure), **start a local dev server at the
 beginning of the session and keep it running throughout.** Patryk reviews
 changes against the running URL after each iteration; without it, every
 tweak has to be re-explained from a code diff instead of seen.
 
 Default flow:
-1. `npm run build && npm run preview` (in the background) — serves the
-   prod bundle on `http://localhost:4173/`, hits the **PROD** Firebase
-   project, so Patryk can sign in with real credentials and review
-   against real data.
-2. After every code change that affects what's rendered, run
-   `npm run build` again. Vite's preview server picks up the new
-   `dist/` on the next hard-refresh (⌘⇧R) — no server restart needed.
-3. Tell Patryk the URL whenever you start the server, and remind him
-   to hard-refresh after each rebuild.
+1. `npm run dev` (in the background) — Vite dev server on
+   `http://localhost:5173/` (or 5174 if 5173 is in use). Hot-reloads on
+   every save, so Patryk sees changes immediately without rebuilds.
+   **Hits the DEV Firebase project** (`megustastu-bookings-dev`) — the
+   safe sandbox. DO NOT default to `npm run preview` (which hits PROD)
+   — writes during inspection would mutate live restaurant data.
+2. Tell Patryk the URL whenever you start the server. Vite's HMR means
+   no manual rebuild after edits — most changes appear in <1s.
+3. If a change doesn't appear, suggest a hard-refresh (⌘⇧R).
 
-Why preview over `npm run dev`:
-- `npm run dev` uses the DEV Firebase project (`megustastu-bookings-dev`),
-  which doesn't have Patryk's auth credentials set up reliably. Past
-  sessions hit `auth/invalid-credential` errors. Preview uses PROD.
-- **Caveat for prod preview:** writes hit live PROD data. Visual
-  inspection only — don't click Save in Settings, don't assign cells,
-  don't add employees/requests during a preview session unless that's
-  the explicit intent.
+Why DEV, not PROD:
+- DEV is the sandbox by design. PROD writes during inspection are
+  dangerous — one accidental Save click could mutate live employee /
+  request / shift data.
+- DEV has its own Auth user pool. The DEV user (Authentication →
+  Users in the `megustastu-bookings-dev` Firebase Console) MUST be
+  set up before any visual session, with Email/Password sign-in
+  enabled under Authentication → Sign-in method. If sign-in returns
+  `auth/invalid-credential`, fix the DEV project before proceeding —
+  do NOT pivot to PROD as a shortcut.
 
-When to skip:
+When `npm run preview` is appropriate (rare):
+- Verifying the production build output specifically (chunk splitting,
+  bundle size sanity, prod-only edge cases). Tell Patryk explicitly
+  it's hitting PROD and that he must not click Save / assign / mutate.
+
+When to skip the server entirely:
 - Pure logic / hook changes with no visual surface (e.g., editing
   schedule-logic.js helpers, pdf-export.js internals that don't
   change output, persistence write-guards).
 - Doc-only commits (CLAUDE.md, REFACTOR_LOG.md).
 - Session begins with a planning / exploration question — start the
   server once code edits begin.
+
+PDF export caveat: PDF generation runs entirely in the browser
+(jsPDF), so it works the same on DEV as on PROD. The schedule data
+will be DEV data (sparse / empty unless seeded), so a complete-week
+test export may require seeding employees + shifts in DEV first.
 
 ### Deployment
 
