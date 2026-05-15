@@ -59,6 +59,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   const [weekStart, setWeekStart] = useState(function () { return startOfWeek(new Date()); });
   const dates = useMemo(function () { return weekDates(weekStart); }, [weekStart]);
 
+  // v0.10.2: cache today's ISO once per render so the date-pill loop
+  // doesn't restringify a Date on every column.
+  const todayIso = useMemo(function () { return isoDate(new Date()); }, []);
+
   function goPrev()  { setWeekStart(function (d) { return addDays(d, -7); }); }
   function goNext()  { setWeekStart(function (d) { return addDays(d, 7); }); }
   function goToday() { setWeekStart(startOfWeek(new Date())); }
@@ -169,18 +173,28 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   }
 
   // ── Section-header row for desktop grid ──────────────────────────────
-  function renderSectionHeader(slot) {
+  // v0.10.2: centred banded row spanning all 8 columns. Acts as the
+  // visual anchor for the N slot rows below it. `isFirst` controls the
+  // top gap so the first section sits flush with the date pill row;
+  // subsequent sections get a `marginTop` to create the visible split
+  // between groups.
+  function renderSectionHeader(slot, isFirst) {
     return (
       <div
         key={"hdr-" + slot.section + "-" + slot.dayPart}
         style={{
           gridColumn: "1 / -1",
-          padding: "10px 6px 4px",
+          marginTop: isFirst ? 0 : 10,
+          padding: "8px 12px",
+          background: "rgba(0,0,0,0.04)",
+          border: "1px solid rgba(0,0,0,0.06)",
+          borderRadius: 8,
           fontSize: 11,
           fontWeight: 700,
-          letterSpacing: "0.04em",
+          letterSpacing: "0.06em",
           textTransform: "uppercase",
-          color: "#6e6e73",
+          color: "#3a3a3c",
+          textAlign: "center",
         }}
       >
         {slot.sectionLabel} · {slot.dayPartLabel}
@@ -230,18 +244,26 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           minWidth: 880,
         }}
       >
-        {/* Top-left empty + day headers */}
+        {/* Top-left empty + day pills.
+            v0.10.2: each date sits in a soft pill so the column header
+            row reads as a real anchor for its day. Today's date gets
+            the iOS-blue accent. */}
         <div />
         {dates.map(function (d) {
+          const dayIso = isoDate(d);
+          const isToday = dayIso === todayIso;
           return (
             <div
-              key={"day-" + d.toISOString()}
+              key={"day-" + dayIso}
               style={{
-                padding: "6px 4px",
+                padding: "6px 8px",
                 fontSize: 12,
                 fontWeight: 600,
-                color: "#3a3a3c",
+                borderRadius: 10,
                 textAlign: "center",
+                background: isToday ? "rgba(0,122,255,0.12)" : "rgba(255,255,255,0.7)",
+                border: isToday ? "1px solid rgba(0,122,255,0.45)" : "1px solid rgba(0,0,0,0.06)",
+                color: isToday ? "#004ec2" : "#1c1c1e",
               }}
             >
               {formatDayHeader(d)}
@@ -255,21 +277,28 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           const showHeader = i === 0 || isSectionBoundary(prev, slot);
           return (
             <div key={"row-" + slot.key} style={{ display: "contents" }}>
-              {showHeader ? renderSectionHeader(slot) : null}
+              {showHeader ? renderSectionHeader(slot, i === 0) : null}
+              {/* v0.10.2: label cell becomes a soft chip so the left
+                  column is a continuous lane instead of bare text on
+                  the card. Human label on top, default time muted below. */}
               <div
                 style={{
-                  padding: "4px 8px",
-                  fontSize: 12,
-                  color: "#3a3a3c",
-                  fontWeight: 500,
+                  background: "rgba(255,255,255,0.6)",
+                  border: "1px solid rgba(0,0,0,0.06)",
+                  borderRadius: 8,
+                  padding: "6px 10px",
                   display: "flex",
-                  alignItems: "center",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  fontSize: 12,
+                  color: "#1c1c1e",
+                  fontWeight: 600,
                 }}
               >
-                {slot.humanLabel.replace(slot.sectionLabel + " ", "")}
-                <span style={{ ...S.muted, marginLeft: 6 }}>
+                <div>{slot.humanLabel.replace(slot.sectionLabel + " ", "")}</div>
+                <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
                   {slot.defaultStart}–{slot.defaultEnd}
-                </span>
+                </div>
               </div>
               {dates.map(function (d) { return renderCell(d, slot); })}
             </div>
@@ -315,10 +344,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                           style={{
                             fontSize: 10,
                             fontWeight: 700,
-                            color: "#6e6e73",
-                            letterSpacing: "0.04em",
+                            color: "#3a3a3c",
+                            letterSpacing: "0.06em",
                             textTransform: "uppercase",
-                            marginTop: i === 0 ? 0 : 4,
+                            marginTop: i === 0 ? 0 : 6,
+                            padding: "4px 8px",
+                            background: "rgba(0,0,0,0.04)",
+                            border: "1px solid rgba(0,0,0,0.06)",
+                            borderRadius: 6,
+                            textAlign: "center",
                           }}
                         >
                           {slot.sectionLabel} · {slot.dayPartLabel}

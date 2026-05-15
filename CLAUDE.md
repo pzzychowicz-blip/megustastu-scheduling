@@ -103,7 +103,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.10.1)
+## File structure (current — v0.10.2)
 
 ```
 megustastu-scheduling/
@@ -124,7 +124,11 @@ megustastu-scheduling/
     │   ├── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
     │   │                           ROLE_COLORS, REQUEST_TYPES,
     │   │                           DEFAULT_SHIFT_TEMPLATE,
-    │   │                           OPERATING_HOURS, WEEKDAYS, DAY_PARTS
+    │   │                           OPERATING_HOURS, WEEKDAYS, DAY_PARTS.
+    │   │                           v0.10.2: S.surfaceSoft strengthened
+    │   │                           (0.78 white, dark hairline border,
+    │   │                           soft elevation shadow) — cascades to
+    │   │                           Collapsible / Section / mobile day-cards.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -144,7 +148,13 @@ megustastu-scheduling/
         ├── EmployeeFormModal.jsx   add/edit employee modal
         ├── RequestsList.jsx        upcoming/past requests + Add button
         ├── RequestFormModal.jsx    add/edit day-off / holiday modal
-        ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile)
+        ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile).
+        │                           v0.10.2: date pill row (today
+        │                           highlighted), centred banded section
+        │                           headers spanning all columns with
+        │                           marginTop split between groups,
+        │                           label-cell chips in the left column;
+        │                           mobile sub-headers reshaped to match.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
