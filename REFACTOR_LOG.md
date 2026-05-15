@@ -5,6 +5,214 @@ an entry. Newest first.
 
 ---
 
+## v0.11.0 — Dark mode (CSS vars + system-pref follow) + PDF polish
+
+**Date:** 2026-05-15 → 2026-05-16
+**Behavioural change:** New theming model. Adds a Dark mode Toggle in
+Settings → Display. Default = follow OS `prefers-color-scheme`; flipping
+the toggle saves an explicit boolean that overrides system pref from
+that point on. PDF export stays light regardless.
+
+Underneath: every visual token now reads from a CSS custom property.
+`:root` in `index.html` holds light values; `[data-theme="dark"]`
+overrides for dark. Theme flip = one DOM attribute change. Zero React
+re-renders.
+
+### What landed
+
+1. **CSS variable token system.** `index.html` carries a `:root` +
+   `[data-theme="dark"]` block defining ~80 tokens covering body,
+   card, soft surface, input, text, accent, status palette, role
+   channels, hairlines, button states, overlay, danger/warning
+   surfaces, employee status pill, Toggle atom, dot glow, and shadows.
+2. **`constants.js` refactor.** Every value in `S`, `BTN`,
+   `STATUS_COLORS`, `ROLE_COLORS` now references `var(--…)` strings.
+   Zero rgba/hex literals remain in JS. ROLE_COLORS specifically
+   holds RGB channel triplets (`"var(--role-bar-rgb)"`) so callers
+   keep the alpha-on-the-fly composition pattern via
+   `rgba(${rgb}, 0.2)`.
+3. **`useThemeMode` hook.** New file. Takes an `explicitPref` (true /
+   false / undefined) and writes `data-theme`. When undefined,
+   subscribes to `prefers-color-scheme` so OS-level theme flips
+   propagate live. Returns the resolved `isDark` for the caller.
+4. **AppShell wires the hook.** Reads `data.settings?.darkMode`,
+   passes to `useThemeMode`, then forwards `isDark` to Settings as
+   a prop.
+5. **Settings → Display gets the Toggle.** Auto-saves the boolean
+   like the Show role pills toggle. Helper line reads "Following
+   your system preference. Tap to override." while
+   `settings.darkMode === undefined`; collapses once explicit.
+6. **Component-level inline literals removed.** Every component file
+   that previously hardcoded rgba/hex (AppShell tab nav, LoginScreen
+   card + error banner, ScheduleGrid v0.10.2 colours, atoms Overlay /
+   Collapsible dot / Toggle track + knob, ShiftFormModal banners +
+   role chips, EmployeeFormModal role/weekday/preference segments +
+   active/fixedDays pills, EmployeesList + RequestsList rows,
+   RequestFormModal type segments + error text, Settings error
+   text) now references CSS vars.
+7. **No-flash inline script.** `index.html` runs a tiny IIFE before
+   React mounts that reads `prefers-color-scheme` and sets
+   `data-theme` so the page doesn't paint the wrong theme during
+   the JS boot.
+8. **Dark palette tuning.** Status colours, role channels, accent,
+   surfaces all retuned for dark backgrounds (Apple system dark
+   variants where applicable — systemBlue → #0A84FF, systemOrange
+   dark → #FFB340, etc).
+9. **Late-session UI polish.** Drop shadow (`--shadow-soft`) cascaded
+   to the Employees + Requests list rows, every chip / section / cell
+   in the Schedule grid (date pills, banded section headers, label
+   chips, shift cells), and the entire button system (via `BTN.base`).
+   Schedule section headers bumped to fontWeight 800 + fontSize 12 +
+   text-primary colour for stronger emphasis. The shadow uses
+   `var(--shadow-soft)` so it auto-retunes for dark mode.
+10. **PDF generator reworked to mirror the UI layout (light only —
+    print legibility).**
+    - Section dividers now fire on every (section, dayPart) boundary
+      (4 bands: "KITCHEN · DAY", "KITCHEN · EVENING", "FRONT OF
+      HOUSE · DAY", "FRONT OF HOUSE · EVENING") instead of one per
+      section. Centred uppercase, regular weight on darker grey fill.
+    - Body cell employee names rendered **bold** for emphasis.
+    - Date header row + label column polished (slightly more padding,
+      label column gets its own off-white fill).
+    - Zebra striping: Tuesday / Thursday / Saturday columns get a
+      subtle darker fill (`[243, 243, 247]`) so the seven-day grid
+      reads at print resolution.
+    - Vertical (column) borders bumped to 1.2pt; horizontals stay
+      0.4pt. Column dividers dominate the grid as in the UI.
+    - PDF stays light regardless of in-app theme — locked decision
+      reaffirmed for print legibility / ink economics. `pdf-export.js`
+      contains zero CSS var refs.
+11. **Workflow rule codified (CLAUDE.md → Local preview server —
+    MANDATORY).** Visual sessions must start `npm run preview` at
+    the beginning and keep it running. After each change: rebuild,
+    hard-refresh. `npm run dev` is avoided because the DEV Firebase
+    project has unreliable auth (`auth/invalid-credential` errors
+    during this session). Preview hits PROD — read-only inspection
+    flow, no Save clicks during pure visual review. Memory backstop
+    saved to `feedback_local_preview_mandatory.md`.
+
+**Scope:** ~14 source files + 2 docs. Pure visual / theming —
+zero data-model or persistence changes (apart from a new optional
+`settings.darkMode` boolean).
+
+### Files modified
+
+- `index.html` — `:root` + `[data-theme="dark"]` CSS variable
+  blocks; body gradient now reads `var(--bg-app-from / to)`;
+  inline no-flash script before `<div id="root">`.
+- `src/lib/constants.js` — full token refactor; comments explain
+  the new CSS-var-backed shape; ROLE_COLOR_FALLBACK added.
+- `src/hooks/useThemeMode.js` — NEW. ~50 lines. Pure JS, no JSX.
+- `src/App.jsx` — `__APP_SIGNATURE__` → `0.11.0`, sha
+  `dark-mode`, build `2026-05-15`. No other changes (theme
+  effect lives in AppShell, not here).
+- `src/components/AppShell.jsx` — imports `useThemeMode`; reads
+  `data.settings?.darkMode`; passes `isDark` to Settings.
+  Warning banner + tab-nav rgbas replaced with vars.
+- `src/components/Settings.jsx` — new `isDark` prop; new
+  `onDarkModeChange` auto-save handler; new `Dark mode` Toggle
+  in Display section (after Show role pills); both validator
+  error lines (`#9a1f17`) now `var(--text-danger)`.
+- `src/components/ScheduleGrid.jsx` — role-chip alpha composition
+  switched from hex + concat (`+ "33"`) to `rgba(var(--role-x-rgb), 0.2)`.
+  Desktop date pills, label chips, banded section headers,
+  week-range text, mobile section sub-headers, mobile day card
+  headers all use vars now.
+- `src/components/atoms.jsx` — Overlay backdrop + sheet,
+  Collapsible dirty dot + chevron + border, Toggle label /
+  track / knob / shadows — all vars.
+- `src/components/LoginScreen.jsx` — card + error banner colours
+  to vars.
+- `src/components/ShiftFormModal.jsx` — red save-error banner,
+  yellow conflict banner, role chip picker (same alpha refactor
+  as ScheduleGrid), error text lines — all vars.
+- `src/components/EmployeeFormModal.jsx` — role grid, preference
+  segments, weekday segments, active pill, fixedDays toggle button
+  — all vars.
+- `src/components/EmployeesList.jsx` — role chip TBadge palette
+  composes alpha from rgb triplet; row backgrounds + name text
+  to vars.
+- `src/components/RequestsList.jsx` — type-meta fallback palette
+  swapped from `#eee` to `--status-open-*`; row backgrounds + date
+  + name text to vars.
+- `src/components/RequestFormModal.jsx` — type segments + error
+  text to vars.
+- `CLAUDE.md` — file-structure header v0.11.0; new annotations on
+  `index.html`, `useThemeMode.js`, `constants.js`, `Settings.jsx`;
+  three new locked decisions (Theming model, Theme resolution,
+  PDF export stays light).
+- `REFACTOR_LOG.md` — this entry prepended.
+
+Bundle (main): **150.30 kB gz** (+0.17 kB vs v0.10.2 — the new
+hook + dark-mode toggle additions). `index.html` grows from 0.50
+to 3.16 kB gz because of the CSS variable block.
+
+### Locked-decision answers (this version)
+
+| Q | A |
+|---|---|
+| Preference model | Manual boolean Toggle, default = system preference. First load resolves from `prefers-color-scheme`; once the user flips the toggle, the explicit value sticks. Chosen over tri-state auto/light/dark for simplicity — can be promoted later if needed. |
+| Token strategy | CSS custom properties + `data-theme` on `<html>`. Chosen over ThemeContext after explicit cost comparison: 4–5 files vs 12+, zero React re-renders vs every consumer re-rendering, portable to Bookings later vs one-off. |
+| Accent retune | Yes, both ROLE_COLORS and STATUS_COLORS tuned for dark mode. Role channels use Apple's dark system variants (#FFB340, #64B5FF, #FF453A, #BF5AF2, #98989D). Status palette amped to brighter foreground colours on darker tinted backgrounds. |
+| Overlay scope | Included in v0.11.0. Modal backdrop deepens to rgba(0,0,0,0.55) in dark; sheet flips to rgba(28,28,30,0.95). |
+| PDF export theme | Stays light regardless of in-app theme. Print legibility + ink economics. `pdf-export.js` doesn't read CSS vars. |
+| Initial paint strategy | Inline script in `index.html` reads `prefers-color-scheme` synchronously before the React mount, so dark-mode users don't see a light flash during boot. |
+| `useThemeMode` placement | Called from AppShell (which owns settings). LoginScreen doesn't call it — relies on the inline script's initial paint. Edge case: if user changes OS theme while on LoginScreen, the page doesn't react until sign-in. Acceptable for a manager-only app. |
+
+### Key design decisions
+
+- **Tokens in CSS, not JS.** The theme decision belongs at the layer
+  that already knows how to swap values cheaply (CSS). Pushing it
+  into React state means every component re-renders on theme flip,
+  for no UX gain. CSS vars also keeps the token shape portable —
+  Bookings can lift the `<style>` block + the constants pattern
+  later without rewiring its component tree.
+- **RGB triplets for roles, not pre-baked colours.** ROLE_COLORS
+  callers want different alpha at different surfaces (chip bg at
+  0.2, text at full, border at 0.4). Storing channels as
+  `"var(--role-bar-rgb)"` (resolving to `255, 159, 10`) and
+  composing `rgba(${rgb}, 0.2)` at the use site keeps the same
+  flexibility hex+concat had, but theme-aware.
+- **No-flash inline script.** Without it, a system-dark user would
+  see a brief light flash on every page load (HTML defaults to
+  `data-theme="light"`; React effect runs after first paint).
+  One IIFE solves it. Standard pattern.
+- **`useThemeMode` returns `isDark` AND writes `data-theme`.**
+  Single source of truth: the DOM attribute IS the theme. React
+  state IS the UI's view of "what's currently applied" so the
+  Toggle reflects it. Both stay in sync because the hook updates
+  both.
+- **PDF stays light.** Locked separately: printed rotas need to
+  remain ink-economic and legible on paper. Hard rule: pdf-export.js
+  never reads CSS vars. Apple's own Mail / Pages do the same.
+
+### Verification
+
+- `npm run build` — clean. 310 modules transformed (was 309).
+- Manual QA on `npm run dev`:
+  - Page boot follows OS theme (try with macOS in dark mode and light
+    mode); no flash on either.
+  - Sign in; Schedule renders with appropriate light/dark palette
+    matching the OS pref.
+  - Settings → Display has a new "Dark mode" Toggle with helper text
+    "Following your system preference. Tap to override." while
+    `settings.darkMode` is undefined.
+  - Flip the Toggle ON — entire app re-paints to dark within a frame
+    (CSS var flip, no React reconciliation). Helper text disappears
+    (now explicit).
+  - Refresh: setting persists; theme stays dark independent of OS.
+  - Flip Toggle OFF — back to light, helper still hidden (still
+    explicit, just light now).
+  - Modal: open a ShiftFormModal in dark mode — backdrop deepens,
+    sheet flips to dark.
+  - Role pills retune in dark mode (try Bar, Floor, Chef pills).
+  - PDF export downloads same light-themed PDF in both themes.
+  - Sign out → LoginScreen renders in whatever theme was last applied;
+    no console errors.
+  - No write-guard banner.
+
+---
+
 ## v0.10.2 — Schedule + Settings readability polish (pre-dark-mode)
 
 **Date:** 2026-05-15

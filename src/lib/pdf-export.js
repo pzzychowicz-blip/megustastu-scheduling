@@ -29,7 +29,6 @@ import {
   findShiftForSlot,
   deriveCellState,
 } from "./schedule-logic.js";
-import { SECTIONS } from "./constants.js";
 
 function pad2(n) { return String(n).padStart(2, "0"); }
 
@@ -38,37 +37,46 @@ function nowStamp() {
   return isoDate(now) + " " + pad2(now.getHours()) + ":" + pad2(now.getMinutes());
 }
 
-// Phase v0.7.0: section-divider row factory. Produces a single full-width
-// header cell using jspdf-autotable's `colSpan` mechanic, which collapses a
-// row down to one cell that spans the column count (1 label + 7 days = 8).
-// Visual cue between FoH and Kitchen slot groups in the printout.
-function sectionDividerRow(sectionKey, totalCols) {
+// v0.7.0: section-divider row factory. Produces a single full-width header
+// cell using jspdf-autotable's `colSpan` mechanic, which collapses a row
+// down to one cell spanning the column count (1 label + 7 days = 8).
+//
+// v0.11.0: mirrors the in-app Schedule grid — one band per (section,
+// dayPart) instead of one per section. Format "KITCHEN · DAY",
+// centred + bold + uppercase, fill slightly darker than the date row so
+// it reads as the dominant horizontal divider.
+function sectionHeaderRow(slot, totalCols) {
   return [{
-    content: SECTIONS[sectionKey].label,
+    content: (slot.sectionLabel + " · " + slot.dayPartLabel).toUpperCase(),
     colSpan: totalCols,
     styles: {
-      fillColor: [230, 230, 230],
-      textColor: [60, 60, 60],
-      fontStyle: "bold",
-      halign: "left",
+      fillColor: [220, 220, 224],
+      textColor: [30, 30, 30],
+      fontStyle: "normal",
+      fontSize: 10,
+      halign: "center",
+      cellPadding: 5,
     },
   }];
 }
 
 // Build the (1 + 7)-column table rows from slots × dates.
 //
-// Slots arrive grouped by section + day-part (FoH day → FoH evening →
-// Kitchen day → Kitchen evening) from `slotsForDay(template)`. v0.7.0
-// injects a divider row at every section boundary, including before the
-// first slot, so both FoH and Kitchen get a labelled header band.
+// Slots arrive grouped by section + day-part (Kitchen day → Kitchen
+// evening → FoH day → FoH evening since v0.8.0) from
+// `slotsForDay(template)`. v0.11.0 injects a section-header row at
+// every (section, dayPart) boundary so the four groups read as four
+// discrete bands, matching the in-app banded layout.
 function buildTableBody(slots, dates, weekShifts, employees) {
   const totalCols = 1 + dates.length;
   const rows = [];
   let lastSection = null;
+  let lastDayPart = null;
   slots.forEach(function (slot) {
-    if (slot.section !== lastSection) {
-      rows.push(sectionDividerRow(slot.section, totalCols));
+    if (slot.section !== lastSection || slot.dayPart !== lastDayPart) {
+      rows.push(sectionHeaderRow(slot, totalCols));
       lastSection = slot.section;
+      lastDayPart = slot.dayPart;
     }
     // Left column. v0.9.0: evening rows show start-only — the end-time
     // is implicit (close of service) and made the rota noisier than
@@ -125,19 +133,41 @@ export function exportWeekPdf({ weekStart, slots, weekShifts, employees }) {
       fontSize: 9,
       cellPadding: 6,
       lineColor: [200, 200, 200],
-      lineWidth: 0.5,
+      // v0.11.0: thicker vertical (column) dividers, thinner horizontal
+      // (row) dividers — makes the seven-day column structure read more
+      // clearly at print resolution.
+      lineWidth: { top: 0.4, right: 1.2, bottom: 0.4, left: 1.2 },
       valign: "middle",
     },
     headStyles: {
-      fillColor: [240, 240, 240],
-      textColor: 30,
+      fillColor: [238, 238, 240],
+      textColor: [30, 30, 30],
       fontStyle: "bold",
+      fontSize: 10,
       halign: "center",
+      cellPadding: 6,
     },
+    // v0.11.0: zebra-stripe the day columns. Tuesday / Thursday / Saturday
+     // (column indices 2, 4, 6) get a subtle darker fill so the seven-day
+     // grid reads at print resolution. Label column gets its own off-white.
+    // jspdf-autotable resolves columnStyles after headStyles + bodyStyles,
+    // so this also tints the date-header row's matching columns — fine
+    // visually (the head fill is already a soft grey).
     columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 110, halign: "left" },
+      0: {
+        fontStyle: "bold",
+        cellWidth: 110,
+        halign: "left",
+        fillColor: [248, 248, 250],
+      },
+      2: { fillColor: [243, 243, 247] },
+      4: { fillColor: [243, 243, 247] },
+      6: { fillColor: [243, 243, 247] },
     },
-    bodyStyles: { halign: "center" },
+    // v0.11.0: employee names in day cells are bold for emphasis. Section
+    // header rows override this back to normal via per-cell styles, and the
+    // label column 0 already has its own bold via columnStyles.
+    bodyStyles: { halign: "center", fontStyle: "bold" },
   });
 
   // ── Footer on every page (timestamp, bottom-right) ─────────────────────

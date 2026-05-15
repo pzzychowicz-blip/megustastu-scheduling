@@ -23,7 +23,7 @@ function typeMeta(key) {
   for (let i = 0; i < REQUEST_TYPES.length; i++) {
     if (REQUEST_TYPES[i].key === key) return REQUEST_TYPES[i];
   }
-  return { key: key, label: key, palette: { bg: "#eee", text: "#333", border: "#ccc" } };
+  return { key: key, label: key, palette: { bg: "var(--status-open-bg)", text: "var(--status-open-text)", border: "var(--status-open-border)" } };
 }
 
 // Pretty range: "12 May 2026" or "12–14 May 2026" or "29 Apr–2 May 2026".
@@ -111,13 +111,14 @@ export default function RequestsList({ requests, employees, actions, isMobile })
           display: "block",
           width: "100%",
           textAlign: "left",
-          background: isPast ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.7)",
-          border: "1px solid rgba(0,0,0,0.08)",
+          background: isPast ? "var(--bg-row-soft)" : "var(--bg-pill)",
+          border: "1px solid var(--hairline-strong)",
           borderRadius: 12,
           padding: 12,
           marginBottom: 8,
           cursor: "pointer",
           opacity: isPast ? 0.7 : 1,
+          boxShadow: "var(--shadow-soft)",
         }}
       >
         <div
@@ -133,7 +134,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
             style={{
               fontSize: 15,
               fontWeight: 600,
-              color: "#1c1c1e",
+              color: "var(--text-primary)",
               textDecoration: empArchived ? "line-through" : "none",
               opacity: empArchived ? 0.6 : 1,
             }}
@@ -142,7 +143,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
           </div>
           <TBadge palette={meta.palette}>{meta.label}</TBadge>
         </div>
-        <div style={{ fontSize: 13, color: "#3a3a3c" }}>
+        <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
           {formatRange(req.dateFrom, req.dateTo)}
         </div>
         {req.notes

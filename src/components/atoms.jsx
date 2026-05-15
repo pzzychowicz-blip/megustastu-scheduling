@@ -38,7 +38,7 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
     position: "fixed",
     inset: 0,
     zIndex: 1000,
-    background: "rgba(0,0,0,0.28)",
+    background: "var(--bg-overlay-backdrop)",
     backdropFilter: "blur(8px)",
     WebkitBackdropFilter: "blur(8px)",
     display: "flex",
@@ -51,7 +51,7 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
     ? {
         width: "100%",
         height: "100%",
-        background: "rgba(255,255,255,0.92)",
+        background: "var(--bg-overlay-sheet)",
         borderRadius: 0,
         padding: 16,
         overflow: "auto",
@@ -59,11 +59,11 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
     : {
         width: "100%",
         maxWidth: 560,
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.35)",
+        background: "var(--bg-overlay-sheet)",
+        border: "1px solid var(--border-overlay-sheet)",
         borderRadius: 16,
         padding: 20,
-        boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
+        boxShadow: "var(--shadow-overlay)",
         maxHeight: "80vh",
         overflow: "auto",
       };
@@ -145,12 +145,12 @@ export function Collapsible({ title, open, onToggle, dirty, children }) {
     width: 8,
     height: 8,
     borderRadius: 999,
-    background: "#007AFF",
-    boxShadow: "0 0 0 2px rgba(0,122,255,0.18)",
+    background: "var(--accent)",
+    boxShadow: "0 0 0 2px var(--dot-glow)",
   };
   const chevronStyle = {
     fontSize: 12,
-    color: "#6e6e73",
+    color: "var(--text-muted)",
     transform: open ? "rotate(90deg)" : "rotate(0deg)",
     transition: "transform 150ms ease",
     display: "inline-block",
@@ -159,7 +159,7 @@ export function Collapsible({ title, open, onToggle, dirty, children }) {
   };
   const bodyStyle = {
     padding: "0 14px 14px 14px",
-    borderTop: "1px solid rgba(0,0,0,0.06)",
+    borderTop: "1px solid var(--hairline)",
     paddingTop: 12,
   };
 
@@ -212,7 +212,7 @@ export function Toggle({ checked, onChange, label, helper, disabled }) {
   const textWrapStyle = { flex: 1, minWidth: 0 };
   const labelStyle = {
     fontSize: 14,
-    color: "#1c1c1e",
+    color: "var(--text-primary)",
     fontWeight: 500,
   };
   const helperStyle = {
@@ -225,10 +225,10 @@ export function Toggle({ checked, onChange, label, helper, disabled }) {
     width: 48,
     height: 28,
     borderRadius: 999,
-    background: checked ? "#007AFF" : "rgba(120,120,128,0.24)",
+    background: checked ? "var(--toggle-track-on)" : "var(--toggle-track-off)",
     position: "relative",
     transition: "background 150ms ease",
-    boxShadow: "inset 0 1px 2px rgba(0,0,0,0.08)",
+    boxShadow: "var(--shadow-toggle-track)",
   };
   const knobStyle = {
     position: "absolute",
@@ -237,8 +237,8 @@ export function Toggle({ checked, onChange, label, helper, disabled }) {
     width: 24,
     height: 24,
     borderRadius: "50%",
-    background: "#fff",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.18)",
+    background: "var(--toggle-knob)",
+    boxShadow: "var(--shadow-toggle-knob)",
     transform: checked ? "translateX(20px)" : "translateX(0)",
     transition: "transform 150ms ease",
   };

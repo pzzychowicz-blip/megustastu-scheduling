@@ -17,6 +17,7 @@
 import { useState } from "react";
 import { S, BTN } from "../lib/constants.js";
 import { usePersistence } from "../hooks/usePersistence.js";
+import { useThemeMode } from "../hooks/useThemeMode.js";
 import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
@@ -33,6 +34,13 @@ const TABS = [
 export default function AppShell({ user, signOut, isMobile, appVersion }) {
   const { data, ready, writeWarning, clearWriteWarning, actions } = usePersistence();
   const [tab, setTab] = useState("schedule");  // schedule is the primary working surface
+
+  // v0.11.0: theme resolution. settings.darkMode is true/false when the
+  // manager has explicitly chosen; undefined means "follow system pref",
+  // which the hook subscribes to live. Returns the resolved isDark so we
+  // can pass it down to the Settings Toggle's checked-state.
+  // Before `ready` flips true, data.settings is null → undefined → system.
+  const isDark = useThemeMode(data.settings ? data.settings.darkMode : undefined);
 
   // ── Loading state ──────────────────────────────────────────────────────
   if (!ready) {
@@ -52,9 +60,9 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         style={{
           marginBottom: 12,
           padding: "10px 12px",
-          background: "rgba(255,59,48,0.12)",
-          border: "1px solid rgba(255,59,48,0.4)",
-          color: "#9a1f17",
+          background: "var(--bg-danger-tint)",
+          border: "1px solid var(--border-danger-tint)",
+          color: "var(--text-danger)",
           borderRadius: 10,
           fontSize: 13,
           display: "flex",
@@ -107,7 +115,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         gap: 4,
         marginBottom: 16,
         padding: 4,
-        background: "rgba(0,0,0,0.05)",
+        background: "var(--bg-segment)",
         borderRadius: 12,
         overflowX: "auto",
       }}
@@ -126,10 +134,10 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
               padding: "8px 12px",
               fontSize: 13,
               borderRadius: 8,
-              background: on ? "#fff" : "transparent",
-              color: on ? "#007AFF" : "#3a3a3c",
+              background: on ? "var(--bg-tab-active)" : "transparent",
+              color: on ? "var(--accent)" : "var(--text-secondary)",
               border: "1px solid transparent",
-              boxShadow: on ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+              boxShadow: on ? "var(--shadow-tab-active)" : "none",
             }}
           >
             {t.label}
@@ -182,6 +190,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         settings={data.settings}
         saveSettings={actions.saveSettings}
         isMobile={isMobile}
+        isDark={isDark}
       />
     );
   }

@@ -296,9 +296,9 @@ export default function ShiftFormModal({
         style={{
           marginTop: 6,
           padding: "8px 10px",
-          background: "rgba(255,59,48,0.12)",
-          border: "1px solid rgba(255,59,48,0.45)",
-          color: "#9a1f17",
+          background: "var(--bg-danger-tint)",
+          border: "1px solid var(--border-danger-tint)",
+          color: "var(--text-danger)",
           borderRadius: 10,
           fontSize: 12,
         }}
@@ -320,9 +320,9 @@ export default function ShiftFormModal({
         style={{
           marginTop: 6,
           padding: "8px 10px",
-          background: "rgba(255,204,0,0.18)",
-          border: "1px solid rgba(255,159,10,0.55)",
-          color: "#7a4d00",
+          background: "var(--bg-warning-tint)",
+          border: "1px solid var(--border-warning-tint)",
+          color: "var(--text-warning)",
           borderRadius: 10,
           fontSize: 12,
         }}
@@ -348,7 +348,7 @@ export default function ShiftFormModal({
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {(slotDef.eligibleRoles || []).map(function (r) {
             const on = form.role === r;
-            const c = ROLE_COLORS[r] || "#8E8E93";
+            const rgb = ROLE_COLORS[r] || "var(--role-fallback-rgb)";
             return (
               <button
                 key={r}
@@ -359,9 +359,9 @@ export default function ShiftFormModal({
                   padding: "6px 12px",
                   fontSize: 13,
                   borderRadius: 999,
-                  background: on ? c : "rgba(255,255,255,0.7)",
-                  color: on ? "#fff" : "#1c1c1e",
-                  border: "1px solid " + (on ? c : "rgba(0,0,0,0.12)"),
+                  background: on ? "rgb(" + rgb + ")" : "var(--bg-pill)",
+                  color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+                  border: "1px solid " + (on ? "rgb(" + rgb + ")" : "var(--btn-ghost-border)"),
                 }}
               >
                 {r}
@@ -370,7 +370,7 @@ export default function ShiftFormModal({
           })}
         </div>
         {eveningNeedsRole
-          ? <p style={{ ...S.muted, color: "#9a1f17", marginTop: 6, fontSize: 11 }}>
+          ? <p style={{ ...S.muted, color: "var(--text-danger)", marginTop: 6, fontSize: 11 }}>
               Pick a role for the assigned employee.
             </p>
           : null}
@@ -421,7 +421,7 @@ export default function ShiftFormModal({
       </div>
 
       {!timesValid
-        ? <p style={{ ...S.muted, color: "#9a1f17", fontSize: 12, marginTop: -4 }}>
+        ? <p style={{ ...S.muted, color: "var(--text-danger)", fontSize: 12, marginTop: -4 }}>
             End time must be after start time.
           </p>
         : null}

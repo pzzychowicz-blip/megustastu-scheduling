@@ -1,21 +1,291 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#007AFF" />
     <title>MGT — Staff Scheduling</title>
     <style>
+      /* ── v0.11.0: theme tokens via CSS custom properties ────────────────
+         Single source of truth for every colour / shadow / surface in the
+         app. The `S`, `BTN`, `STATUS_COLORS`, `ROLE_COLORS` objects in
+         src/lib/constants.js reference these `var(--…)` names — they
+         carry no rgba/hex literals of their own. Theme flip = one
+         attribute change on <html data-theme="…">; zero React re-renders.
+
+         data-theme is set by:
+           - App.jsx        → follows prefers-color-scheme by default
+           - AppShell.jsx   → overrides once settings.darkMode is explicit
+
+         The `:root` block holds light values; `[data-theme="dark"]`
+         overrides each value for dark mode. Add a new token in both
+         blocks; never reference colours from JS directly.
+      ──────────────────────────────────────────────────────────────────── */
+      :root {
+        /* Body */
+        --bg-app-from: #f3f5f8;
+        --bg-app-to: #e7ecf2;
+        --color-body: #111;
+
+        /* Outer card (S.card) */
+        --bg-card: rgba(255,255,255,0.45);
+        --border-card: rgba(255,255,255,0.35);
+        --shadow-card: 0 10px 30px rgba(0,0,0,0.06);
+
+        /* Soft surface (S.surfaceSoft → Collapsible, Section, mobile day-cards) */
+        --bg-soft: rgba(255,255,255,0.78);
+        --border-soft: rgba(60,60,67,0.15);
+        --shadow-soft: 0 1px 2px rgba(0,0,0,0.03), 0 6px 16px rgba(0,0,0,0.04);
+
+        /* Input (S.inputBase) */
+        --bg-input: rgba(255,255,255,0.85);
+        --border-input: rgba(0,0,0,0.08);
+        --shadow-input-inset: inset 0 1px 2px rgba(0,0,0,0.06);
+        --text-input: #111;
+
+        /* Text */
+        --text-primary: #1c1c1e;
+        --text-secondary: #3a3a3c;
+        --text-muted: #6e6e73;
+        --text-on-accent: #ffffff;
+
+        /* iOS-blue accent */
+        --accent: #007AFF;
+        --accent-deep: #0064d1;
+        --accent-on-tint: #004ec2;
+        --accent-tint-strong: rgba(0,122,255,0.45);
+        --accent-tint-mid: rgba(0,122,255,0.18);
+        --accent-tint-soft: rgba(0,122,255,0.12);
+
+        /* Status palette (shift cells, request type chips) */
+        --status-open-bg: rgba(142,142,147,0.18);
+        --status-open-text: #3a3a3c;
+        --status-open-border: rgba(142,142,147,0.45);
+        --status-assigned-bg: rgba(0,122,255,0.18);
+        --status-assigned-text: #004ec2;
+        --status-assigned-border: rgba(0,122,255,0.45);
+        --status-confirmed-bg: rgba(52,199,89,0.20);
+        --status-confirmed-text: #1f7a3a;
+        --status-confirmed-border: rgba(52,199,89,0.50);
+        --status-cancelled-bg: rgba(255,59,48,0.18);
+        --status-cancelled-text: #9a1f17;
+        --status-cancelled-border: rgba(255,59,48,0.45);
+
+        /* Role channels (RGB triplets — composers add alpha at use site,
+           e.g. background: rgba(var(--role-bar-rgb), 0.2)) */
+        --role-bar-rgb: 255, 159, 10;
+        --role-floor-rgb: 0, 122, 255;
+        --role-chef-rgb: 255, 59, 48;
+        --role-plating-rgb: 175, 82, 222;
+        --role-pot-rgb: 142, 142, 147;
+        --role-fallback-rgb: 142, 142, 147;
+
+        /* Surfaces (smaller) */
+        --bg-pill: rgba(255,255,255,0.7);
+        --bg-chip: rgba(255,255,255,0.6);
+        --bg-band: rgba(0,0,0,0.04);
+        --bg-segment: rgba(0,0,0,0.05);
+        --bg-segment-strong: rgba(0,0,0,0.06);
+        --bg-tab-active: #ffffff;
+        --bg-row-soft: rgba(255,255,255,0.35);
+
+        /* Hairlines */
+        --hairline: rgba(0,0,0,0.06);
+        --hairline-strong: rgba(0,0,0,0.08);
+        --hairline-mid: rgba(0,0,0,0.12);
+
+        /* Buttons */
+        --btn-secondary-bg: rgba(255,255,255,0.7);
+        --btn-secondary-text: #007AFF;
+        --btn-secondary-border: rgba(0,122,255,0.35);
+        --btn-ghost-text: #1c1c1e;
+        --btn-ghost-border: rgba(0,0,0,0.12);
+        --btn-danger-bg: rgba(255,59,48,0.92);
+        --btn-danger-border: #b62a23;
+
+        /* Overlay (modal backdrop + sheet) */
+        --bg-overlay-backdrop: rgba(0,0,0,0.28);
+        --bg-overlay-sheet: rgba(255,255,255,0.92);
+        --border-overlay-sheet: rgba(255,255,255,0.35);
+        --shadow-overlay: 0 20px 60px rgba(0,0,0,0.18);
+
+        /* Danger surfaces (write-warning banner, login error, validators) */
+        --bg-danger-tint: rgba(255,59,48,0.12);
+        --border-danger-tint: rgba(255,59,48,0.4);
+        --text-danger: #9a1f17;
+
+        /* Warning surfaces (yellow override banner in ShiftFormModal) */
+        --bg-warning-tint: rgba(255,204,0,0.18);
+        --border-warning-tint: rgba(255,159,10,0.55);
+        --text-warning: #7a4d00;
+
+        /* Active / archived employee status pill (EmployeeFormModal) */
+        --bg-active-on: rgba(52,199,89,0.18);
+        --border-active-on: rgba(52,199,89,0.5);
+        --text-active-on: #1f7a3a;
+        --bg-active-off: rgba(142,142,147,0.18);
+        --border-active-off: rgba(142,142,147,0.45);
+        --text-active-off: #3a3a3c;
+
+        /* Toggle atom */
+        --toggle-track-off: rgba(120,120,128,0.24);
+        --toggle-track-on: #007AFF;
+        --toggle-knob: #ffffff;
+        --shadow-toggle-track: inset 0 1px 2px rgba(0,0,0,0.08);
+        --shadow-toggle-knob: 0 2px 4px rgba(0,0,0,0.18);
+
+        /* Collapsible dirty-dot glow */
+        --dot-glow: rgba(0,122,255,0.18);
+
+        /* Misc shadows */
+        --shadow-tab-active: 0 1px 3px rgba(0,0,0,0.08);
+        --shadow-login-card: 0 20px 50px rgba(0,0,0,0.10);
+      }
+
+      [data-theme="dark"] {
+        /* Body */
+        --bg-app-from: #1c1c1e;
+        --bg-app-to: #2c2c2e;
+        --color-body: #f2f2f7;
+
+        /* Outer card */
+        --bg-card: rgba(44,44,46,0.55);
+        --border-card: rgba(255,255,255,0.10);
+        --shadow-card: 0 10px 30px rgba(0,0,0,0.40);
+
+        /* Soft surface */
+        --bg-soft: rgba(58,58,60,0.78);
+        --border-soft: rgba(255,255,255,0.10);
+        --shadow-soft: 0 1px 2px rgba(0,0,0,0.20), 0 6px 16px rgba(0,0,0,0.30);
+
+        /* Input */
+        --bg-input: rgba(28,28,30,0.85);
+        --border-input: rgba(255,255,255,0.10);
+        --shadow-input-inset: inset 0 1px 2px rgba(0,0,0,0.25);
+        --text-input: #f2f2f7;
+
+        /* Text */
+        --text-primary: #f2f2f7;
+        --text-secondary: #d1d1d6;
+        --text-muted: #98989d;
+        --text-on-accent: #ffffff;
+
+        /* iOS blue — Apple's systemBlue dark variant */
+        --accent: #0A84FF;
+        --accent-deep: #0064d1;
+        --accent-on-tint: #64B5FF;
+        --accent-tint-strong: rgba(10,132,255,0.50);
+        --accent-tint-mid: rgba(10,132,255,0.22);
+        --accent-tint-soft: rgba(10,132,255,0.18);
+
+        /* Status palette (dark-tuned) */
+        --status-open-bg: rgba(152,152,157,0.22);
+        --status-open-text: #d1d1d6;
+        --status-open-border: rgba(152,152,157,0.50);
+        --status-assigned-bg: rgba(10,132,255,0.22);
+        --status-assigned-text: #64B5FF;
+        --status-assigned-border: rgba(10,132,255,0.50);
+        --status-confirmed-bg: rgba(50,215,75,0.24);
+        --status-confirmed-text: #6BE078;
+        --status-confirmed-border: rgba(50,215,75,0.55);
+        --status-cancelled-bg: rgba(255,69,58,0.22);
+        --status-cancelled-text: #FF6B61;
+        --status-cancelled-border: rgba(255,69,58,0.50);
+
+        /* Role channels — Apple dark system variants (lighter / more saturated) */
+        --role-bar-rgb: 255, 179, 64;
+        --role-floor-rgb: 100, 181, 255;
+        --role-chef-rgb: 255, 69, 58;
+        --role-plating-rgb: 191, 90, 242;
+        --role-pot-rgb: 152, 152, 157;
+        --role-fallback-rgb: 152, 152, 157;
+
+        /* Surfaces (smaller) */
+        --bg-pill: rgba(58,58,60,0.78);
+        --bg-chip: rgba(72,72,74,0.78);
+        --bg-band: rgba(255,255,255,0.04);
+        --bg-segment: rgba(255,255,255,0.06);
+        --bg-segment-strong: rgba(255,255,255,0.08);
+        --bg-tab-active: rgba(72,72,74,0.92);
+        --bg-row-soft: rgba(58,58,60,0.50);
+
+        /* Hairlines */
+        --hairline: rgba(255,255,255,0.08);
+        --hairline-strong: rgba(255,255,255,0.12);
+        --hairline-mid: rgba(255,255,255,0.18);
+
+        /* Buttons */
+        --btn-secondary-bg: rgba(58,58,60,0.78);
+        --btn-secondary-text: #64B5FF;
+        --btn-secondary-border: rgba(10,132,255,0.45);
+        --btn-ghost-text: #f2f2f7;
+        --btn-ghost-border: rgba(255,255,255,0.18);
+        --btn-danger-bg: rgba(255,69,58,0.92);
+        --btn-danger-border: #ff453a;
+
+        /* Overlay */
+        --bg-overlay-backdrop: rgba(0,0,0,0.55);
+        --bg-overlay-sheet: rgba(28,28,30,0.95);
+        --border-overlay-sheet: rgba(255,255,255,0.10);
+        --shadow-overlay: 0 20px 60px rgba(0,0,0,0.50);
+
+        /* Danger surfaces */
+        --bg-danger-tint: rgba(255,69,58,0.18);
+        --border-danger-tint: rgba(255,69,58,0.50);
+        --text-danger: #FF6B61;
+
+        /* Warning surfaces */
+        --bg-warning-tint: rgba(255,214,10,0.22);
+        --border-warning-tint: rgba(255,159,10,0.60);
+        --text-warning: #FFD60A;
+
+        /* Active / archived pill */
+        --bg-active-on: rgba(50,215,75,0.22);
+        --border-active-on: rgba(50,215,75,0.55);
+        --text-active-on: #6BE078;
+        --bg-active-off: rgba(152,152,157,0.22);
+        --border-active-off: rgba(152,152,157,0.50);
+        --text-active-off: #d1d1d6;
+
+        /* Toggle */
+        --toggle-track-off: rgba(120,120,128,0.32);
+        --toggle-track-on: #0A84FF;
+        --toggle-knob: #ffffff;
+        --shadow-toggle-track: inset 0 1px 2px rgba(0,0,0,0.30);
+        --shadow-toggle-knob: 0 2px 4px rgba(0,0,0,0.40);
+
+        /* Dirty-dot glow */
+        --dot-glow: rgba(10,132,255,0.30);
+
+        /* Shadows */
+        --shadow-tab-active: 0 1px 3px rgba(0,0,0,0.40);
+        --shadow-login-card: 0 20px 50px rgba(0,0,0,0.40);
+      }
+
       html, body, #root { height: 100%; margin: 0; }
       body {
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-        background: linear-gradient(180deg, #f3f5f8 0%, #e7ecf2 100%);
-        color: #111;
+        background: linear-gradient(180deg, var(--bg-app-from) 0%, var(--bg-app-to) 100%);
+        color: var(--color-body);
         -webkit-font-smoothing: antialiased;
       }
     </style>
   </head>
   <body>
+    <!-- v0.11.0: paint the correct theme before React mounts, so the page
+         doesn't flash light-on-load for a user whose system is dark (or
+         vice-versa). React's useThemeMode hook takes over after mount;
+         this only owns the initial paint. -->
+    <script>
+      (function () {
+        try {
+          var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        } catch (e) {
+          /* leave the default data-theme="light" from the html tag */
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

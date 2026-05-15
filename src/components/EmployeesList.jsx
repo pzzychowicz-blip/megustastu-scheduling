@@ -76,14 +76,14 @@ export default function EmployeesList({ employees, actions, isMobile }) {
     const fdSummary = fixedDaysSummary(emp.fixedDays);
 
     const roleChips = (emp.roles || []).map(function (r) {
-      const c = ROLE_COLORS[r] || "#8E8E93";
+      const rgb = ROLE_COLORS[r] || "var(--role-fallback-rgb)";
       return (
         <TBadge
           key={r}
           palette={{
-            bg: c + "26",
-            text: c,
-            border: c + "55",
+            bg: "rgba(" + rgb + ", 0.15)",
+            text: "rgb(" + rgb + ")",
+            border: "rgba(" + rgb + ", 0.33)",
           }}
         >
           {r}
@@ -100,13 +100,14 @@ export default function EmployeesList({ employees, actions, isMobile }) {
           display: "block",
           width: "100%",
           textAlign: "left",
-          background: inactive ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.7)",
-          border: "1px solid rgba(0,0,0,0.08)",
+          background: inactive ? "var(--bg-row-soft)" : "var(--bg-pill)",
+          border: "1px solid var(--hairline-strong)",
           borderRadius: 12,
           padding: 12,
           marginBottom: 8,
           cursor: "pointer",
           opacity: inactive ? 0.6 : 1,
+          boxShadow: "var(--shadow-soft)",
         }}
       >
         <div
@@ -122,7 +123,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
             style={{
               fontSize: 15,
               fontWeight: 600,
-              color: "#1c1c1e",
+              color: "var(--text-primary)",
               textDecoration: inactive ? "line-through" : "none",
             }}
           >

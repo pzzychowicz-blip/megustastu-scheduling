@@ -86,6 +86,26 @@ separate Firebase project, same UI conventions).
   it auto-save immediately on change because their visual effect is
   instant on the schedule grid. Clicking Save while errors exist
   force-opens the first section carrying an error.
+- **Theming model (v0.11.0):** light + dark themes driven by CSS
+  custom properties. `:root` in `index.html` holds light values;
+  `[data-theme="dark"]` overrides each value for dark. React writes
+  `document.documentElement.dataset.theme = "dark"|"light"`; zero
+  re-renders on theme flip. Token shape: `S`, `BTN`, `STATUS_COLORS`,
+  `ROLE_COLORS` in `constants.js` reference `var(--…)` strings and
+  carry no rgba/hex literals. ROLE_COLORS specifically holds RGB
+  channel triplets (`"var(--role-bar-rgb)"`) so callers compose
+  alpha via `rgba(${rgb}, 0.2)` at the use site.
+- **Theme resolution (v0.11.0):** boolean Toggle in Settings → Display.
+  When `settings.darkMode === undefined`, follow `prefers-color-scheme`
+  live (the `useThemeMode` hook listens for OS changes). When the
+  manager flips the toggle, `darkMode` is saved as an explicit boolean
+  to `/settings` — once explicit, system pref is ignored. Initial paint
+  before React mounts is handled by an inline script in `index.html`
+  reading `prefers-color-scheme` so there's no flash of wrong theme.
+- **PDF export (v0.11.0):** the PDF renderer keeps the light palette
+  regardless of in-app theme. Printed rotas should be ink-economic
+  and legible on paper; dark backgrounds on print would waste toner
+  and look wrong. `pdf-export.js` never reads CSS vars.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -103,7 +123,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.10.2)
+## File structure (current — v0.11.0)
 
 ```
 megustastu-scheduling/
@@ -111,7 +131,12 @@ megustastu-scheduling/
 ├── REFACTOR_LOG.md                 version history + decisions
 ├── package.json                    React 19, Vite, Firebase, jsPDF
 ├── vite.config.js                  @vitejs/plugin-react (automatic JSX)
-├── index.html                      Vite entry
+├── index.html                      Vite entry. v0.11.0: hosts the
+│                                   theme token block — `:root` defines
+│                                   light values, `[data-theme="dark"]`
+│                                   overrides for dark mode. Also has an
+│                                   inline no-flash script that paints
+│                                   the right theme before React mounts.
 └── src/
     ├── main.jsx                    mounts <App />
     ├── App.jsx                     orchestration: auth-gate → AppShell
@@ -119,6 +144,10 @@ megustastu-scheduling/
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
     │   ├── usePersistence.js       Firebase RTDB reads + write-guarded CRUD
+    │   ├── useThemeMode.js         v0.11.0: dark/light resolver. Takes
+    │   │                           explicit boolean (or undefined → follow
+    │   │                           system pref live). Writes
+    │   │                           `data-theme` on <html>; returns isDark.
     │   └── useWinW.js              viewport-width listener
     ├── lib/
     │   ├── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
@@ -129,6 +158,14 @@ megustastu-scheduling/
     │   │                           (0.78 white, dark hairline border,
     │   │                           soft elevation shadow) — cascades to
     │   │                           Collapsible / Section / mobile day-cards.
+    │   │                           v0.11.0: every visual token now reads
+    │   │                           from a CSS var defined in index.html
+    │   │                           (`:root` light / `[data-theme="dark"]`
+    │   │                           dark). ROLE_COLORS entries became
+    │   │                           `var(--role-x-rgb)` RGB triplets —
+    │   │                           callers compose alpha at use site via
+    │   │                           rgba(`${rgb}`, 0.2). Zero rgba/hex
+    │   │                           literals remain in JS.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -182,6 +219,13 @@ megustastu-scheduling/
         │                           uses Toggle atom and auto-saves on
         │                           change (no Save click). Save click
         │                           force-opens the first error section.
+        │                           v0.11.0: + Dark mode Toggle in Display.
+        │                           Receives `isDark` (resolved) from
+        │                           AppShell. Helper line says "Following
+        │                           your system preference. Tap to
+        │                           override." while settings.darkMode is
+        │                           undefined; collapses to null once an
+        │                           explicit boolean is saved.
         └── ExportButton.jsx        Export-PDF button in the week-nav bar;
                                     disabled until every cell is filled
 ```
@@ -386,6 +430,42 @@ NOT secrets — Database Rules are the actual security layer.
 ### Preview file naming (when iterating before deployment)
 - Pattern: `scheduling_v{X}_preview {N}.jsx` (incremented chronologically,
   never overwrite).
+
+### Local preview server — MANDATORY (locked 2026-05-16)
+
+**For any session that touches visual code** (styling, layout, UI tokens,
+PDF export, component structure), **start a local preview server at the
+beginning of the session and keep it running throughout.** Patryk reviews
+changes against the running URL after each iteration; without it, every
+tweak has to be re-explained from a code diff instead of seen.
+
+Default flow:
+1. `npm run build && npm run preview` (in the background) — serves the
+   prod bundle on `http://localhost:4173/`, hits the **PROD** Firebase
+   project, so Patryk can sign in with real credentials and review
+   against real data.
+2. After every code change that affects what's rendered, run
+   `npm run build` again. Vite's preview server picks up the new
+   `dist/` on the next hard-refresh (⌘⇧R) — no server restart needed.
+3. Tell Patryk the URL whenever you start the server, and remind him
+   to hard-refresh after each rebuild.
+
+Why preview over `npm run dev`:
+- `npm run dev` uses the DEV Firebase project (`megustastu-bookings-dev`),
+  which doesn't have Patryk's auth credentials set up reliably. Past
+  sessions hit `auth/invalid-credential` errors. Preview uses PROD.
+- **Caveat for prod preview:** writes hit live PROD data. Visual
+  inspection only — don't click Save in Settings, don't assign cells,
+  don't add employees/requests during a preview session unless that's
+  the explicit intent.
+
+When to skip:
+- Pure logic / hook changes with no visual surface (e.g., editing
+  schedule-logic.js helpers, pdf-export.js internals that don't
+  change output, persistence write-guards).
+- Doc-only commits (CLAUDE.md, REFACTOR_LOG.md).
+- Session begins with a planning / exploration question — start the
+  server once code edits begin.
 
 ### Deployment
 
