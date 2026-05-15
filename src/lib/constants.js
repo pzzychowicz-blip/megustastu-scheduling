@@ -4,6 +4,13 @@
 //
 // Anything visual flows through here. New UI composes from S/BTN, NOT
 // from inline rgba literals. Reuse beats reinvention.
+//
+// v0.11.0: every visual token reads from a CSS custom property defined
+// in index.html (`:root` for light, `[data-theme="dark"]` for dark).
+// JS contains zero rgba/hex literals — the theme decision lives in CSS,
+// flipped by setting `document.documentElement.dataset.theme`. See
+// App.jsx (system-preference default) and AppShell.jsx (settings.darkMode
+// override) for where the data-theme attribute is written.
 
 // ── Roles ────────────────────────────────────────────────────────────────
 export const ROLES = Object.freeze(["Bar", "Floor", "Chef", "Plating", "Pot"]);
@@ -16,10 +23,6 @@ export const SECTIONS = Object.freeze({
 });
 
 // ── Default shift template ───────────────────────────────────────────────
-// All times editable in Settings; these are the day-one defaults.
-// `count` = number of slots per day for that section/day-part.
-// `secondPersonStart` (FoH evening only) lets the manager pick 18:00 or 19:00
-// for the second evening FoH staffer on a per-day basis.
 export const DEFAULT_SHIFT_TEMPLATE = Object.freeze({
   foh: {
     day: { start: "11:00", end: "17:00", count: 1 },
@@ -27,7 +30,7 @@ export const DEFAULT_SHIFT_TEMPLATE = Object.freeze({
       start: "17:00",
       end: "23:00",
       count: 2,
-      secondPersonStart: "18:00", // alt: "19:00"
+      secondPersonStart: "18:00",
     },
   },
   kitchen: {
@@ -40,41 +43,54 @@ export const DEFAULT_SHIFT_TEMPLATE = Object.freeze({
 export const OPERATING_HOURS = Object.freeze({ start: "11:00", end: "23:00" });
 
 // ── Status colours (alpha-tinted, matches Bookings pattern) ──────────────
-// Each entry: { bg, text, border }. Used by shift chips on the grid.
+// v0.11.0: each entry references CSS vars that flip on dark mode.
 export const STATUS_COLORS = Object.freeze({
   open: {
-    bg: "rgba(142,142,147,0.18)",
-    text: "#3a3a3c",
-    border: "rgba(142,142,147,0.45)",
+    bg: "var(--status-open-bg)",
+    text: "var(--status-open-text)",
+    border: "var(--status-open-border)",
   },
   assigned: {
-    bg: "rgba(0,122,255,0.18)",
-    text: "#004ec2",
-    border: "rgba(0,122,255,0.45)",
+    bg: "var(--status-assigned-bg)",
+    text: "var(--status-assigned-text)",
+    border: "var(--status-assigned-border)",
   },
   confirmed: {
-    bg: "rgba(52,199,89,0.20)",
-    text: "#1f7a3a",
-    border: "rgba(52,199,89,0.50)",
+    bg: "var(--status-confirmed-bg)",
+    text: "var(--status-confirmed-text)",
+    border: "var(--status-confirmed-border)",
   },
   cancelled: {
-    bg: "rgba(255,59,48,0.18)",
-    text: "#9a1f17",
-    border: "rgba(255,59,48,0.45)",
+    bg: "var(--status-cancelled-bg)",
+    text: "var(--status-cancelled-text)",
+    border: "var(--status-cancelled-border)",
   },
 });
 
-// ── Role colours (4–6 hues, used on shift chips to show role mix) ────────
+// ── Role colours (RGB triplet refs — composers add their own alpha) ──────
+// v0.11.0: each entry is a `var(--role-x-rgb)` reference pointing at a
+// comma-separated R,G,B triplet defined in index.html. Callers compose
+// alpha at the use site:
+//   background: `rgba(${ROLE_COLORS.Bar}, 0.2)`
+//   color:      `rgb(${ROLE_COLORS.Bar})`
+//   border:     `1px solid rgba(${ROLE_COLORS.Bar}, 0.4)`
+// This keeps the alpha-on-the-fly pattern that the schedule grid + modals
+// already use, while making the channel values theme-aware.
 export const ROLE_COLORS = Object.freeze({
-  Bar: "#FF9F0A",
-  Floor: "#007AFF",
-  Chef: "#FF3B30",
-  Plating: "#AF52DE",
-  Pot: "#8E8E93",
+  Bar: "var(--role-bar-rgb)",
+  Floor: "var(--role-floor-rgb)",
+  Chef: "var(--role-chef-rgb)",
+  Plating: "var(--role-plating-rgb)",
+  Pot: "var(--role-pot-rgb)",
 });
+
+// Fallback RGB triplet for "unknown role" use sites. Resolves to the same
+// neutral grey in both themes (lighter in dark mode automatically).
+export const ROLE_COLOR_FALLBACK = "var(--role-fallback-rgb)";
 
 // ── Style tokens (S) ─────────────────────────────────────────────────────
 // Translucent / glass aesthetic, iOS-inspired. Matches MGT Bookings.
+// v0.11.0: backed by CSS vars; theme flip swaps every value automatically.
 export const S = Object.freeze({
   // Layout shells
   appShell: {
@@ -87,32 +103,26 @@ export const S = Object.freeze({
   card: {
     width: "100%",
     maxWidth: 720,
-    background: "rgba(255,255,255,0.45)",
-    border: "1px solid rgba(255,255,255,0.35)",
+    background: "var(--bg-card)",
+    border: "1px solid var(--border-card)",
     borderRadius: 12,
     padding: 20,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+    boxShadow: "var(--shadow-card)",
   },
 
   // Typography
-  h1: { margin: "0 0 4px 0", fontSize: 22, fontWeight: 700, letterSpacing: "-0.01em" },
-  h2: { margin: "0 0 6px 0", fontSize: 17, fontWeight: 600 },
-  body: { margin: "8px 0 0 0", fontSize: 14, lineHeight: 1.45, color: "#1c1c1e" },
-  muted: { margin: 0, fontSize: 12, color: "#6e6e73" },
+  h1: { margin: "0 0 4px 0", fontSize: 22, fontWeight: 700, letterSpacing: "-0.01em", color: "var(--text-primary)" },
+  h2: { margin: "0 0 6px 0", fontSize: 17, fontWeight: 600, color: "var(--text-primary)" },
+  body: { margin: "8px 0 0 0", fontSize: 14, lineHeight: 1.45, color: "var(--text-primary)" },
+  muted: { margin: 0, fontSize: 12, color: "var(--text-muted)" },
 
   // Generic surfaces
-  // v0.10.2: strengthened so soft surfaces read as discrete blocks against
-  // the outer card (rgba(255,255,255,0.45)) instead of dissolving into it.
-  //   - background 0.55 → 0.78  (more opaque, still translucent)
-  //   - border was whitish (rgba(255,255,255,0.4)) — invisible on light
-  //     gradient; now a darker hairline (rgba(60,60,67,0.15))
-  //   - subtle elevation shadow for depth
   surfaceSoft: {
-    background: "rgba(255,255,255,0.78)",
-    border: "1px solid rgba(60,60,67,0.15)",
+    background: "var(--bg-soft)",
+    border: "1px solid var(--border-soft)",
     borderRadius: 12,
     padding: 12,
-    boxShadow: "0 1px 2px rgba(0,0,0,0.03), 0 6px 16px rgba(0,0,0,0.04)",
+    boxShadow: "var(--shadow-soft)",
   },
 
   // Inputs (inset shadow for depth, matches Bookings)
@@ -121,11 +131,11 @@ export const S = Object.freeze({
     boxSizing: "border-box",
     padding: "10px 12px",
     fontSize: 14,
-    color: "#111",
-    background: "rgba(255,255,255,0.85)",
-    border: "1px solid rgba(0,0,0,0.08)",
+    color: "var(--text-input)",
+    background: "var(--bg-input)",
+    border: "1px solid var(--border-input)",
     borderRadius: 10,
-    boxShadow: "inset 0 1px 2px rgba(0,0,0,0.06)",
+    boxShadow: "var(--shadow-input-inset)",
     outline: "none",
   },
 
@@ -134,7 +144,7 @@ export const S = Object.freeze({
   fldLabel: {
     display: "block",
     fontSize: 12,
-    color: "#3a3a3c",
+    color: "var(--text-secondary)",
     marginBottom: 4,
     fontWeight: 600,
   },
@@ -142,6 +152,7 @@ export const S = Object.freeze({
 
 // ── Button tokens (BTN) ──────────────────────────────────────────────────
 // Compose mkBtn(BTN.primary, { ...overrides }) at call sites.
+// v0.11.0: theme-aware via CSS vars.
 export const BTN = Object.freeze({
   base: {
     appearance: "none",
@@ -152,50 +163,50 @@ export const BTN = Object.freeze({
     fontWeight: 600,
     cursor: "pointer",
     userSelect: "none",
+    boxShadow: "var(--shadow-soft)",
   },
   primary: {
-    background: "#007AFF",
-    color: "#fff",
-    border: "1px solid #0064d1",
+    background: "var(--accent)",
+    color: "var(--text-on-accent)",
+    border: "1px solid var(--accent-deep)",
   },
   secondary: {
-    background: "rgba(255,255,255,0.7)",
-    color: "#007AFF",
-    border: "1px solid rgba(0,122,255,0.35)",
+    background: "var(--btn-secondary-bg)",
+    color: "var(--btn-secondary-text)",
+    border: "1px solid var(--btn-secondary-border)",
   },
   danger: {
-    background: "rgba(255,59,48,0.92)",
-    color: "#fff",
-    border: "1px solid #b62a23",
+    background: "var(--btn-danger-bg)",
+    color: "var(--text-on-accent)",
+    border: "1px solid var(--btn-danger-border)",
   },
   ghost: {
     background: "transparent",
-    color: "#1c1c1e",
-    border: "1px solid rgba(0,0,0,0.12)",
+    color: "var(--btn-ghost-text)",
+    border: "1px solid var(--btn-ghost-border)",
   },
 });
 
 // ── Request types ────────────────────────────────────────────────────────
-// v1 has only "dayoff" + "holiday". The list is intentionally an array of
-// {key,label,palette} so adding "sick" / "personal" later is one line.
-// Palettes use the existing STATUS_COLORS hues for visual consistency.
+// v0.11.0: palettes reference the status-* CSS vars so they retune for
+// dark mode along with the rest of the status palette.
 export const REQUEST_TYPES = Object.freeze([
   {
     key: "dayoff",
     label: "Day off",
     palette: {
-      bg: "rgba(142,142,147,0.18)",
-      text: "#3a3a3c",
-      border: "rgba(142,142,147,0.45)",
+      bg: "var(--status-open-bg)",
+      text: "var(--status-open-text)",
+      border: "var(--status-open-border)",
     },
   },
   {
     key: "holiday",
     label: "Holiday",
     palette: {
-      bg: "rgba(52,199,89,0.20)",
-      text: "#1f7a3a",
-      border: "rgba(52,199,89,0.50)",
+      bg: "var(--status-confirmed-bg)",
+      text: "var(--status-confirmed-text)",
+      border: "var(--status-confirmed-border)",
     },
   },
 ]);

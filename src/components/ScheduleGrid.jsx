@@ -102,6 +102,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     // v0.9.0: pill gated by the Settings toggle. `cell.role` is always
     // null for day shifts (per the v1 model) so the toggle only ever
     // affects evening cells.
+    // v0.11.0: ROLE_COLORS entries are now `var(--role-x-rgb)` triplets;
+    // compose alpha at the use site via rgba()/rgb().
+    const roleRgb = ROLE_COLORS[cell.role] || "var(--role-fallback-rgb)";
     const roleChip = cell.role && showRolePills
       ? (
         <span
@@ -110,9 +113,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             fontSize: 10,
             padding: "1px 6px",
             borderRadius: 6,
-            background: (ROLE_COLORS[cell.role] || "#8E8E93") + "33",
-            color: ROLE_COLORS[cell.role] || "#3a3a3c",
-            border: "1px solid " + (ROLE_COLORS[cell.role] || "#8E8E93") + "66",
+            background: "rgba(" + roleRgb + ", 0.20)",
+            color: "rgb(" + roleRgb + ")",
+            border: "1px solid rgba(" + roleRgb + ", 0.40)",
             marginLeft: 6,
           }}
         >
@@ -143,6 +146,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           flexDirection: "column",
           justifyContent: "space-between",
           gap: 4,
+          boxShadow: "var(--shadow-soft)",
         }}
       >
         <div
@@ -160,7 +164,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         <div
           style={{
             fontSize: 13,
-            color: emp ? "#1c1c1e" : palette.text,
+            color: emp ? "var(--text-primary)" : palette.text,
             fontWeight: emp ? 600 : 500,
             opacity: empArchived ? 0.5 : 1,
             textDecoration: empArchived ? "line-through" : "none",
@@ -186,15 +190,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           gridColumn: "1 / -1",
           marginTop: isFirst ? 0 : 10,
           padding: "8px 12px",
-          background: "rgba(0,0,0,0.04)",
-          border: "1px solid rgba(0,0,0,0.06)",
+          background: "var(--bg-band)",
+          border: "1px solid var(--hairline)",
           borderRadius: 8,
-          fontSize: 11,
-          fontWeight: 700,
+          fontSize: 12,
+          fontWeight: 800,
           letterSpacing: "0.06em",
           textTransform: "uppercase",
-          color: "#3a3a3c",
+          color: "var(--text-primary)",
           textAlign: "center",
+          boxShadow: "var(--shadow-soft)",
         }}
       >
         {slot.sectionLabel} · {slot.dayPartLabel}
@@ -220,7 +225,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         <button onClick={goNext}  style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>Next ›</button>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#1c1c1e" }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
           {formatWeekRange(weekStart)}
         </div>
         <ExportButton
@@ -261,9 +266,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                 fontWeight: 600,
                 borderRadius: 10,
                 textAlign: "center",
-                background: isToday ? "rgba(0,122,255,0.12)" : "rgba(255,255,255,0.7)",
-                border: isToday ? "1px solid rgba(0,122,255,0.45)" : "1px solid rgba(0,0,0,0.06)",
-                color: isToday ? "#004ec2" : "#1c1c1e",
+                background: isToday ? "var(--accent-tint-soft)" : "var(--bg-pill)",
+                border: isToday ? "1px solid var(--accent-tint-strong)" : "1px solid var(--hairline)",
+                color: isToday ? "var(--accent-on-tint)" : "var(--text-primary)",
+                boxShadow: "var(--shadow-soft)",
               }}
             >
               {formatDayHeader(d)}
@@ -283,16 +289,17 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                   the card. Human label on top, default time muted below. */}
               <div
                 style={{
-                  background: "rgba(255,255,255,0.6)",
-                  border: "1px solid rgba(0,0,0,0.06)",
+                  background: "var(--bg-chip)",
+                  border: "1px solid var(--hairline)",
                   borderRadius: 8,
                   padding: "6px 10px",
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "center",
                   fontSize: 12,
-                  color: "#1c1c1e",
+                  color: "var(--text-primary)",
                   fontWeight: 600,
+                  boxShadow: "var(--shadow-soft)",
                 }}
               >
                 <div>{slot.humanLabel.replace(slot.sectionLabel + " ", "")}</div>
@@ -326,7 +333,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
               style={{
                 fontSize: 14,
                 fontWeight: 700,
-                color: "#1c1c1e",
+                color: "var(--text-primary)",
                 marginBottom: 8,
               }}
             >
@@ -342,15 +349,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                       ? (
                         <div
                           style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: "#3a3a3c",
+                            fontSize: 11,
+                            fontWeight: 800,
+                            color: "var(--text-primary)",
                             letterSpacing: "0.06em",
                             textTransform: "uppercase",
                             marginTop: i === 0 ? 0 : 6,
                             padding: "4px 8px",
-                            background: "rgba(0,0,0,0.04)",
-                            border: "1px solid rgba(0,0,0,0.06)",
+                            background: "var(--bg-band)",
+                            border: "1px solid var(--hairline)",
                             borderRadius: 6,
                             textAlign: "center",
                           }}

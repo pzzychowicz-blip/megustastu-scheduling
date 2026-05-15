@@ -132,7 +132,7 @@ export default function EmployeeFormModal({
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
       {ROLES.map(function (r) {
         const on = form.roles.includes(r);
-        const colour = ROLE_COLORS[r] || "#8E8E93";
+        const rgb = ROLE_COLORS[r] || "var(--role-fallback-rgb)";
         return (
           <button
             key={r}
@@ -143,9 +143,9 @@ export default function EmployeeFormModal({
               padding: "6px 12px",
               fontSize: 13,
               borderRadius: 999,
-              background: on ? colour : "rgba(255,255,255,0.7)",
-              color: on ? "#fff" : "#1c1c1e",
-              border: "1px solid " + (on ? colour : "rgba(0,0,0,0.12)"),
+              background: on ? "rgb(" + rgb + ")" : "var(--bg-pill)",
+              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+              border: "1px solid " + (on ? "rgb(" + rgb + ")" : "var(--btn-ghost-border)"),
             }}
           >
             {r}
@@ -159,7 +159,7 @@ export default function EmployeeFormModal({
     <div
       style={{
         display: "inline-flex",
-        background: "rgba(0,0,0,0.06)",
+        background: "var(--bg-segment-strong)",
         borderRadius: 10,
         padding: 3,
       }}
@@ -180,8 +180,8 @@ export default function EmployeeFormModal({
               padding: "6px 14px",
               fontSize: 13,
               borderRadius: 8,
-              background: on ? "#007AFF" : "transparent",
-              color: on ? "#fff" : "#1c1c1e",
+              background: on ? "var(--accent)" : "transparent",
+              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
               border: "1px solid transparent",
             }}
           >
@@ -208,9 +208,9 @@ export default function EmployeeFormModal({
                 fontSize: 12,
                 borderRadius: 8,
                 minWidth: 44,
-                background: on ? "#007AFF" : "rgba(255,255,255,0.7)",
-                color: on ? "#fff" : "#1c1c1e",
-                border: "1px solid " + (on ? "#0064d1" : "rgba(0,0,0,0.12)"),
+                background: on ? "var(--accent)" : "var(--bg-pill)",
+                color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+                border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
               }}
             >
               {d.label}
@@ -229,9 +229,9 @@ export default function EmployeeFormModal({
         ...BTN.base,
         padding: "6px 12px",
         fontSize: 13,
-        background: form.active ? "rgba(52,199,89,0.18)" : "rgba(142,142,147,0.18)",
-        color: form.active ? "#1f7a3a" : "#3a3a3c",
-        border: "1px solid " + (form.active ? "rgba(52,199,89,0.5)" : "rgba(142,142,147,0.45)"),
+        background: form.active ? "var(--bg-active-on)" : "var(--bg-active-off)",
+        color: form.active ? "var(--text-active-on)" : "var(--text-active-off)",
+        border: "1px solid " + (form.active ? "var(--border-active-on)" : "var(--border-active-off)"),
       }}
     >
       {form.active ? "Active" : "Archived"}
@@ -246,9 +246,9 @@ export default function EmployeeFormModal({
         ...BTN.base,
         padding: "6px 12px",
         fontSize: 13,
-        background: form.fixedDays ? "rgba(0,122,255,0.18)" : "rgba(255,255,255,0.7)",
-        color: form.fixedDays ? "#004ec2" : "#1c1c1e",
-        border: "1px solid " + (form.fixedDays ? "rgba(0,122,255,0.45)" : "rgba(0,0,0,0.12)"),
+        background: form.fixedDays ? "var(--accent-tint-mid)" : "var(--bg-pill)",
+        color: form.fixedDays ? "var(--accent-on-tint)" : "var(--text-primary)",
+        border: "1px solid " + (form.fixedDays ? "var(--accent-tint-strong)" : "var(--btn-ghost-border)"),
       }}
     >
       {form.fixedDays ? "Fixed days: ON" : "Fixed days: OFF"}

@@ -135,6 +135,7 @@ export default function Settings({
   settings,
   saveSettings,
   isMobile,
+  isDark,
 }) {
   // ── Seed local form state ONCE on mount ────────────────────────────────
   // We deliberately do NOT re-sync from props after mount. Manager-only
@@ -210,6 +211,16 @@ export default function Settings({
   function onShowRolePillsChange(nextValue) {
     saveSettings({ ...(settings || {}), showRolePills: nextValue });
   }
+
+  // v0.11.0: Dark mode auto-save. Same pattern as showRolePills above.
+  // `isDark` is the currently-applied resolved value (from AppShell's
+  // useThemeMode hook); we save the explicit boolean so the user's choice
+  // overrides the system preference from this point on.
+  function onDarkModeChange(nextValue) {
+    saveSettings({ ...(settings || {}), darkMode: nextValue });
+  }
+  const darkModeFollowingSystem =
+    !settings || typeof settings.darkMode !== "boolean";
 
   // ── Validation snapshot ────────────────────────────────────────────────
   // v0.7.0: template-row checks now also enforce the operating window.
@@ -349,7 +360,7 @@ export default function Settings({
           ) : null}
         </div>
         {err ? (
-          <div style={{ fontSize: 12, color: "#9a1f17", marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: "var(--text-danger)", marginTop: 4 }}>
             {err}
           </div>
         ) : null}
@@ -419,7 +430,7 @@ export default function Settings({
             </Fld>
           </div>
           {opsErr ? (
-            <div style={{ fontSize: 12, color: "#9a1f17", marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: "var(--text-danger)", marginTop: 4 }}>
               {opsErr}
             </div>
           ) : null}
@@ -440,7 +451,17 @@ export default function Settings({
             label="Show role pills on schedule cells"
             helper="The small coloured tag (Bar / Floor / Chef / Plating / Pot) next to each assignee's name in the schedule grid. Off hides them; the Employees tab badges are unaffected."
           />
-          {/* Phase X (v0.10.0): future dark-mode Toggle lands here. */}
+          {/* v0.11.0: dark mode. First-time default follows OS preference;
+              flipping the toggle saves an explicit boolean that overrides
+              system pref from that point on. */}
+          <Toggle
+            checked={isDark === true}
+            onChange={onDarkModeChange}
+            label="Dark mode"
+            helper={darkModeFollowingSystem
+              ? "Following your system preference. Tap to override."
+              : null}
+          />
         </Collapsible>
 
         <Collapsible

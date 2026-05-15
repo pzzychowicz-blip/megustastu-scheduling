@@ -37,18 +37,18 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
     ? {
         width: "100%",
         minHeight: "100vh",
-        background: "rgba(255,255,255,0.6)",
+        background: "var(--bg-pill)",
         padding: 24,
         boxSizing: "border-box",
       }
     : {
         width: "100%",
         maxWidth: 380,
-        background: "rgba(255,255,255,0.55)",
-        border: "1px solid rgba(255,255,255,0.4)",
+        background: "var(--bg-soft)",
+        border: "1px solid var(--border-soft)",
         borderRadius: 16,
         padding: 24,
-        boxShadow: "0 20px 50px rgba(0,0,0,0.10)",
+        boxShadow: "var(--shadow-login-card)",
       };
 
   // Pre-compute error banner so we don't use && inside the JSX tree.
@@ -58,9 +58,9 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
         style={{
           marginBottom: 12,
           padding: "8px 10px",
-          background: "rgba(255,59,48,0.12)",
-          border: "1px solid rgba(255,59,48,0.4)",
-          color: "#9a1f17",
+          background: "var(--bg-danger-tint)",
+          border: "1px solid var(--border-danger-tint)",
+          color: "var(--text-danger)",
           borderRadius: 10,
           fontSize: 13,
         }}

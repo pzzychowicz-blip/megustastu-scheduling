@@ -128,7 +128,7 @@ export default function RequestFormModal({
     <div
       style={{
         display: "inline-flex",
-        background: "rgba(0,0,0,0.06)",
+        background: "var(--bg-segment-strong)",
         borderRadius: 10,
         padding: 3,
       }}
@@ -145,8 +145,8 @@ export default function RequestFormModal({
               padding: "6px 14px",
               fontSize: 13,
               borderRadius: 8,
-              background: on ? "#007AFF" : "transparent",
-              color: on ? "#fff" : "#1c1c1e",
+              background: on ? "var(--accent)" : "transparent",
+              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
               border: "1px solid transparent",
             }}
           >
@@ -159,7 +159,7 @@ export default function RequestFormModal({
 
   const dateError = (form.dateFrom && form.dateTo && form.dateTo < form.dateFrom)
     ? (
-      <p style={{ ...S.muted, color: "#9a1f17", fontSize: 12, marginTop: -4 }}>
+      <p style={{ ...S.muted, color: "var(--text-danger)", fontSize: 12, marginTop: -4 }}>
         End date must be on or after start date.
       </p>
     )
