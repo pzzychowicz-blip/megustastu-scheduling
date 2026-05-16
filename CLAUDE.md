@@ -48,10 +48,12 @@ separate Firebase project, same UI conventions).
   the prefill.
 - **Employee profile fields:** name, roles (multi-select from the 5),
   fixed-days toggle (default OFF; when ON, lists the contractual workdays),
-  shift preference (day / evening / either).
-- **Work pattern:** 5 working days → 2 days off. The 2 off-days CAN be
-  split (e.g. Mon+Tue work, Wed+Thu off, Fri-Sun work). Enforced by the
-  generator only — manual edits can override.
+  shift preference (day / evening / either), working days per week
+  (v0.12.0; 1..7, default 5).
+- **Work pattern:** 5 working days → 2 days off as the default; v0.12.0
+  makes this per-employee via `workingDaysPerWeek` (1..7, default 5).
+  The off-days CAN be split (e.g. Mon+Tue work, Wed+Thu off, Fri–Sun
+  work). Enforced by the generator only — manual edits can override.
 - **Requests module:** manager enters all day-off and holiday records on
   staff's behalf (staff communicate via WhatsApp / in person).
 - **Export:** PDF in horizontal spreadsheet layout. Available **only when
@@ -106,6 +108,25 @@ separate Firebase project, same UI conventions).
   regardless of in-app theme. Printed rotas should be ink-economic
   and legible on paper; dark backgrounds on print would waste toner
   and look wrong. `pdf-export.js` never reads CSS vars.
+- **Opening days (v0.12.0):** `/settings.openingDays` is a per-weekday
+  boolean map (`{ mon, tue, … sun }`). Closed days disappear from the
+  schedule grid (desktop columns + mobile day-cards) and from the PDF
+  export. Centralized via `visibleWeekDates(weekStart, openingDays)`
+  in `schedule-logic.js`. Missing / undefined `openingDays` falls back
+  to `DEFAULT_OPENING_DAYS` (all true) — legacy `/settings` docs
+  without the field still render a full 7-day week. Save validation
+  requires ≥1 open day. PDF zebra-stripe column indices stay absolute
+  (2 / 4 / 6 in the rendered table) — after a closure they fall on
+  alternating visible columns rather than specifically Tue / Thu / Sat;
+  the goal is print readability, not specific weekdays.
+- **Per-employee work pattern (v0.12.0):**
+  `employees/{id}.workingDaysPerWeek` is a number 1..7, default 5.
+  Off-days are derived (`7 − N`). v0.12.0 stores + displays the
+  pattern (segmented control on the edit form with a live
+  "N working / M off" helper; `Pattern: N/M` on the roster row).
+  It is NOT consumed by any scheduling logic yet — the auto-generator
+  (v1.x) is the primary consumer. Legacy employees without the field
+  display the default 5 / 2 on read; no Firebase migration.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -123,7 +144,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.11.0)
+## File structure (current — v0.12.0)
 
 ```
 megustastu-scheduling/
@@ -166,23 +187,47 @@ megustastu-scheduling/
     │   │                           callers compose alpha at use site via
     │   │                           rgba(`${rgb}`, 0.2). Zero rgba/hex
     │   │                           literals remain in JS.
+    │   │                           v0.12.0: + DEFAULT_OPENING_DAYS (all
+    │   │                           seven weekdays true) — fallback for
+    │   │                           /settings.openingDays. + DEFAULT_WORKING_DAYS
+    │   │                           = 5 — fallback for employee
+    │   │                           .workingDaysPerWeek.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
     │   │                           findSameDayShift + isWeekComplete.
     │   │                           Pure JS, no React.
+    │   │                           v0.12.0: + weekdayKeyForDate(date) and
+    │   │                           visibleWeekDates(weekStart, openingDays)
+    │   │                           — filters out closed days. isWeekComplete
+    │   │                           now takes openingDays and skips closed
+    │   │                           days (returns false when none open).
     │   └── pdf-export.js           landscape-A4 weekly rota → file download
     │                               via jsPDF + jspdf-autotable. Pure JS.
     │                               FoH/Kitchen section divider rows.
     │                               v0.9.0: evening cells = name only,
     │                               evening row labels = start time only.
+    │                               v0.12.0: accepts openingDays; uses
+    │                               visibleWeekDates so closed days drop
+    │                               out of the table head + body. Filename
+    │                               date range uses first / last visible
+    │                               date (no longer dates[6]).
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
         ├── LoginScreen.jsx         email/password sign-in form
         ├── AppShell.jsx            authenticated shell + tab nav
-        ├── EmployeesList.jsx       roster list + Add button
-        ├── EmployeeFormModal.jsx   add/edit employee modal
+        ├── EmployeesList.jsx       roster list + Add button.
+        │                           v0.12.0: each row shows
+        │                           "Pattern: N/M" below the role chips
+        │                           (N = workingDaysPerWeek, M = 7 − N).
+        ├── EmployeeFormModal.jsx   add/edit employee modal.
+        │                           v0.12.0: + "Working days per week"
+        │                           segmented control (1..7) with live
+        │                           "N working / M off" helper. Stored
+        │                           on /employees/{id}.workingDaysPerWeek.
+        │                           Legacy / out-of-range values clamp to
+        │                           the default (5) on read.
         ├── RequestsList.jsx        upcoming/past requests + Add button
         ├── RequestFormModal.jsx    add/edit day-off / holiday modal
         ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile).
@@ -192,6 +237,13 @@ megustastu-scheduling/
         │                           marginTop split between groups,
         │                           label-cell chips in the left column;
         │                           mobile sub-headers reshaped to match.
+        │                           v0.12.0: reads settings.openingDays;
+        │                           uses visibleWeekDates so closed days
+        │                           drop out. Desktop gridTemplateColumns
+        │                           + minWidth derive from dates.length.
+        │                           Defensive empty-state when zero days
+        │                           open. Forwards openingDays to
+        │                           ExportButton.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -226,8 +278,18 @@ megustastu-scheduling/
         │                           override." while settings.darkMode is
         │                           undefined; collapses to null once an
         │                           explicit boolean is saved.
+        │                           v0.12.0: + Open days picker inside the
+        │                           Operating Hours section (weekday pill
+        │                           row). Validation requires ≥1 open
+        │                           day; error force-opens Hours. Dirty
+        │                           tracking combines hours + open-days
+        │                           into operatingDirty for the section
+        │                           header dot.
         └── ExportButton.jsx        Export-PDF button in the week-nav bar;
-                                    disabled until every cell is filled
+                                    disabled until every cell on every
+                                    open day is filled.
+                                    v0.12.0: + openingDays prop, forwarded
+                                    to isWeekComplete + pdf-export.
 ```
 
 ### File structure (target — added in later sessions)
@@ -250,7 +312,9 @@ src/
 ```
 /employees/{employeeId}
   → { name, roles: [Role], fixedDays?: {mon,tue,wed,thu,fri,sat,sun},
-      preference: "day"|"evening"|"either", active }
+      preference: "day"|"evening"|"either",
+      workingDaysPerWeek?: number,  // v0.12.0 — 1..7, default 5; off = 7 − N
+      active }
 
 /shiftTemplate
   → { foh:     { day: {start,end,count},
@@ -267,7 +331,11 @@ src/
   → { employeeId, type: "dayoff"|"holiday", dateFrom, dateTo, notes? }
 
 /settings
-  → { operatingStart: "11:00", operatingEnd: "23:00", ... }
+  → { operatingStart: "11:00", operatingEnd: "23:00",
+      openingDays?: {mon,tue,wed,thu,fri,sat,sun},  // v0.12.0 — closed
+                                                     // days drop from grid + PDF
+      showRolePills?: boolean,
+      darkMode?: boolean }
 ```
 
 ---

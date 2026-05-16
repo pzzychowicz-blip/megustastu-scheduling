@@ -42,6 +42,21 @@ export const DEFAULT_SHIFT_TEMPLATE = Object.freeze({
 // ── Operating hours ──────────────────────────────────────────────────────
 export const OPERATING_HOURS = Object.freeze({ start: "11:00", end: "23:00" });
 
+// ── Opening days (v0.12.0) ───────────────────────────────────────────────
+// Default = restaurant open every day. Used as a fallback when /settings has
+// no openingDays field yet, so legacy installs keep their 7-day week.
+// Shape matches WEEKDAYS keys so the same boolean map drops into the
+// Settings form, the schedule grid filter, and the PDF export filter.
+export const DEFAULT_OPENING_DAYS = Object.freeze({
+  mon: true, tue: true, wed: true, thu: true, fri: true, sat: true, sun: true,
+});
+
+// ── Employee work pattern (v0.12.0) ──────────────────────────────────────
+// `workingDaysPerWeek` on each employee — number of working days per week,
+// 1..7. Off-days = 7 − N. v1.0 just stores + displays it; the auto-generator
+// (v1.x) is the primary consumer.
+export const DEFAULT_WORKING_DAYS = 5;
+
 // ── Status colours (alpha-tinted, matches Bookings pattern) ──────────────
 // v0.11.0: each entry references CSS vars that flip on dark mode.
 export const STATUS_COLORS = Object.freeze({

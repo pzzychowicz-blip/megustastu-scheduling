@@ -21,10 +21,11 @@ import {
   ROLE_COLORS,
   STATUS_COLORS,
   DEFAULT_SHIFT_TEMPLATE,
+  DEFAULT_OPENING_DAYS,
 } from "../lib/constants.js";
 import {
   startOfWeek,
-  weekDates,
+  visibleWeekDates,
   isoDate,
   formatDayHeader,
   formatWeekRange,
@@ -52,12 +53,20 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // from an older saved object — only an explicit `false` hides them.
   const showRolePills = !settings || settings.showRolePills !== false;
 
+  // v0.12.0: opening-days filter. Settings.openingDays missing → fall back
+  // to DEFAULT_OPENING_DAYS (all true) so legacy /settings docs still
+  // render a full week.
+  const openingDays = (settings && settings.openingDays) || DEFAULT_OPENING_DAYS;
+
   // Slot definitions for the week (same every day until per-day overrides land).
   const slots = useMemo(function () { return slotsForDay(template); }, [template]);
 
   // ── Week navigation ──────────────────────────────────────────────────
   const [weekStart, setWeekStart] = useState(function () { return startOfWeek(new Date()); });
-  const dates = useMemo(function () { return weekDates(weekStart); }, [weekStart]);
+  const dates = useMemo(
+    function () { return visibleWeekDates(weekStart, openingDays); },
+    [weekStart, openingDays]
+  );
 
   // v0.10.2: cache today's ISO once per render so the date-pill loop
   // doesn't restringify a Date on every column.
@@ -233,20 +242,25 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           slots={slots}
           weekShifts={weekShifts}
           employees={employees}
+          openingDays={openingDays}
         />
       </div>
     </div>
   );
 
-  // ── Desktop layout: 7-column × N-row grid ────────────────────────────
+  // ── Desktop layout: N-column × M-row grid ────────────────────────────
+  // v0.12.0: column count derives from `dates.length` (open days), not a
+  // hardcoded 7. minWidth shrinks proportionally so a 5-day week doesn't
+  // force a horizontal scrollbar where there's no need.
   const desktopGrid = (
     <div style={{ overflowX: "auto" }}>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "120px repeat(7, minmax(120px, 1fr))",
+          gridTemplateColumns:
+            "120px repeat(" + dates.length + ", minmax(120px, 1fr))",
           gap: 6,
-          minWidth: 880,
+          minWidth: 120 + dates.length * 120,
         }}
       >
         {/* Top-left empty + day pills.
@@ -377,10 +391,25 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     </div>
   );
 
+  // v0.12.0: defensive empty-state when no days are open. Settings
+  // validation blocks the all-closed save, but a hand-edited Firebase doc
+  // could still arrive empty — render a small notice instead of a
+  // zero-column grid that would look broken.
+  const allClosedNotice = dates.length === 0
+    ? (
+      <div style={{ ...S.surfaceSoft, textAlign: "center", padding: 24 }}>
+        <p style={{ ...S.body, marginBottom: 0 }}>
+          No open days configured. Open Settings → Operating hours and pick at least one day.
+        </p>
+      </div>
+    )
+    : null;
+
   return (
     <div>
       {navBar}
-      {isMobile ? mobileStack : desktopGrid}
+      {allClosedNotice}
+      {dates.length > 0 ? (isMobile ? mobileStack : desktopGrid) : null}
 
       <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>
         Click any cell to assign someone or edit the time / role. Cells marked

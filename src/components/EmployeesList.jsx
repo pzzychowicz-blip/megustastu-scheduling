@@ -10,7 +10,10 @@
 //   isMobile   (bool)
 
 import { useState } from "react";
-import { S, BTN, ROLE_COLORS, WEEKDAYS } from "../lib/constants.js";
+import {
+  S, BTN, ROLE_COLORS, WEEKDAYS,
+  DEFAULT_WORKING_DAYS,
+} from "../lib/constants.js";
 import { mkBtn, TBadge } from "./atoms.jsx";
 import EmployeeFormModal from "./EmployeeFormModal.jsx";
 
@@ -35,6 +38,17 @@ function preferenceLabel(p) {
   if (p === "day") return "Prefers day";
   if (p === "evening") return "Prefers evening";
   return "Either shift";
+}
+
+// v0.12.0: pattern label "N/M" where N = working days, M = 7 − N. Falls
+// back to DEFAULT_WORKING_DAYS for legacy employee rows without the field.
+function patternLabel(workingDaysPerWeek) {
+  const n = typeof workingDaysPerWeek === "number"
+    && workingDaysPerWeek >= 1
+    && workingDaysPerWeek <= 7
+      ? workingDaysPerWeek
+      : DEFAULT_WORKING_DAYS;
+  return "Pattern: " + n + "/" + (7 - n);
 }
 
 export default function EmployeesList({ employees, actions, isMobile }) {
@@ -134,8 +148,11 @@ export default function EmployeesList({ employees, actions, isMobile }) {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {roleChips}
         </div>
+        <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
+          {patternLabel(emp.workingDaysPerWeek)}
+        </div>
         {fdSummary
-          ? <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>★ {fdSummary}</div>
+          ? <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>★ {fdSummary}</div>
           : null}
       </button>
     );

@@ -58,6 +58,8 @@ import {
   S, BTN, SECTIONS,
   DEFAULT_SHIFT_TEMPLATE,
   OPERATING_HOURS,
+  DEFAULT_OPENING_DAYS,
+  WEEKDAYS,
 } from "../lib/constants.js";
 import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 
@@ -112,6 +114,27 @@ function hoursError(hours) {
   return null;
 }
 
+// v0.12.0: validate the openingDays form. Requires ≥1 day open — otherwise
+// the schedule grid would be empty and PDF export would never enable.
+function openingDaysError(days) {
+  if (!days) return "Pick at least one open day.";
+  for (let i = 0; i < WEEKDAYS.length; i++) {
+    if (days[WEEKDAYS[i].key]) return null;
+  }
+  return "Pick at least one open day.";
+}
+
+// v0.12.0: per-form-vs-saved dirty comparison for opening-days. Drives the
+// Operating Hours accordion header dot alongside the existing hoursDirty.
+function openingDaysDirty(form, saved) {
+  if (!form) return false;
+  for (let i = 0; i < WEEKDAYS.length; i++) {
+    const k = WEEKDAYS[i].key;
+    if (Boolean(form[k]) !== Boolean(saved[k])) return true;
+  }
+  return false;
+}
+
 // v0.10.0: per-block dirty comparison. Drives the FoH / Kitchen accordion
 // header dots. Compares only the fields we know about; if either side is
 // missing (shouldn't happen given DEFAULT_SHIFT_TEMPLATE fallback) we
@@ -158,6 +181,13 @@ export default function Settings({
   });
   const [hoursDirty, setHoursDirty] = useState(false);
 
+  // v0.12.0: opening-days local form. Falls back to DEFAULT_OPENING_DAYS
+  // when /settings has no openingDays yet — same fallback as the rest of
+  // the app uses on read, so the toggle row reflects the EFFECTIVE state.
+  const [openingDaysForm, setOpeningDaysForm] = useState(function () {
+    return { ...DEFAULT_OPENING_DAYS, ...((settings && settings.openingDays) || {}) };
+  });
+
   // v0.10.0: which accordion section is open. `null` means all collapsed.
   // Default to "hours" because it's the top section and also the one that
   // gates template-row validation.
@@ -203,6 +233,15 @@ export default function Settings({
     setHoursDirty(true);
   }
 
+  // v0.12.0: opening-day toggle. Flip a single weekday key. Dirty state is
+  // derived from a comparison against the saved settings, so no separate
+  // setter is needed.
+  function toggleOpeningDay(key) {
+    setOpeningDaysForm(function (prev) {
+      return { ...prev, [key]: !prev[key] };
+    });
+  }
+
   // v0.10.0: Display section auto-save. Toggling immediately writes to
   // /settings. We spread `settings` (or {}) so operatingStart/End and any
   // future fields are preserved — saveSettings does a full-path write.
@@ -228,6 +267,7 @@ export default function Settings({
   // operating-end-before-start case would cascade misleading errors into
   // every template row. The user fixes hours first, then row errors clear.
   const opsErr = hoursError(hoursForm);
+  const openDaysErr = openingDaysError(openingDaysForm);
   const blockHours = opsErr === null ? hoursForm : null;
   const errors = {
     fohDay:         blockError(form.foh.day,         blockHours),
@@ -237,6 +277,7 @@ export default function Settings({
   };
   const hasErrors =
     opsErr !== null ||
+    openDaysErr !== null ||
     errors.fohDay !== null ||
     errors.fohEvening !== null ||
     errors.kitchenDay !== null ||
@@ -254,6 +295,16 @@ export default function Settings({
     blockDirty(form.kitchen.day, savedTemplate.kitchen.day) ||
     blockDirty(form.kitchen.evening, savedTemplate.kitchen.evening);
 
+  // v0.12.0: opening-days dirty derived against the saved /settings doc
+  // (falling back to DEFAULT_OPENING_DAYS so a never-saved settings doc
+  // matches the form's default and the dot doesn't appear spuriously).
+  const savedOpeningDays =
+    (settings && settings.openingDays) || DEFAULT_OPENING_DAYS;
+  const openDaysFormDirty = openingDaysDirty(openingDaysForm, savedOpeningDays);
+  // Combined dirty flag for the Operating Hours accordion header dot —
+  // hours OR opening-days. Saved as part of the same Save click.
+  const operatingDirty = hoursDirty || openDaysFormDirty;
+
   // ── Save / Reset ───────────────────────────────────────────────────────
   // v0.10.0: if errors exist, force-open the first section carrying an
   // error so the validator messages become visible (collapsed sections
@@ -261,19 +312,26 @@ export default function Settings({
   // visible feedback.
   function handleSave() {
     if (hasErrors) {
-      if (opsErr) setOpenSection("hours");
+      // v0.12.0: opening-days error also forces the Operating Hours section
+      // open so the message becomes visible.
+      if (opsErr || openDaysErr) setOpenSection("hours");
       else if (errors.fohDay || errors.fohEvening) setOpenSection("foh");
       else if (errors.kitchenDay || errors.kitchenEvening) setOpenSection("kitchen");
       return;
     }
-    if (!fohDirty && !kitchenDirty && !hoursDirty) return;
-    if (hoursDirty) {
-      saveSettings({
-        ...(settings || {}),
-        operatingStart: hoursForm.operatingStart,
-        operatingEnd:   hoursForm.operatingEnd,
-      });
+    if (!fohDirty && !kitchenDirty && !hoursDirty && !openDaysFormDirty) return;
+    if (hoursDirty || openDaysFormDirty) {
+      const next = { ...(settings || {}) };
+      if (hoursDirty) {
+        next.operatingStart = hoursForm.operatingStart;
+        next.operatingEnd   = hoursForm.operatingEnd;
+      }
+      if (openDaysFormDirty) {
+        next.openingDays = { ...openingDaysForm };
+      }
+      saveSettings(next);
       setHoursDirty(false);
+      // openDaysFormDirty auto-clears once the `settings` prop updates.
     }
     if (fohDirty || kitchenDirty) {
       saveShiftTemplate(form);
@@ -283,7 +341,7 @@ export default function Settings({
 
   function handleReset() {
     const ok = window.confirm(
-      "Reset operating hours, display preferences AND shift template to defaults? Your current values will be overwritten."
+      "Reset operating hours, opening days, display preferences AND shift template to defaults? Your current values will be overwritten."
     );
     if (!ok) return;
     const defaults = cloneTemplate(DEFAULT_SHIFT_TEMPLATE);
@@ -291,12 +349,15 @@ export default function Settings({
       operatingStart: OPERATING_HOURS.start,
       operatingEnd:   OPERATING_HOURS.end,
     };
+    const defaultOpenDays = { ...DEFAULT_OPENING_DAYS };
     setForm(defaults);
     setHoursForm(defaultHours);
+    setOpeningDaysForm(defaultOpenDays);
     saveShiftTemplate(defaults);
     saveSettings({
       operatingStart: OPERATING_HOURS.start,
       operatingEnd:   OPERATING_HOURS.end,
+      openingDays:    defaultOpenDays,
       showRolePills:  true,   // v0.9.0 default
     });
     setHoursDirty(false);
@@ -371,7 +432,7 @@ export default function Settings({
   // ── Save button styling ────────────────────────────────────────────────
   // Native `disabled` works but the visual cue is weak. Add explicit opacity
   // + cursor override so the manager can tell at a glance.
-  const anyDirty = fohDirty || kitchenDirty || hoursDirty;
+  const anyDirty = fohDirty || kitchenDirty || hoursDirty || openDaysFormDirty;
   const saveDisabled = !anyDirty || hasErrors;
   const saveStyle = saveDisabled ? { opacity: 0.5, cursor: "not-allowed" } : undefined;
 
@@ -410,7 +471,7 @@ export default function Settings({
           title="Operating hours"
           open={openSection === "hours"}
           onToggle={function () { toggleSection("hours"); }}
-          dirty={hoursDirty}
+          dirty={operatingDirty}
         >
           <div style={{ ...S.fldLabel, marginBottom: 6 }}>Restaurant open</div>
           <div style={hoursRowStyle}>
@@ -434,6 +495,48 @@ export default function Settings({
               {opsErr}
             </div>
           ) : null}
+
+          {/* v0.12.0: opening-days picker. A row of weekday pills (matches
+              the EmployeeFormModal fixed-days picker style) under the
+              hours fields. Closed days drop out of the schedule grid AND
+              the PDF export — controlled by visibleWeekDates() in
+              schedule-logic.js. */}
+          <div style={{ marginTop: 12 }}>
+            <div style={{ ...S.fldLabel, marginBottom: 6 }}>Open days</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {WEEKDAYS.map(function (d) {
+                const on = Boolean(openingDaysForm[d.key]);
+                return (
+                  <button
+                    key={d.key}
+                    type="button"
+                    onClick={function () { toggleOpeningDay(d.key); }}
+                    style={{
+                      ...BTN.base,
+                      padding: "6px 10px",
+                      fontSize: 12,
+                      borderRadius: 8,
+                      minWidth: 44,
+                      background: on ? "var(--accent)" : "var(--bg-pill)",
+                      color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+                      border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                    }}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+            {openDaysErr ? (
+              <div style={{ fontSize: 12, color: "var(--text-danger)", marginTop: 4 }}>
+                {openDaysErr}
+              </div>
+            ) : (
+              <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>
+                Closed days are hidden from the schedule grid and excluded from PDF export.
+              </div>
+            )}
+          </div>
         </Collapsible>
 
         {/* Display preferences.
