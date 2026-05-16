@@ -5,6 +5,139 @@ an entry. Newest first.
 
 ---
 
+## v0.12.0 — Opening days + per-employee work pattern
+
+**Date:** 2026-05-16
+**Behavioural change:** Two related additions.
+
+1. **Opening days** in Settings → Operating Hours. Manager picks a
+   per-weekday boolean map (`{ mon, tue, … sun }`). Closed days
+   disappear from the weekly schedule grid (desktop columns + mobile
+   day-cards) and from the PDF export. Validation requires at least
+   one open day. Defaults to all-true so legacy `/settings` docs
+   without the field render a full 7-day week.
+
+2. **Per-employee work pattern.** Every employee gets a
+   `workingDaysPerWeek` field (1..7, default 5). Off-days are derived
+   (`7 − N`). v0.12.0 just stores + displays the pattern (segmented
+   1..7 control in the edit form with a live "N working / M off"
+   helper; `Pattern: N/M` line on the roster row). The
+   field is NOT consumed by any scheduling logic yet — the
+   auto-generator (v1.x) is the primary consumer.
+
+### What landed
+
+1. **`DEFAULT_OPENING_DAYS` + `DEFAULT_WORKING_DAYS` constants** in
+   `src/lib/constants.js`. Single source for the fallbacks used by
+   every read site.
+2. **`visibleWeekDates(weekStart, openingDays)` + helper
+   `weekdayKeyForDate(date)`** in `src/lib/schedule-logic.js`. Pure
+   filter wrapping the existing `weekDates()` — undefined
+   `openingDays` short-circuits to all 7 days for pre-v0.12.0
+   compatibility.
+3. **`isWeekComplete` updated** to take `openingDays` and skip closed
+   days. Returns false when zero days are open so the Export-PDF
+   button stays disabled rather than emitting an empty rota.
+4. **Settings opening-days picker.** Inside the Operating Hours
+   `Collapsible`, under the time fields: a weekday pill row using the
+   same styling as `EmployeeFormModal`'s fixed-days picker.
+   Validation = ≥1 open day; error message inline, error force-opens
+   the Hours section. Dirty tracking combines hours + open-days into a
+   single `operatingDirty` flag for the section header dot. Saved as
+   part of the same Save click as operating hours.
+5. **`ScheduleGrid` filters dates.** Reads
+   `settings.openingDays ?? DEFAULT_OPENING_DAYS`. Desktop
+   `gridTemplateColumns` becomes `"120px repeat(${dates.length}, …)"`
+   — column count is data-driven. `minWidth` scales with column
+   count so a 5-day week doesn't force a horizontal scrollbar. Mobile
+   stack naturally narrows because it iterates the filtered date
+   list. Defensive "No open days configured" empty-state when
+   `dates.length === 0`.
+6. **`pdf-export.js` accepts `openingDays`.** Uses `visibleWeekDates`
+   for the table head + body iteration. Filename date range derives
+   from `dates[0]` / `dates[dates.length-1]` (was `dates[6]`, would
+   have errored with fewer than 7 dates).
+7. **`ExportButton` forwards `openingDays`** to both `isWeekComplete`
+   and `exportWeekPdf`. The button enables when every cell on every
+   OPEN day is filled.
+8. **`EmployeeFormModal` gets the working-days segmented row.** New
+   field placed between "Shift preference" and "Fixed working days".
+   1..7 segmented control with live "N working / M off" helper line.
+   Legacy / out-of-range stored values clamp to the default (5) on
+   read.
+9. **`EmployeesList` shows `Pattern: N/M`** on each roster row, below
+   the role chips, above the fixed-days summary. Falls back to the
+   default 5/2 for employees without the field.
+10. **`__APP_SIGNATURE__` → 0.12.0** (sha `opening-days-work-pattern`,
+    build `2026-05-16`).
+
+**Scope:** 8 source files + 2 docs (CLAUDE.md, this log). New data
+fields are both optional with sensible read-time fallbacks — no
+migration needed for existing /employees or /settings docs.
+
+### Files modified
+
+- `src/lib/constants.js` — `DEFAULT_OPENING_DAYS`, `DEFAULT_WORKING_DAYS`.
+- `src/lib/schedule-logic.js` — `weekdayKeyForDate`,
+  `visibleWeekDates`, `isWeekComplete(openingDays)`.
+- `src/lib/pdf-export.js` — accepts `openingDays`; uses
+  `visibleWeekDates`; safer filename date range.
+- `src/components/Settings.jsx` — opening-days picker inside Operating
+  Hours; validation; dirty flag; reset includes the new field.
+- `src/components/ScheduleGrid.jsx` — opening-days resolve + filter;
+  data-driven desktop grid columns; empty-state.
+- `src/components/ExportButton.jsx` — accepts + forwards
+  `openingDays`.
+- `src/components/EmployeeFormModal.jsx` — working-days segmented
+  control + payload field.
+- `src/components/EmployeesList.jsx` — Pattern N/M row.
+- `src/App.jsx` — version bump to 0.12.0.
+- `CLAUDE.md` — file-structure annotations, data-model block, two
+  new locked decisions (Opening days, Per-employee work pattern),
+  updated work-pattern + employee-profile-fields decisions.
+
+### Decisions locked this version
+
+- **Per-employee pattern shape: single number.** Off-days derive as
+  `7 − N`. Rejected alternatives: pattern picker (`5/2`, `6/1`, …),
+  separate work/off numbers (cycle ≠ 7). Reason: simplicity; the
+  Settings + employee model are weekly, not cyclic.
+- **Opening-days placement: inside Operating Hours section.** Keeps
+  total accordion sections at 4. Both define when the restaurant is
+  open — conceptually grouped.
+- **v1.0 surfacing: opening days filter, work pattern displays
+  only.** Opening days are a hard filter (must-have effect). Work
+  pattern is stored for the auto-generator (v1.x) and surfaced as a
+  small helper, but does NOT block assignments or warn on
+  over/under-assignment yet.
+- **PDF zebra-stripe column indices stay absolute (2 / 4 / 6).**
+  After a closure they fall on alternating visible columns rather
+  than specifically Tue / Thu / Sat — acceptable since the goal is
+  print readability, not specific weekdays.
+- **Existing shifts on newly-closed days remain in Firebase.** They
+  are hidden from the grid + PDF but not deleted; the manager
+  re-opens the day to see / clear them. Not surfaced as a warning
+  in v0.12.0 (low-frequency, manager-driven config change).
+
+### Verification
+
+- `npm run build` succeeds.
+- Settings → Operating Hours → toggle Monday OFF → Save → Monday
+  column drops from the desktop grid; Monday card drops from mobile;
+  PDF export omits Monday.
+- All 7 days off → Save shows inline error, save blocked.
+- Reload → opening-days choice persists.
+- Employees → Add → "Working days per week" defaults to 5; helper
+  reads "5 working / 2 off". Change to 4 → helper updates to "4
+  working / 3 off". Saved value renders as "Pattern: 4/3" on the
+  roster row.
+- Pre-v0.12.0 employees show "Pattern: 5/2" without any Firebase
+  migration.
+- Console boot banner: `v0.12.0`;
+  `window.__MGT_SCHED_BUILD__.version === "0.12.0"`.
+
+---
+
 ## v0.11.0 — Dark mode (CSS vars + system-pref follow) + PDF polish
 
 **Date:** 2026-05-15 → 2026-05-16

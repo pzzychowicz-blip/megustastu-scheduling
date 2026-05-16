@@ -22,7 +22,7 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import {
-  weekDates,
+  visibleWeekDates,
   isoDate,
   formatDayHeader,
   formatWeekRange,
@@ -105,13 +105,17 @@ function buildTableBody(slots, dates, weekShifts, employees) {
   return rows;
 }
 
-export function exportWeekPdf({ weekStart, slots, weekShifts, employees }) {
+// v0.12.0: openingDays optional. When supplied, closed days are dropped
+// from the rendered table — column count, head row, body cells, and the
+// filename's date range all derive from the filtered date list. Omitted →
+// renders the full 7-day week (legacy behaviour).
+export function exportWeekPdf({ weekStart, slots, weekShifts, employees, openingDays }) {
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
 
-  const dates = weekDates(weekStart);
+  const dates = visibleWeekDates(weekStart, openingDays);
   const weekLabel = formatWeekRange(weekStart);
 
   // ── Header ─────────────────────────────────────────────────────────────
@@ -184,7 +188,9 @@ export function exportWeekPdf({ weekStart, slots, weekShifts, employees }) {
   }
 
   // ── Save ───────────────────────────────────────────────────────────────
+  // v0.12.0: filename range uses first / last visible date (no longer
+  // dates[6] — closed days could leave fewer than 7 dates in the array).
   const startIso = isoDate(dates[0]);
-  const endIso = isoDate(dates[6]);
+  const endIso = isoDate(dates[dates.length - 1]);
   doc.save("MGT_Week_" + startIso + "_to_" + endIso + ".pdf");
 }

@@ -26,8 +26,13 @@ import {
   S,
   BTN,
   ROLE_COLORS,
+  DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn, TBadge } from "./atoms.jsx";
+
+// v0.12.0: working-days-per-week choices. 1..7. Off-days = 7 − N. Stored
+// on each employee for the future auto-generator (v1.x).
+const WORKING_DAYS_OPTIONS = [1, 2, 3, 4, 5, 6, 7];
 
 // ── Defaults ─────────────────────────────────────────────────────────────
 function emptyForm() {
@@ -35,6 +40,7 @@ function emptyForm() {
     name: "",
     roles: [],
     preference: "either",
+    workingDaysPerWeek: DEFAULT_WORKING_DAYS,
     fixedDays: null,
     active: true,
   };
@@ -42,10 +48,18 @@ function emptyForm() {
 
 function formFromEmployee(emp) {
   if (!emp) return emptyForm();
+  // v0.12.0: clamp legacy / out-of-range values to the default. Stored
+  // values are written by this form, so the only way an out-of-range
+  // value reaches us is a hand-edited Firebase doc — fail safe.
+  const wdRaw = typeof emp.workingDaysPerWeek === "number"
+    ? Math.round(emp.workingDaysPerWeek)
+    : DEFAULT_WORKING_DAYS;
+  const wd = wdRaw >= 1 && wdRaw <= 7 ? wdRaw : DEFAULT_WORKING_DAYS;
   return {
     name: emp.name || "",
     roles: Array.isArray(emp.roles) ? emp.roles.slice() : [],
     preference: emp.preference || "either",
+    workingDaysPerWeek: wd,
     fixedDays: emp.fixedDays
       ? { ...emp.fixedDays }
       : null,
@@ -111,6 +125,7 @@ export default function EmployeeFormModal({
       name: nameTrimmed,
       roles: form.roles.slice(),
       preference: form.preference,
+      workingDaysPerWeek: form.workingDaysPerWeek,
       fixedDays: form.fixedDays ? { ...form.fixedDays } : null,
       active: form.active,
     };
@@ -186,6 +201,43 @@ export default function EmployeeFormModal({
             }}
           >
             {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // v0.12.0: working-days-per-week segmented row (1..7). Off-days helper
+  // text updates live so the manager can sanity-check the pattern.
+  const workingDaysSegments = (
+    <div
+      style={{
+        display: "inline-flex",
+        background: "var(--bg-segment-strong)",
+        borderRadius: 10,
+        padding: 3,
+        flexWrap: "wrap",
+      }}
+    >
+      {WORKING_DAYS_OPTIONS.map(function (n) {
+        const on = form.workingDaysPerWeek === n;
+        return (
+          <button
+            key={n}
+            type="button"
+            onClick={function () { setField("workingDaysPerWeek", n); }}
+            style={{
+              ...BTN.base,
+              padding: "6px 12px",
+              fontSize: 13,
+              minWidth: 36,
+              borderRadius: 8,
+              background: on ? "var(--accent)" : "transparent",
+              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+              border: "1px solid transparent",
+            }}
+          >
+            {n}
           </button>
         );
       })}
@@ -288,6 +340,13 @@ export default function EmployeeFormModal({
 
       <Fld label="Shift preference">
         {preferenceSegments}
+      </Fld>
+
+      <Fld label="Working days per week">
+        {workingDaysSegments}
+        <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>
+          {form.workingDaysPerWeek} working / {7 - form.workingDaysPerWeek} off — used by the auto-generator (coming in v1.x).
+        </div>
       </Fld>
 
       <Fld label="Fixed working days">

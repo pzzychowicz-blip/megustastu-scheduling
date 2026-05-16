@@ -7,10 +7,13 @@
 // schedule-logic.js (isWeekComplete) so the button is dumb.
 //
 // Props:
-//   weekStart   (Date)             — current Monday (from ScheduleGrid state)
-//   slots       (Array<slotDef>)   — slotsForDay(template); same for all days
-//   weekShifts  ({ [id]: shift })  — shiftsForWeek output, already narrowed
-//   employees   ({ [id]: emp })    — full employees map
+//   weekStart    (Date)             — current Monday (from ScheduleGrid state)
+//   slots        (Array<slotDef>)   — slotsForDay(template); same for all days
+//   weekShifts   ({ [id]: shift })  — shiftsForWeek output, already narrowed
+//   employees    ({ [id]: emp })    — full employees map
+//   openingDays  (obj?)             — v0.12.0 weekday → bool map. Closed
+//                                     days don't gate completeness and don't
+//                                     appear in the PDF.
 
 import { BTN } from "../lib/constants.js";
 import { isWeekComplete } from "../lib/schedule-logic.js";
@@ -19,8 +22,10 @@ import { isWeekComplete } from "../lib/schedule-logic.js";
 // + DOMPurify) is lazy-loaded on click. Keeps the initial bundle lean —
 // manager exports once a week at most.
 
-export default function ExportButton({ weekStart, slots, weekShifts, employees }) {
-  const ready = isWeekComplete(weekShifts, weekStart, slots);
+export default function ExportButton({ weekStart, slots, weekShifts, employees, openingDays }) {
+  // v0.12.0: completeness check skips closed days. The button enables
+  // when every cell on every OPEN day is filled.
+  const ready = isWeekComplete(weekShifts, weekStart, slots, openingDays);
 
   function handleClick() {
     if (!ready) return;
@@ -30,6 +35,7 @@ export default function ExportButton({ weekStart, slots, weekShifts, employees }
         slots: slots,
         weekShifts: weekShifts,
         employees: employees,
+        openingDays: openingDays,
       });
     }).catch(function (err) {
       console.warn("[pdf-export] failed to load module", err);

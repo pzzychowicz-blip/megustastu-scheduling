@@ -51,6 +51,28 @@ export function weekDates(startDate) {
   return arr;
 }
 
+// ── Opening-days filter (v0.12.0) ────────────────────────────────────────
+// Map a JS Date to the WEEKDAYS key used by /settings.openingDays. We do
+// our own table here instead of importing WEEKDAYS to keep this module
+// dependency-light (it's loaded by pdf-export which is a lazy chunk).
+// Mon = 0 in the WEEKDAYS array; JS getDay() returns 0=Sun..6=Sat.
+const WEEKDAY_KEY_FROM_JS_DAY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+export function weekdayKeyForDate(date) {
+  return WEEKDAY_KEY_FROM_JS_DAY[date.getDay()];
+}
+
+// Returns the subset of weekDates(startDate) where openingDays[key] is
+// truthy. Undefined or missing openingDays → returns all 7 days (preserves
+// pre-v0.12.0 behaviour).
+export function visibleWeekDates(startDate, openingDays) {
+  const dates = weekDates(startDate);
+  if (!openingDays) return dates;
+  return dates.filter(function (d) {
+    return Boolean(openingDays[weekdayKeyForDate(d)]);
+  });
+}
+
 // ── Display formatting ───────────────────────────────────────────────────
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -283,11 +305,19 @@ export function shiftsForWeek(shiftsMap, weekStartDate) {
 }
 
 // ── Week completeness check (gates PDF export) ───────────────────────────
-// Returns true iff EVERY (date, slot) in the week has a shift record with
-// a non-null employeeId. Used by ExportButton — the locked v1 decision is
-// to refuse exporting partial weeks (the printed rota would be misleading).
-export function isWeekComplete(weekShifts, weekStartDate, slots) {
-  const dates = weekDates(weekStartDate);
+// Returns true iff EVERY (date, slot) on every OPEN day has a shift record
+// with a non-null employeeId. Used by ExportButton — the locked v1 decision
+// is to refuse exporting partial weeks (the printed rota would be misleading).
+//
+// v0.12.0: `openingDays` (optional) lets the caller scope completeness to
+// open days only. Closed days don't contribute cells, so they don't need
+// fills. Omitted → all 7 days counted (legacy behaviour).
+// If every day is closed (visible dates empty), the rota is vacuously
+// "empty"; return false so the export button stays disabled rather than
+// emitting an empty PDF.
+export function isWeekComplete(weekShifts, weekStartDate, slots, openingDays) {
+  const dates = visibleWeekDates(weekStartDate, openingDays);
+  if (dates.length === 0) return false;
   for (let d = 0; d < dates.length; d++) {
     const dIso = isoDate(dates[d]);
     for (let s = 0; s < slots.length; s++) {
