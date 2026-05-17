@@ -59,6 +59,7 @@ import {
   DEFAULT_SHIFT_TEMPLATE,
   OPERATING_HOURS,
   DEFAULT_OPENING_DAYS,
+  DEFAULT_GENERATOR_STRICT_PREFERENCE,
   WEEKDAYS,
 } from "../lib/constants.js";
 import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
@@ -261,6 +262,18 @@ export default function Settings({
   const darkModeFollowingSystem =
     !settings || typeof settings.darkMode !== "boolean";
 
+  // v1.0.0: Auto-generator preference-strictness Toggle. Same auto-save
+  // pattern — no validation, no Save button needed. The generator reads
+  // this on each click; flipping it while a generation is mid-flight has
+  // no effect (the algorithm runs synchronously in the click handler).
+  function onStrictPreferenceChange(nextValue) {
+    saveSettings({ ...(settings || {}), generatorStrictPreference: nextValue });
+  }
+  const strictPreference =
+    settings && typeof settings.generatorStrictPreference === "boolean"
+      ? settings.generatorStrictPreference
+      : DEFAULT_GENERATOR_STRICT_PREFERENCE;
+
   // ── Validation snapshot ────────────────────────────────────────────────
   // v0.7.0: template-row checks now also enforce the operating window.
   // Pass hoursForm only when it's valid on its own — otherwise the
@@ -359,6 +372,7 @@ export default function Settings({
       operatingEnd:   OPERATING_HOURS.end,
       openingDays:    defaultOpenDays,
       showRolePills:  true,   // v0.9.0 default
+      generatorStrictPreference: DEFAULT_GENERATOR_STRICT_PREFERENCE, // v1.0.0
     });
     setHoursDirty(false);
   }
@@ -564,6 +578,25 @@ export default function Settings({
             helper={darkModeFollowingSystem
               ? "Following your system preference. Tap to override."
               : null}
+          />
+        </Collapsible>
+
+        {/* v1.0.0: Auto-generator config. Auto-saves on flip like the
+            Display section — config-not-edit, no validation. The
+            generator (Schedule grid's Generate button) reads this on
+            each click. */}
+        <Collapsible
+          title="Auto-generator"
+          open={openSection === "generator"}
+          onToggle={function () { toggleSection("generator"); }}
+        >
+          <Toggle
+            checked={strictPreference === true}
+            onChange={onStrictPreferenceChange}
+            label="Strict shift-preference matching"
+            helper={strictPreference
+              ? "Hard — generator only assigns preference-matching employees. May leave cells empty when no preferred candidate is available."
+              : "Soft mode (default) — generator tries preferred employees first, falls back if no one fits."}
           />
         </Collapsible>
 

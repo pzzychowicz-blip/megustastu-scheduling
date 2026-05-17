@@ -62,9 +62,82 @@ separate Firebase project, same UI conventions).
   evening row labels show start time only (the end is the close of
   service and was visual noise on the printed sheet). Day rows keep
   the full `start–end` range.
-- **Auto-generator:** **Deferred to v1.x** (likely v1.2 or v1.3). v1.0
-  ships manual scheduling. When built, the generator is greedy +
-  constraint-aware and leaves cells empty rather than violating rules.
+- **Auto-generator (v1.0.0, extended v1.1.0):** **Shipped.** Greedy +
+  constraint-aware. Fills empty cells respecting role match, same-day
+  strict, workingDaysPerWeek quota, fixedDays gate, opening-days, and
+  request conflicts (HARD block). Shift preference is switchable Soft
+  (try preferred first, fall back) / Hard (only matching) via the
+  Settings → Auto-generator section. Leaves cells empty rather than
+  violating rules. **v1.1.0** adds Regenerate mode (smart re-evaluate:
+  walks every existing shift, clears any that violate current
+  constraints, then runs fill-empty on the survivors). Confirm modal
+  exposes both modes side-by-side. Pure algorithm lives in
+  `src/lib/generator.js` (no React / Firebase); orchestration in
+  `GenerateButton.jsx` + `GenerateConfirmModal.jsx`. Result surfaced
+  as an auto-dismissing inline banner above the grid; banner copy
+  branches on mode (fill-empty / regenerate / clear).
+- **Day-shift required role (v1.1.0):** a section may declare
+  `dayRequiredRoles: [role, …]` in `SECTIONS`. When set, an employee
+  must hold AT LEAST ONE of those roles to qualify for the section's
+  day slot — stricter than the permissive "any of coversRoles" rule.
+  `SECTIONS.kitchen.dayRequiredRoles = ["Chef"]`: a Plating-only or
+  Pot-only employee cannot lead Kitchen Day. FoH has no
+  `dayRequiredRoles` so its day slot keeps the permissive rule (any of
+  Bar / Floor). The rule is propagated through `slotsForDay` onto each
+  day slot's `requiredRoles` field; both the manual picker
+  (ShiftFormModal) and the auto-generator (generator.js → roleMatches)
+  read from the slot — single rule, two consumers.
+- **Clear-shifts button (v1.1.0):** new `<ClearButton>` in the Schedule
+  nav bar between Generate and Export-PDF. Opens
+  `ClearConfirmModal.jsx` with a scope picker (Whole week / per-open-
+  day buttons, each showing the live shift count). Confirm is a red
+  destructive button labelled "Clear N shifts". Closed days don't
+  appear as scope options.
+- **Prior-week fairness (v1.1.0):** the generator's candidate ranking
+  factors in last week's shift counts. Sort key changed from
+  "specialists → current-week count → name" to "specialists →
+  combined (current + prior week) count → name". An employee who
+  worked many shifts last week is picked later this week until their
+  two-week totals roughly match peers. ScheduleGrid computes
+  `priorWeekShifts = shiftsForWeek(shifts, addDays(weekStart, -7))`
+  and threads it through `<GenerateButton>` → `generateWeek({
+  priorWeekShifts })`. Empty / missing falls back to zero counts —
+  the first week of operation has no fairness effect (correctly).
+  History window is intentionally short (7 days) — older data could
+  push the generator to overcompensate for runs the manager already
+  hand-balanced.
+- **Weekly shifts summary footer (v1.2.0):**
+  `<WeeklyShiftSummary>` renders below the schedule grid's helper
+  caption. One compact pill per active employee
+  (plus any archived employee still on the week): "Name · N / quota".
+  Sort: under-utilization ratio asc (most-under first), then name.
+  Visual cues: zero count → muted; under quota → soft accent tint;
+  at/over → neutral. Reads from `employees` + `weekShifts` — no new
+  state.
+- **Shift-preference request type (v1.2.0):** new entry in
+  `REQUEST_TYPES` (`key: "shift-preference"`). Constrains an
+  employee to ONE dayPart (Day or Evening) on the given dates via a
+  new `preferredDayPart: "day" | "evening"` field on the request
+  record. `findRequestConflict` is now type-guarded to dayoff /
+  holiday only; the new `findShiftPreferenceMismatch` handles the
+  dayPart-scoped check. Enforcement: **HARD** in the generator
+  (mismatched candidates are rejected, reason `"shift-preference"`)
+  and in `clearInvalidShifts` for Regenerate. **SOFT** in the manual
+  picker (yellow warning banner, manager judgment wins). The form
+  modal renders a Day / Evening segmented control conditionally
+  when type === `shift-preference`.
+- **At least 2 consecutive days off (v1.2.0):** labor wellness rule.
+  `hasConsecutiveDaysOff(employeeId, weekStart, shiftsMap, n=2)` in
+  `schedule-logic.js` returns true iff the employee's working
+  pattern for the Mon–Sun week has a run of ≥ n consecutive off
+  days (closed days count as off). **HARD** in the generator —
+  candidate rejected if simulating the assignment would break the
+  rule, reason `"no-2-off"`. **HARD** in `clearInvalidShifts` —
+  for each employee whose remaining shifts violate, clear
+  latest-date shifts until satisfied. **SOFT** in the manual picker
+  — yellow warning banner if the chosen employee + this cell would
+  break the rule; save still works. No cross-week wrapping
+  (Sun ↔ next-Mon doesn't count).
 - **Conflict semantics (revised v0.8.0):**
   - **Same-date double-booking is a HARD block.** A single employee
     cannot hold two shifts on the same date (covers day + evening on
@@ -81,13 +154,15 @@ separate Firebase project, same UI conventions).
     holding any of the section's roles.
   - **Original v1 banner (v0.4.0):** kept and still fires when the
     show-all toggle reveals a request-conflicted assignee.
-- **Settings layout (v0.10.0):** single-open accordion. Section order
-  is Operating Hours → Display → FoH → Kitchen. Operating Hours opens
-  by default. Per-section dirty dot in headers for Hours / FoH /
-  Kitchen. Display section bypasses the Save button — toggles inside
-  it auto-save immediately on change because their visual effect is
-  instant on the schedule grid. Clicking Save while errors exist
-  force-opens the first section carrying an error.
+- **Settings layout (v0.10.0, expanded v1.0.0):** single-open accordion.
+  Section order is Operating Hours → Display → Auto-generator → FoH →
+  Kitchen. Operating Hours opens by default. Per-section dirty dot in
+  headers for Hours / FoH / Kitchen. Display and Auto-generator
+  sections bypass the Save button — their toggles auto-save
+  immediately on change because they have no validation and their
+  effect is either instant on the grid (Display) or consumed on the
+  next generator click (Auto-generator). Clicking Save while errors
+  exist force-opens the first section carrying an error.
 - **Theming model (v0.11.0):** light + dark themes driven by CSS
   custom properties. `:root` in `index.html` holds light values;
   `[data-theme="dark"]` overrides each value for dark. React writes
@@ -144,7 +219,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v0.12.0)
+## File structure (current — v1.2.0)
 
 ```
 megustastu-scheduling/
@@ -192,6 +267,17 @@ megustastu-scheduling/
     │   │                           /settings.openingDays. + DEFAULT_WORKING_DAYS
     │   │                           = 5 — fallback for employee
     │   │                           .workingDaysPerWeek.
+    │   │                           v1.0.0: + DEFAULT_GENERATOR_STRICT_PREFERENCE
+    │   │                           = false — fallback for
+    │   │                           /settings.generatorStrictPreference.
+    │   │                           v1.1.0: + SECTIONS.kitchen.dayRequiredRoles
+    │   │                           = ["Chef"]. Optional field; FoH has
+    │   │                           none. slotsForDay copies it onto each
+    │   │                           day slot's `requiredRoles`.
+    │   │                           v1.2.0: + REQUEST_TYPES gets a third
+    │   │                           entry "shift-preference" with a
+    │   │                           dayPart sub-choice on the request
+    │   │                           record (preferredDayPart).
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -202,16 +288,49 @@ megustastu-scheduling/
     │   │                           — filters out closed days. isWeekComplete
     │   │                           now takes openingDays and skips closed
     │   │                           days (returns false when none open).
-    │   └── pdf-export.js           landscape-A4 weekly rota → file download
-    │                               via jsPDF + jspdf-autotable. Pure JS.
-    │                               FoH/Kitchen section divider rows.
-    │                               v0.9.0: evening cells = name only,
-    │                               evening row labels = start time only.
-    │                               v0.12.0: accepts openingDays; uses
-    │                               visibleWeekDates so closed days drop
-    │                               out of the table head + body. Filename
-    │                               date range uses first / last visible
-    │                               date (no longer dates[6]).
+    │   │                           v1.2.0: findRequestConflict guarded to
+    │   │                           dayoff/holiday types only. New
+    │   │                           findShiftPreferenceMismatch(...,
+    │   │                           dayPart) and hasConsecutiveDaysOff(...,
+    │   │                           weekStart, shiftsMap, minN=2).
+    │   ├── pdf-export.js           landscape-A4 weekly rota → file download
+    │   │                           via jsPDF + jspdf-autotable. Pure JS.
+    │   │                           FoH/Kitchen section divider rows.
+    │   │                           v0.9.0: evening cells = name only,
+    │   │                           evening row labels = start time only.
+    │   │                           v0.12.0: accepts openingDays; uses
+    │   │                           visibleWeekDates so closed days drop
+    │   │                           out of the table head + body. Filename
+    │   │                           date range uses first / last visible
+    │   │                           date (no longer dates[6]).
+    │   └── generator.js            v1.0.0: NEW. Pure greedy auto-generator.
+    │                               generateWeek({weekStart, weekShifts,
+    │                               employees, requests, shiftTemplate,
+    │                               openingDays, strictPreference}) →
+    │                               {newShifts: [...], summary: {filled,
+    │                               unfilled, total, unfilledCells}}.
+    │                               No React, no Firebase — caller loops
+    │                               upsertShift. Constraint chain mirrors
+    │                               ShiftFormModal's picker.
+    │                               v1.1.0: + `mode: "fill-empty" |
+    │                               "regenerate"`. Regenerate runs a
+    │                               pre-pass (clearInvalidShifts) that
+    │                               clears stale assignments (failed role
+    │                               match, new request, fixedDays change,
+    │                               quota over-cap, etc.), returning
+    │                               clearedShiftIds. roleMatches now
+    │                               honours slotDef.requiredRoles. +
+    │                               `priorWeekShifts` arg: rankCandidates
+    │                               uses combined (current+prior) load
+    │                               for fairness across weeks.
+    │                               v1.2.0: + HARD shift-preference
+    │                               filter (uses
+    │                               findShiftPreferenceMismatch) and
+    │                               consecutive-2-off filter (uses
+    │                               hasConsecutiveDaysOff). Both extend
+    │                               clearInvalidShifts so Regenerate
+    │                               clears stale shifts that violate the
+    │                               new rules.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -228,8 +347,17 @@ megustastu-scheduling/
         │                           on /employees/{id}.workingDaysPerWeek.
         │                           Legacy / out-of-range values clamp to
         │                           the default (5) on read.
-        ├── RequestsList.jsx        upcoming/past requests + Add button
-        ├── RequestFormModal.jsx    add/edit day-off / holiday modal
+        ├── RequestsList.jsx        upcoming/past requests + Add button.
+        │                           v1.2.0: row renders a secondary line
+        │                           "Day shifts only" / "Evening shifts
+        │                           only" for shift-preference requests.
+        ├── RequestFormModal.jsx    add/edit day-off / holiday modal.
+        │                           v1.2.0: + Day/Evening segmented
+        │                           sub-choice (preferredDayPart) when
+        │                           type === "shift-preference".
+        │                           Validation requires a dayPart for
+        │                           the new type. Other types ignore
+        │                           the field on save.
         ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile).
         │                           v0.10.2: date pill row (today
         │                           highlighted), centred banded section
@@ -244,6 +372,24 @@ megustastu-scheduling/
         │                           Defensive empty-state when zero days
         │                           open. Forwards openingDays to
         │                           ExportButton.
+        │                           v1.0.0: + GenerateButton in nav bar
+        │                           (between week-range and Export). +
+        │                           auto-dismissing result banner above
+        │                           the grid showing "Filled X, Y left
+        │                           empty" after a generator run.
+        │                           v1.1.0: + ClearButton in nav bar
+        │                           (between Generate and Export).
+        │                           Unified result-banner state handles
+        │                           generator + clear summaries; copy
+        │                           branches on shape ({mode}=generator,
+        │                           {kind}=clear). + priorWeekShifts
+        │                           memo (shiftsForWeek of the prior 7
+        │                           days) threaded into GenerateButton
+        │                           for cross-week fairness.
+        │                           v1.2.0: + WeeklyShiftSummary rendered
+        │                           under the helper caption, showing
+        │                           "Name · N / quota" pills per active
+        │                           employee.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -258,6 +404,17 @@ megustastu-scheduling/
         │                           checkbox to the Toggle atom; hidden-
         │                           count surfaces in the Toggle's
         │                           `helper` slot.
+        │                           v1.1.0: picker honours
+        │                           slotDef.requiredRoles for day slots
+        │                           — when set, employee must hold AT
+        │                           LEAST ONE required role. Empty list
+        │                           falls back to the permissive "any of
+        │                           coversRoles" rule.
+        │                           v1.2.0: warning banner now also fires
+        │                           on shift-preference mismatch (yellow,
+        │                           non-blocking) and on a
+        │                           consecutive-2-off rule break for the
+        │                           proposed assignment. Banners stack.
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
@@ -285,21 +442,70 @@ megustastu-scheduling/
         │                           tracking combines hours + open-days
         │                           into operatingDirty for the section
         │                           header dot.
-        └── ExportButton.jsx        Export-PDF button in the week-nav bar;
-                                    disabled until every cell on every
-                                    open day is filled.
-                                    v0.12.0: + openingDays prop, forwarded
-                                    to isWeekComplete + pdf-export.
+        │                           v1.0.0: + Auto-generator accordion
+        │                           section (between Display and FoH).
+        │                           Single Toggle for "Strict
+        │                           shift-preference matching" — auto-
+        │                           saves on flip (no Save click). Reset
+        │                           to defaults clears it back to false.
+        ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
+        │                           disabled until every cell on every
+        │                           open day is filled.
+        │                           v0.12.0: + openingDays prop, forwarded
+        │                           to isWeekComplete + pdf-export.
+        ├── GenerateButton.jsx      v1.0.0: NEW. Schedule-grid entry point
+        │                           for the auto-generator. Owns the
+        │                           confirm modal + the upsertShift loop.
+        │                           Disabled when shiftTemplate is null
+        │                           or there are zero employees. Fires
+        │                           onResult(summary) so the parent grid
+        │                           can render the inline result banner.
+        │                           v1.1.0: handleConfirm now takes
+        │                           mode ("fill-empty" | "regenerate").
+        │                           Regenerate mode also runs a
+        │                           deleteShift loop for clearedShiftIds
+        │                           before upserting new shifts.
+        ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
+        │                           Overlay. Shows the bullet list of
+        │                           what the generator will do +
+        │                           current preference mode (Soft/Hard).
+        │                           v1.1.0: two action buttons in the
+        │                           bottom row — "Fill empty" (primary)
+        │                           and "Regenerate" (secondary). Both
+        │                           call onConfirm(mode). Explainer
+        │                           card above the buttons clarifies the
+        │                           difference. Cancel disabled while
+        │                           busy.
+        ├── ClearButton.jsx         v1.1.0: NEW. "Clear…" entry point
+        │                           in the Schedule nav bar between
+        │                           Generate and Export. Owns the
+        │                           ClearConfirmModal state + the
+        │                           deleteShift loop. Fires onResult
+        │                           ({cleared, kind}) so the grid
+        │                           banner can report "Cleared N
+        │                           shifts."
+        ├── ClearConfirmModal.jsx   v1.1.0: NEW. Scope picker + confirm.
+        │                           Buttons for Whole week / one per
+        │                           open day, each showing the live
+        │                           shift count. Confirm is BTN.danger
+        │                           labelled "Clear N shifts" once a
+        │                           scope is picked. Closed days are
+        │                           not offered as scope options.
+        └── WeeklyShiftSummary.jsx  v1.2.0: NEW. Footer panel under the
+                                    Schedule grid. One "Name · N / quota"
+                                    pill per active employee (plus any
+                                    archived employee still on the
+                                    week). Sort: under-utilization ratio
+                                    asc, then name. Visual tints for
+                                    zero / under / at-quota.
 ```
 
 ### File structure (target — added in later sessions)
 
 ```
 src/
-├── hooks/
-│   └── useNowMins.js               15s clock tick
-└── lib/
-    └── generator.js                v1.x — auto-generator (greedy + constraints)
+└── hooks/
+    └── useNowMins.js               15s clock tick
 ```
 
 > File list is a **target**, not gospel. Adjust as features land. Update
@@ -328,14 +534,21 @@ src/
    // role=null for day shifts (one person covers all section roles)
 
 /requests/{requestId}
-  → { employeeId, type: "dayoff"|"holiday", dateFrom, dateTo, notes? }
+  → { employeeId, type: "dayoff"|"holiday"|"shift-preference",
+      dateFrom, dateTo,
+      preferredDayPart?: "day"|"evening",  // v1.2.0 — only for
+                                            // shift-preference type
+      notes? }
 
 /settings
   → { operatingStart: "11:00", operatingEnd: "23:00",
       openingDays?: {mon,tue,wed,thu,fri,sat,sun},  // v0.12.0 — closed
                                                      // days drop from grid + PDF
       showRolePills?: boolean,
-      darkMode?: boolean }
+      darkMode?: boolean,
+      generatorStrictPreference?: boolean }          // v1.0.0 — true = Hard
+                                                     // preference matching;
+                                                     // default false (Soft)
 ```
 
 ---
@@ -630,7 +843,6 @@ attached to the next thread.
 ## Out of scope (v1)
 
 - **Staff portal / per-staff logins** — manager-only auth.
-- **Auto-generator** — deferred to v1.x; v1.0 is manual scheduling only.
 - **Multi-tenancy** — single-restaurant app; no plans to generalise.
 - **Native mobile app** — web-only; mobile handled by responsive layout.
 - **Time tracking / clock in–out** — separate concern.

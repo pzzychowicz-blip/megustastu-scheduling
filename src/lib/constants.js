@@ -17,9 +17,22 @@ export const ROLES = Object.freeze(["Bar", "Floor", "Chef", "Plating", "Pot"]);
 
 // Sections group roles by side of house. Used by the schedule grid and the
 // default shift template (day shifts cover an entire section's roles).
+//
+// v1.1.0: optional `dayRequiredRoles` field on a section makes the day
+// shift require at least one of the listed roles (not just "any of
+// coversRoles"). The day cook for Kitchen has to actually be a Chef —
+// Plating-only or Pot-only people aren't trained to lead the prep run.
+// FoH Day stays permissive (no required role; any of Bar/Floor works).
+// The slotsForDay enumerator copies this onto each day slot's
+// `requiredRoles` field; both the manual picker (ShiftFormModal) and
+// the auto-generator (generator.js) read from the slot.
 export const SECTIONS = Object.freeze({
   foh: { label: "Front of House", roles: ["Bar", "Floor"] },
-  kitchen: { label: "Kitchen", roles: ["Chef", "Plating", "Pot"] },
+  kitchen: {
+    label: "Kitchen",
+    roles: ["Chef", "Plating", "Pot"],
+    dayRequiredRoles: ["Chef"],
+  },
 });
 
 // ── Default shift template ───────────────────────────────────────────────
@@ -56,6 +69,15 @@ export const DEFAULT_OPENING_DAYS = Object.freeze({
 // 1..7. Off-days = 7 − N. v1.0 just stores + displays it; the auto-generator
 // (v1.x) is the primary consumer.
 export const DEFAULT_WORKING_DAYS = 5;
+
+// ── Auto-generator settings (v1.0.0) ─────────────────────────────────────
+// `generatorStrictPreference` on /settings — when false (default), the
+// generator first tries employees whose shift preference matches the slot's
+// dayPart, then falls back to anyone eligible. When true, preference is a
+// hard filter: a "day"-preference employee will never be auto-assigned to
+// an evening slot. Hard mode increases unfilled cells but is useful when
+// the manager has carefully tuned preferences and wants them respected.
+export const DEFAULT_GENERATOR_STRICT_PREFERENCE = false;
 
 // ── Status colours (alpha-tinted, matches Bookings pattern) ──────────────
 // v0.11.0: each entry references CSS vars that flip on dark mode.
@@ -205,6 +227,14 @@ export const BTN = Object.freeze({
 // ── Request types ────────────────────────────────────────────────────────
 // v0.11.0: palettes reference the status-* CSS vars so they retune for
 // dark mode along with the rest of the status palette.
+//
+// v1.2.0: the `shift-preference` type is qualitatively different from
+// dayoff / holiday — instead of blocking the employee from working at
+// all, it constrains them to ONE dayPart (Day or Evening) on the given
+// dates. The request record carries an extra `preferredDayPart` field
+// ("day" | "evening"). `findRequestConflict` ignores it (only blocks
+// for dayoff / holiday); `findShiftPreferenceMismatch` handles the
+// dayPart-specific gating.
 export const REQUEST_TYPES = Object.freeze([
   {
     key: "dayoff",
@@ -222,6 +252,15 @@ export const REQUEST_TYPES = Object.freeze([
       bg: "var(--status-confirmed-bg)",
       text: "var(--status-confirmed-text)",
       border: "var(--status-confirmed-border)",
+    },
+  },
+  {
+    key: "shift-preference",
+    label: "Shift preference",
+    palette: {
+      bg: "var(--status-cancelled-bg)",
+      text: "var(--status-cancelled-text)",
+      border: "var(--status-cancelled-border)",
     },
   },
 ]);

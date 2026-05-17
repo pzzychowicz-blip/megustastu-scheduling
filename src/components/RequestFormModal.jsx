@@ -29,12 +29,16 @@ import { S, BTN, REQUEST_TYPES } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn } from "./atoms.jsx";
 
 // ── Defaults ─────────────────────────────────────────────────────────────
+// v1.2.0: `preferredDayPart` ("day" | "evening" | "") only meaningful when
+// type === "shift-preference". For other types the field is dropped on
+// save and ignored on read.
 function emptyForm() {
   return {
     employeeId: "",
     type: "dayoff",
     dateFrom: "",
     dateTo: "",
+    preferredDayPart: "day",
     notes: "",
   };
 }
@@ -46,6 +50,7 @@ function formFromRequest(req) {
     type: req.type || "dayoff",
     dateFrom: req.dateFrom || "",
     dateTo: req.dateTo || "",
+    preferredDayPart: req.preferredDayPart || "day",
     notes: req.notes || "",
   };
 }
@@ -88,9 +93,16 @@ export default function RequestFormModal({
   }
 
   // ── Validation ───────────────────────────────────────────────────────
+  // v1.2.0: shift-preference requires a preferredDayPart (Day or Evening).
+  // Default is "day" so the field is always populated; the explicit check
+  // is defensive against future "neither" sentinels.
   const datesValid =
     Boolean(form.dateFrom) && Boolean(form.dateTo) && form.dateFrom <= form.dateTo;
-  const valid = Boolean(form.employeeId) && Boolean(form.type) && datesValid;
+  const dayPartValid =
+    form.type !== "shift-preference" ||
+    form.preferredDayPart === "day" ||
+    form.preferredDayPart === "evening";
+  const valid = Boolean(form.employeeId) && Boolean(form.type) && datesValid && dayPartValid;
 
   // ── Handlers ─────────────────────────────────────────────────────────
   function handleSave() {
@@ -104,6 +116,10 @@ export default function RequestFormModal({
       dateTo: form.dateTo,
       notes: notesTrimmed || null,
     };
+    // v1.2.0: only attach preferredDayPart for the shift-preference type.
+    if (form.type === "shift-preference") {
+      payload.preferredDayPart = form.preferredDayPart;
+    }
     onSave(payload);
   }
 
@@ -128,6 +144,7 @@ export default function RequestFormModal({
     <div
       style={{
         display: "inline-flex",
+        flexWrap: "wrap",
         background: "var(--bg-segment-strong)",
         borderRadius: 10,
         padding: 3,
@@ -156,6 +173,55 @@ export default function RequestFormModal({
       })}
     </div>
   );
+
+  // v1.2.0: Day / Evening sub-choice — only rendered for shift-preference.
+  // Stored separately as `preferredDayPart`. Defaults to "day" via
+  // emptyForm; the manager can flip to "evening". The HARD enforcement
+  // lives in the generator + manual picker via
+  // findShiftPreferenceMismatch.
+  const dayPartSegments = form.type === "shift-preference"
+    ? (
+      <Fld label="Preferred shift">
+        <div
+          style={{
+            display: "inline-flex",
+            background: "var(--bg-segment-strong)",
+            borderRadius: 10,
+            padding: 3,
+          }}
+        >
+          {[
+            { key: "day", label: "Day shifts only" },
+            { key: "evening", label: "Evening shifts only" },
+          ].map(function (opt) {
+            const on = form.preferredDayPart === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={function () { setField("preferredDayPart", opt.key); }}
+                style={{
+                  ...BTN.base,
+                  padding: "6px 14px",
+                  fontSize: 13,
+                  borderRadius: 8,
+                  background: on ? "var(--accent)" : "transparent",
+                  color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+                  border: "1px solid transparent",
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
+          Generator + manual picker will refuse to assign this employee to
+          the other shift type on these dates.
+        </p>
+      </Fld>
+    )
+    : null;
 
   const dateError = (form.dateFrom && form.dateTo && form.dateTo < form.dateFrom)
     ? (
@@ -190,6 +256,8 @@ export default function RequestFormModal({
       <Fld label="Type">
         {typeSegments}
       </Fld>
+
+      {dayPartSegments}
 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
