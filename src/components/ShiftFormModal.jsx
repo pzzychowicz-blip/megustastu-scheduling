@@ -43,8 +43,11 @@ import { Overlay, Fld, Toggle, mkInp, mkBtn } from "./atoms.jsx";
 import {
   formatDayHeader,
   parseIsoDate,
+  startOfWeek,
   findRequestConflict,
   findSameDayShift,
+  findShiftPreferenceMismatch,
+  hasConsecutiveDaysOff,
 } from "../lib/schedule-logic.js";
 
 // Lookup once per render — REQUEST_TYPES is small.
@@ -117,14 +120,23 @@ export default function ShiftFormModal({
   const eligible = useMemo(function () {
     if (!slotDef) return { list: [], requestHiddenCount: 0 };
     const all = Object.values(employees || {});
+    // v1.1.0: day slots may declare `requiredRoles` — when present, the
+    // employee must hold AT LEAST ONE of them (stricter than the
+    // permissive coversRoles "any of" check). Empty / undefined keeps
+    // the v1.0 behaviour. Evening slots are unchanged.
+    const dayRequired = slotDef.isDay ? (slotDef.requiredRoles || []) : [];
     const eligibleRoles = slotDef.isDay
       ? (slotDef.coversRoles || [])
       : (slotDef.eligibleRoles || []);
 
-    // (a) active + role match — same as v0.5–0.7 behaviour.
+    // (a) active + role match.
     const roleOk = all.filter(function (e) {
       if (e.active === false) return false;
       const roles = Array.isArray(e.roles) ? e.roles : [];
+      if (dayRequired.length > 0) {
+        // Strict: employee must hold one of the required roles.
+        return roles.some(function (r) { return dayRequired.indexOf(r) !== -1; });
+      }
       return roles.some(function (r) { return eligibleRoles.indexOf(r) !== -1; });
     });
 
@@ -308,28 +320,76 @@ export default function ShiftFormModal({
     )
     : null;
 
-  // Conflict-warning banner. Yellow, non-blocking — manager judgment overrides
-  // (locked v1 decision: warn, do NOT block saves).
+  // ── Soft warning banners (yellow, non-blocking) ──────────────────────
+  // v1.2.0 adds two more warnings alongside the existing dayoff / holiday
+  // conflict: shift-preference mismatch and consecutive-2-off rule break.
+  // All three are SOFT — manager judgment overrides (locked v1 decision:
+  // warn, do NOT block saves). Multiple may fire at once; we render each
+  // as its own yellow banner stacked under the picker.
   const conflict = form.employeeId
     ? findRequestConflict(requests, form.employeeId, dateIso)
     : null;
+  const prefMismatch = form.employeeId
+    ? findShiftPreferenceMismatch(requests, form.employeeId, dateIso, slotDef.dayPart)
+    : null;
+
+  // Consecutive-off check: simulate the post-save shifts map and ask
+  // schedule-logic.hasConsecutiveDaysOff. The simulation drops the
+  // currently-edited shift's record (if any) so we don't count its OLD
+  // state, then injects a synthetic "proposed" record reflecting the
+  // current form's pick. weekStart is derived from the cell's date —
+  // ShiftFormModal isn't told the current week-anchor explicitly.
+  let restWarning = false;
+  if (form.employeeId) {
+    const weekStart = startOfWeek(parseIsoDate(dateIso));
+    const sim = { ...weekShifts };
+    if (currentShiftId) delete sim[currentShiftId];
+    sim["__sim_preview"] = {
+      id: "__sim_preview",
+      employeeId: form.employeeId,
+      date: dateIso,
+    };
+    restWarning = !hasConsecutiveDaysOff(form.employeeId, weekStart, sim);
+  }
+
+  const warningBoxStyle = {
+    marginTop: 6,
+    padding: "8px 10px",
+    background: "var(--bg-warning-tint)",
+    border: "1px solid var(--border-warning-tint)",
+    color: "var(--text-warning)",
+    borderRadius: 10,
+    fontSize: 12,
+  };
 
   const conflictBanner = conflict
     ? (
-      <div
-        style={{
-          marginTop: 6,
-          padding: "8px 10px",
-          background: "var(--bg-warning-tint)",
-          border: "1px solid var(--border-warning-tint)",
-          color: "var(--text-warning)",
-          borderRadius: 10,
-          fontSize: 12,
-        }}
-      >
+      <div style={warningBoxStyle}>
         ⚠ This employee has a <strong>{requestTypeLabel(conflict.type)}</strong> request
         covering {dateIso}{conflict.notes ? " — " + conflict.notes : ""}. You can
         still save; this is just a warning.
+      </div>
+    )
+    : null;
+
+  const prefMismatchBanner = prefMismatch
+    ? (
+      <div style={warningBoxStyle}>
+        ⚠ This employee has requested{" "}
+        <strong>
+          {prefMismatch.preferredDayPart === "day" ? "day shifts only" : "evening shifts only"}
+        </strong>{" "}
+        on this date. You can still save; this is just a warning.
+      </div>
+    )
+    : null;
+
+  const restWarningBanner = restWarning
+    ? (
+      <div style={warningBoxStyle}>
+        ⚠ Saving this would leave this employee without 2 consecutive
+        days off this calendar week. You can still save; this is just a
+        warning.
       </div>
     )
     : null;
@@ -394,6 +454,8 @@ export default function ShiftFormModal({
         {noEligibleNote}
         {requestToggle}
         {conflictBanner}
+        {prefMismatchBanner}
+        {restWarningBanner}
         {saveErrorBanner}
       </Fld>
 

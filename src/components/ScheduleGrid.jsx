@@ -15,13 +15,14 @@
 //   actions       (object)                — usePersistence().actions
 //   isMobile      (bool)
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   S, BTN,
   ROLE_COLORS,
   STATUS_COLORS,
   DEFAULT_SHIFT_TEMPLATE,
   DEFAULT_OPENING_DAYS,
+  DEFAULT_GENERATOR_STRICT_PREFERENCE,
 } from "../lib/constants.js";
 import {
   startOfWeek,
@@ -37,6 +38,9 @@ import {
 } from "../lib/schedule-logic.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import ExportButton from "./ExportButton.jsx";
+import GenerateButton from "./GenerateButton.jsx";
+import ClearButton from "./ClearButton.jsx";
+import WeeklyShiftSummary from "./WeeklyShiftSummary.jsx";
 
 // Section row dividers (visual grouping in the desktop grid).
 function isSectionBoundary(prevSlot, slot) {
@@ -57,6 +61,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // to DEFAULT_OPENING_DAYS (all true) so legacy /settings docs still
   // render a full week.
   const openingDays = (settings && settings.openingDays) || DEFAULT_OPENING_DAYS;
+
+  // v1.0.0: auto-generator preference-strictness, read fresh on every
+  // render. Generator passes it straight through to the algorithm.
+  const strictPreference =
+    settings && typeof settings.generatorStrictPreference === "boolean"
+      ? settings.generatorStrictPreference
+      : DEFAULT_GENERATOR_STRICT_PREFERENCE;
 
   // Slot definitions for the week (same every day until per-day overrides land).
   const slots = useMemo(function () { return slotsForDay(template); }, [template]);
@@ -80,6 +91,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // the per-cell scan cheap.
   const weekShifts = useMemo(function () { return shiftsForWeek(shifts, weekStart); }, [shifts, weekStart]);
 
+  // v1.1.0 fairness: also narrow the PRIOR 7 days. Used by the generator
+  // for combined-load ranking so employees who worked many shifts last
+  // week get ranked lower this week (load evens out across two-week
+  // windows). Cheap to compute and only consumed by GenerateButton.
+  const priorWeekShifts = useMemo(function () {
+    return shiftsForWeek(shifts, addDays(weekStart, -7));
+  }, [shifts, weekStart]);
+
   // ── Modal state ──────────────────────────────────────────────────────
   const [modalCell, setModalCell] = useState(null);  // { dateIso, slotDef, shift } or null
 
@@ -87,6 +106,26 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     setModalCell({ dateIso: dateIso, slotDef: slotDef, shift: shift || null });
   }
   function closeModal() { setModalCell(null); }
+
+  // ── Result banner (v1.0.0 generator + v1.1.0 clear) ──────────────────
+  // After a Generate run, GenerateButton fires onResult({filled, unfilled,
+  // total, cleared, mode, unfilledCells}). After a Clear run, ClearButton
+  // fires onResult({cleared, kind}). One banner state handles both —
+  // simpler than two parallel states. Auto-dismiss after 5s; manual
+  // dismiss via the "×".
+  //
+  // Shape discrimination: a generator result has `mode` set
+  // ("fill-empty" | "regenerate"); a clear result has `kind` set
+  // ("week" | "day").
+  const [resultBanner, setResultBanner] = useState(null);
+  useEffect(function () {
+    if (!resultBanner) return undefined;
+    const t = setTimeout(function () { setResultBanner(null); }, 5000);
+    return function () { clearTimeout(t); };
+  }, [resultBanner]);
+  function handleGenerateResult(summary) { setResultBanner(summary); }
+  function handleClearResult(summary)    { setResultBanner(summary); }
+  function dismissResultBanner()         { setResultBanner(null); }
 
   function handleSave(payload) {
     actions.upsertShift(payload);
@@ -237,6 +276,27 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
           {formatWeekRange(weekStart)}
         </div>
+        <GenerateButton
+          weekStart={weekStart}
+          weekShifts={weekShifts}
+          priorWeekShifts={priorWeekShifts}
+          employees={employees}
+          requests={requests}
+          shiftTemplate={shiftTemplate}
+          openingDays={openingDays}
+          strictPreference={strictPreference}
+          isMobile={isMobile}
+          actions={actions}
+          onResult={handleGenerateResult}
+        />
+        <ClearButton
+          weekStart={weekStart}
+          weekDates={dates}
+          weekShifts={weekShifts}
+          isMobile={isMobile}
+          actions={actions}
+          onResult={handleClearResult}
+        />
         <ExportButton
           weekStart={weekStart}
           slots={slots}
@@ -405,9 +465,82 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     )
     : null;
 
+  // v1.0.0 + v1.1.0: result banner copy. Three shapes:
+  //   - Clear result: { cleared, kind } → "Cleared N shifts (week / day)."
+  //   - Generator fill-empty: "Filled X cells, Y left empty for <range>."
+  //   - Generator regenerate: "Cleared X stale, filled Y, Z left empty for <range>."
+  // "Nothing to fill" reads better than "Filled 0, left 0" when the week
+  // was already complete on a generator run.
+  let bannerCopy = "";
+  if (resultBanner) {
+    const r = resultBanner;
+    if (r.kind === "week" || r.kind === "day") {
+      // Clear result.
+      bannerCopy = "Cleared " + r.cleared + " shift" +
+        (r.cleared === 1 ? "" : "s") +
+        (r.kind === "week" ? " from " + formatWeekRange(weekStart) + "." : ".");
+    } else if (r.mode === "regenerate") {
+      const c = r.cleared || 0;
+      if (r.total === 0 && c === 0) {
+        bannerCopy = "Nothing to update — every open-day cell still satisfies the current rules.";
+      } else {
+        const parts = [];
+        if (c > 0) parts.push("Cleared " + c + " stale");
+        parts.push("filled " + r.filled);
+        parts.push(r.unfilled + " left empty");
+        bannerCopy = parts.join(", ") + " for " + formatWeekRange(weekStart) + ".";
+      }
+    } else {
+      // Generator fill-empty (default).
+      bannerCopy = r.total === 0
+        ? "Nothing to fill — every open-day cell already has a shift."
+        : "Filled " + r.filled + " cell" + (r.filled === 1 ? "" : "s") +
+          ", " + r.unfilled + " left empty" +
+          " for " + formatWeekRange(weekStart) + ".";
+    }
+  }
+  const generateBanner = resultBanner
+    ? (
+      <div
+        style={{
+          marginBottom: 12,
+          padding: "8px 12px",
+          background: "var(--accent-tint-soft)",
+          border: "1px solid var(--accent-tint-strong)",
+          color: "var(--accent-on-tint)",
+          borderRadius: 10,
+          fontSize: 13,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          boxShadow: "var(--shadow-soft)",
+        }}
+      >
+        <span>{bannerCopy}</span>
+        <button
+          type="button"
+          onClick={dismissResultBanner}
+          aria-label="Dismiss"
+          style={{
+            ...BTN.base,
+            ...BTN.ghost,
+            padding: "2px 8px",
+            fontSize: 14,
+            lineHeight: 1,
+            boxShadow: "none",
+          }}
+        >
+          ×
+        </button>
+      </div>
+    )
+    : null;
+
   return (
     <div>
       {navBar}
+      {generateBanner}
       {allClosedNotice}
       {dates.length > 0 ? (isMobile ? mobileStack : desktopGrid) : null}
 
@@ -418,6 +551,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         that date (a toggle in the modal restores them) and anyone already
         scheduled elsewhere on the same date.
       </p>
+
+      <WeeklyShiftSummary
+        employees={employees}
+        weekShifts={weekShifts}
+        weekLabel={formatWeekRange(weekStart)}
+        isMobile={isMobile}
+      />
 
       <ShiftFormModal
         open={modalCell !== null}

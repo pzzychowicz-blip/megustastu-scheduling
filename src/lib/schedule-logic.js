@@ -136,6 +136,11 @@ export function slotsForDay(template) {
       // section roles). We still surface the roles list to the modal so it
       // can show "covers Chef + Plating + Pot".
       coversRoles: SECTIONS.kitchen.roles,
+      // v1.1.0: required role(s) for this day slot. When set, the picker
+      // and generator demand the employee hold AT LEAST ONE of these
+      // roles (not just any of coversRoles). Empty / undefined keeps the
+      // permissive "any of coversRoles" v1.0 behaviour.
+      requiredRoles: SECTIONS.kitchen.dayRequiredRoles || [],
       isDay: true,
       humanLabel: kitDay.count > 1 ? "Kitchen Day " + (i + 1) : "Kitchen Day",
     });
@@ -174,6 +179,9 @@ export function slotsForDay(template) {
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Day",
       coversRoles: SECTIONS.foh.roles,
+      // v1.1.0: FoH has no dayRequiredRoles → empty list keeps the
+      // permissive "any of Bar/Floor" rule.
+      requiredRoles: SECTIONS.foh.dayRequiredRoles || [],
       isDay: true,
       humanLabel: fohDay.count > 1 ? "FoH Day " + (i + 1) : "FoH Day",
     });
@@ -274,19 +282,104 @@ export function findSameDayShift(shiftsMap, employeeId, dateIso, excludeShiftId)
 // on both ends). Half-day requests are NOT supported in v1 — full-day only.
 // String compare works for "YYYY-MM-DD" (ISO 8601 lexicographic = chronological).
 //
+// v1.2.0: type-guarded. Only `dayoff` and `holiday` block a date entirely.
+// The new `shift-preference` type narrows a dayPart instead and is handled
+// by `findShiftPreferenceMismatch`. Any future blocking type can be added
+// to BLOCKING_REQUEST_TYPES below.
+//
 // Returns the FIRST matching request record, or null. We don't surface a
 // list because the modal banner shows one record at a time and overlapping
 // requests for the same employee+date should not happen in practice.
+const BLOCKING_REQUEST_TYPES = { dayoff: true, holiday: true };
+
 export function findRequestConflict(requestsMap, employeeId, dateIso) {
   if (!employeeId || !dateIso) return null;
   const all = Object.values(requestsMap || {});
   for (let i = 0; i < all.length; i++) {
     const r = all[i];
     if (r.employeeId !== employeeId) continue;
+    if (!BLOCKING_REQUEST_TYPES[r.type]) continue;
     if (!r.dateFrom || !r.dateTo) continue;
     if (r.dateFrom <= dateIso && dateIso <= r.dateTo) return r;
   }
   return null;
+}
+
+// v1.2.0: shift-preference mismatch.
+//
+// A `shift-preference` request says: "only schedule me for Day shifts
+// on these dates" (or only Evening). When trying to place this employee
+// on a slot whose `dayPart` differs from the request's `preferredDayPart`,
+// it's a mismatch — HARD block in the generator, SOFT warning in the
+// manual picker.
+//
+// Returns the FIRST mismatching request, or null. A matching preference
+// request (preferredDayPart === dayPart) returns null too — the request
+// is satisfied, no conflict.
+export function findShiftPreferenceMismatch(requestsMap, employeeId, dateIso, dayPart) {
+  if (!employeeId || !dateIso || !dayPart) return null;
+  const all = Object.values(requestsMap || {});
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i];
+    if (r.employeeId !== employeeId) continue;
+    if (r.type !== "shift-preference") continue;
+    if (!r.preferredDayPart) continue; // defensive: malformed request → skip
+    if (!r.dateFrom || !r.dateTo) continue;
+    if (r.dateFrom <= dateIso && dateIso <= r.dateTo) {
+      if (r.preferredDayPart !== dayPart) return r;
+    }
+  }
+  return null;
+}
+
+// ── Consecutive days off check (v1.2.0) ──────────────────────────────────
+// Labour wellness rule: every employee needs at least N consecutive days
+// off per calendar week (Mon..Sun). v1.2.0 ships with N=2.
+//
+// Algorithm:
+//   - Build a 7-element array indexed by day-of-week (Mon=0..Sun=6).
+//     Each cell = true if the employee is "off" that day, false if
+//     they're working (have a shift in `shiftsMap` on that date).
+//   - Closed days count as off (the employee can't work them).
+//   - Scan for any run of `minConsecutive` consecutive `true` cells.
+//
+// The week boundary is Mon..Sun starting at `weekStart`. NO cross-week
+// wrapping: Sun ↔ next-Mon doesn't count as consecutive. Keeps the rule
+// evaluable per-week independently.
+//
+// `shiftsMap` may include the proposed shift (caller simulates the
+// assignment) so the generator can test "would adding this break the
+// rule?" without mutating state.
+export function hasConsecutiveDaysOff(employeeId, weekStart, shiftsMap, minConsecutive) {
+  if (!employeeId || !weekStart) return true;
+  const min = minConsecutive || 2;
+
+  // Build working/off booleans for each day Mon..Sun.
+  const isWorking = [false, false, false, false, false, false, false];
+  const dates = weekDates(weekStart);
+  const dateToIndex = {};
+  for (let i = 0; i < 7; i++) dateToIndex[isoDate(dates[i])] = i;
+
+  const all = Object.values(shiftsMap || {});
+  for (let i = 0; i < all.length; i++) {
+    const s = all[i];
+    if (!s || s.employeeId !== employeeId) continue;
+    const idx = dateToIndex[s.date];
+    if (idx === undefined) continue; // shift outside the week
+    isWorking[idx] = true;
+  }
+
+  // Scan for a run of `min` consecutive off (= !working) cells.
+  let run = 0;
+  for (let i = 0; i < 7; i++) {
+    if (!isWorking[i]) {
+      run++;
+      if (run >= min) return true;
+    } else {
+      run = 0;
+    }
+  }
+  return false;
 }
 
 // ── Convenience: filter shifts by week ───────────────────────────────────

@@ -146,6 +146,13 @@ export default function RequestsList({ requests, employees, actions, isMobile })
         <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
           {formatRange(req.dateFrom, req.dateTo)}
         </div>
+        {req.type === "shift-preference" && req.preferredDayPart
+          ? (
+            <div style={{ ...S.muted, marginTop: 4, fontSize: 12 }}>
+              {req.preferredDayPart === "day" ? "Day shifts only" : "Evening shifts only"}
+            </div>
+          )
+          : null}
         {req.notes
           ? <div style={{ ...S.muted, marginTop: 4, fontSize: 12 }}>{req.notes}</div>
           : null}
