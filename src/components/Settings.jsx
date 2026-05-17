@@ -629,28 +629,63 @@ export default function Settings({
                           position: "absolute",
                           top: "calc(100% + 6px)",
                           left: 0,
-                          zIndex: 20,
-                          minWidth: 220,
-                          background: "var(--bg-overlay-sheet)",
+                          zIndex: 50,
+                          minWidth: 200,
+                          background: "var(--bg-card)",
                           border: "1px solid var(--hairline-strong)",
                           borderRadius: 10,
                           boxShadow: "var(--shadow-overlay)",
-                          padding: "8px 12px",
+                          padding: 10,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
                         }}
                       >
-                        <div style={{ ...S.muted, fontSize: 11, marginBottom: 4 }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-secondary)",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            marginBottom: 2,
+                          }}
+                        >
                           {d.label} — open for
                         </div>
-                        <Toggle
-                          checked={dayOn}
-                          onChange={function (next) { setOpeningDayPart(d.key, "day", next); }}
-                          label="Day shifts"
-                        />
-                        <Toggle
-                          checked={eveOn}
-                          onChange={function (next) { setOpeningDayPart(d.key, "evening", next); }}
-                          label="Evening shifts"
-                        />
+                        {[
+                          { key: "day", label: "Day shifts", on: dayOn },
+                          { key: "evening", label: "Evening shifts", on: eveOn },
+                        ].map(function (opt) {
+                          return (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={function () {
+                                setOpeningDayPart(d.key, opt.key, !opt.on);
+                              }}
+                              style={{
+                                ...BTN.base,
+                                padding: "8px 12px",
+                                fontSize: 13,
+                                borderRadius: 8,
+                                textAlign: "left",
+                                background: opt.on ? "var(--accent)" : "var(--bg-pill)",
+                                color: opt.on ? "var(--text-on-accent)" : "var(--text-primary)",
+                                border: "1px solid " + (opt.on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <span>{opt.label}</span>
+                              <span style={{ fontSize: 11, opacity: 0.85, fontWeight: 700 }}>
+                                {opt.on ? "ON" : "OFF"}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>
