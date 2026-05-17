@@ -622,12 +622,18 @@ export default function Settings({
                       <span style={{ fontSize: 10, opacity: 0.85 }}>{stateLabel}</span>
                     </button>
                     {popped ? (
+                      // v1.3.0: anchored ABOVE the pill (bottom: 100% + 6px)
+                      // so the popover sits in the empty space between the
+                      // time-inputs row and the pill row — INSIDE the
+                      // Collapsible body. Anchoring below was clipped by
+                      // the Collapsible's overflow:hidden when the pill
+                      // row sat at the bottom of the body.
                       <div
                         role="dialog"
                         aria-label={d.label + " open hours"}
                         style={{
                           position: "absolute",
-                          top: "calc(100% + 6px)",
+                          bottom: "calc(100% + 6px)",
                           left: 0,
                           zIndex: 50,
                           minWidth: 200,
