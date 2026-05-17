@@ -28,6 +28,7 @@ import {
   formatWeekRange,
   findShiftForSlot,
   deriveCellState,
+  isSlotOpenOnDate,
 } from "./schedule-logic.js";
 
 function pad2(n) { return String(n).padStart(2, "0"); }
@@ -60,14 +61,19 @@ function sectionHeaderRow(slot, totalCols) {
   }];
 }
 
-// Build the (1 + 7)-column table rows from slots × dates.
+// Build the (1 + N)-column table rows from slots × dates.
 //
 // Slots arrive grouped by section + day-part (Kitchen day → Kitchen
 // evening → FoH day → FoH evening since v0.8.0) from
 // `slotsForDay(template)`. v0.11.0 injects a section-header row at
 // every (section, dayPart) boundary so the four groups read as four
 // discrete bands, matching the in-app banded layout.
-function buildTableBody(slots, dates, weekShifts, employees) {
+//
+// v1.3.0: cells where the slot's dayPart is closed on that date render
+// as empty strings — the rota structure stays consistent across days
+// but a Day-only Monday produces blank evening cells under Monday's
+// column.
+function buildTableBody(slots, dates, weekShifts, employees, openingDays) {
   const totalCols = 1 + dates.length;
   const rows = [];
   let lastSection = null;
@@ -86,6 +92,7 @@ function buildTableBody(slots, dates, weekShifts, employees) {
       ? slot.humanLabel + "\n" + slot.defaultStart
       : slot.humanLabel + "\n" + slot.defaultStart + "–" + slot.defaultEnd;
     const dayCells = dates.map(function (d) {
+      if (openingDays && !isSlotOpenOnDate(d, slot, openingDays)) return "";
       const dIso = isoDate(d);
       const existing = findShiftForSlot(weekShifts, dIso, slot);
       const cell = deriveCellState(existing, slot);
@@ -109,6 +116,8 @@ function buildTableBody(slots, dates, weekShifts, employees) {
 // from the rendered table — column count, head row, body cells, and the
 // filename's date range all derive from the filtered date list. Omitted →
 // renders the full 7-day week (legacy behaviour).
+// v1.3.0: per-day-part shape supported. Closed-dayPart cells render as
+// empty strings within an otherwise visible date column.
 export function exportWeekPdf({ weekStart, slots, weekShifts, employees, openingDays }) {
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -125,7 +134,7 @@ export function exportWeekPdf({ weekStart, slots, weekShifts, employees, opening
 
   // ── Table ──────────────────────────────────────────────────────────────
   const head = [["", ...dates.map(formatDayHeader)]];
-  const body = buildTableBody(slots, dates, weekShifts, employees);
+  const body = buildTableBody(slots, dates, weekShifts, employees, openingDays);
 
   autoTable(doc, {
     head: head,

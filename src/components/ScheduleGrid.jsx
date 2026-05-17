@@ -35,6 +35,7 @@ import {
   deriveCellState,
   shiftsForWeek,
   addDays,
+  isSlotOpenOnDate,
 } from "../lib/schedule-logic.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import ExportButton from "./ExportButton.jsx";
@@ -134,6 +135,35 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   function handleDelete(id) {
     actions.deleteShift(id);
     closeModal();
+  }
+
+  // v1.3.0: closed-dayPart placeholder. Renders a non-interactive cell so
+  // the grid keeps its row/column rhythm but the manager can see the slot
+  // is unavailable that day. No click handler, no border-emphasis — a
+  // soft dashed muted block reading "—".
+  function renderClosedCell(date, slot) {
+    const dIso = isoDate(date);
+    return (
+      <div
+        key={slot.key + "-" + dIso + "-closed"}
+        aria-hidden="true"
+        style={{
+          width: "100%",
+          minHeight: 60,
+          borderRadius: 10,
+          border: "1px dashed var(--hairline)",
+          background: "var(--bg-row-soft)",
+          color: "var(--text-muted)",
+          fontSize: 11,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: 0.7,
+        }}
+      >
+        Closed
+      </div>
+    );
   }
 
   // ── Cell renderer (shared between layouts) ───────────────────────────
@@ -381,7 +411,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                   {slot.defaultStart}–{slot.defaultEnd}
                 </div>
               </div>
-              {dates.map(function (d) { return renderCell(d, slot); })}
+              {dates.map(function (d) {
+                // v1.3.0: a slot whose dayPart is closed on this date
+                // renders an inert "Closed" placeholder so the grid keeps
+                // its row alignment across columns.
+                if (!isSlotOpenOnDate(d, slot, openingDays)) {
+                  return renderClosedCell(d, slot);
+                }
+                return renderCell(d, slot);
+              })}
             </div>
           );
         })}
@@ -390,10 +428,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   );
 
   // ── Mobile layout: vertical stack of day cards ───────────────────────
+  // v1.3.0: per-date, drop slots whose dayPart is closed that day, then
+  // re-derive section-boundary flags from the filtered list. A section
+  // header doesn't render if its only slots for the day were filtered out.
   const mobileStack = (
     <div>
       {dates.map(function (d) {
         const dIso = isoDate(d);
+        const visibleSlots = slots.filter(function (slot) {
+          return isSlotOpenOnDate(d, slot, openingDays);
+        });
         return (
           <div
             key={"dayCard-" + dIso}
@@ -414,8 +458,8 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
               {formatDayHeader(d)}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {slots.map(function (slot, i) {
-                const prev = i > 0 ? slots[i - 1] : null;
+              {visibleSlots.map(function (slot, i) {
+                const prev = i > 0 ? visibleSlots[i - 1] : null;
                 const showHeader = i === 0 || isSectionBoundary(prev, slot);
                 return (
                   <div key={slot.key + "-" + dIso} style={{ display: "contents" }}>
@@ -459,7 +503,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     ? (
       <div style={{ ...S.surfaceSoft, textAlign: "center", padding: 24 }}>
         <p style={{ ...S.body, marginBottom: 0 }}>
-          No open days configured. Open Settings → Operating hours and pick at least one day.
+          No open days configured. Open Settings → Operating time and pick at least one day.
         </p>
       </div>
     )

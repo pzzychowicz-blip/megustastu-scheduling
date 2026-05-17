@@ -154,15 +154,18 @@ separate Firebase project, same UI conventions).
     holding any of the section's roles.
   - **Original v1 banner (v0.4.0):** kept and still fires when the
     show-all toggle reveals a request-conflicted assignee.
-- **Settings layout (v0.10.0, expanded v1.0.0):** single-open accordion.
-  Section order is Operating Hours → Display → Auto-generator → FoH →
-  Kitchen. Operating Hours opens by default. Per-section dirty dot in
-  headers for Hours / FoH / Kitchen. Display and Auto-generator
-  sections bypass the Save button — their toggles auto-save
-  immediately on change because they have no validation and their
-  effect is either instant on the grid (Display) or consumed on the
-  next generator click (Auto-generator). Clicking Save while errors
-  exist force-opens the first section carrying an error.
+- **Settings layout (v0.10.0, expanded v1.0.0, renamed v1.3.0):**
+  single-open accordion. Section order is Operating time → Display →
+  Auto-generator → FoH → Kitchen. Operating time opens by default.
+  Per-section dirty dot in headers for Operating time / FoH / Kitchen.
+  Display and Auto-generator sections bypass the Save button — their
+  toggles auto-save immediately on change because they have no
+  validation and their effect is either instant on the grid (Display)
+  or consumed on the next generator click (Auto-generator). Clicking
+  Save while errors exist force-opens the first section carrying an
+  error. v1.3.0 renamed the top section from "Operating hours" to
+  "Operating time" (cosmetic; same `openSection === "hours"` key
+  internally).
 - **Theming model (v0.11.0):** light + dark themes driven by CSS
   custom properties. `:root` in `index.html` holds light values;
   `[data-theme="dark"]` overrides each value for dark. React writes
@@ -183,17 +186,28 @@ separate Firebase project, same UI conventions).
   regardless of in-app theme. Printed rotas should be ink-economic
   and legible on paper; dark backgrounds on print would waste toner
   and look wrong. `pdf-export.js` never reads CSS vars.
-- **Opening days (v0.12.0):** `/settings.openingDays` is a per-weekday
-  boolean map (`{ mon, tue, … sun }`). Closed days disappear from the
-  schedule grid (desktop columns + mobile day-cards) and from the PDF
-  export. Centralized via `visibleWeekDates(weekStart, openingDays)`
-  in `schedule-logic.js`. Missing / undefined `openingDays` falls back
-  to `DEFAULT_OPENING_DAYS` (all true) — legacy `/settings` docs
-  without the field still render a full 7-day week. Save validation
-  requires ≥1 open day. PDF zebra-stripe column indices stay absolute
-  (2 / 4 / 6 in the rendered table) — after a closure they fall on
-  alternating visible columns rather than specifically Tue / Thu / Sat;
-  the goal is print readability, not specific weekdays.
+- **Opening days (v0.12.0, per-day-part since v1.3.0):**
+  `/settings.openingDays` is a per-weekday object map where each entry
+  carries `{ day: bool, evening: bool }`. A weekday is "closed" iff
+  both halves are false; "open" iff either is true. Fully-closed days
+  disappear from the grid (desktop columns + mobile day-cards) and
+  from the PDF export. Cells whose slot's `dayPart` is closed on that
+  date render as inert "Closed" placeholders on the desktop grid, get
+  filtered out of the mobile day-card slot list, and render as empty
+  cells in the PDF. All consumers normalize the raw `/settings`
+  value through `normalizeOpeningDays(raw)` in `schedule-logic.js`,
+  which also handles the v0.12.0 legacy boolean shape
+  (`true` → `{day:true,evening:true}`, `false` →
+  `{day:false,evening:false}`). No Firebase write migration — legacy
+  docs upgrade lazily next time the manager saves Operating time.
+  `visibleWeekDates(weekStart, openingDays)` returns dates with at
+  least one open half; `isSlotOpenOnDate(date, slot, openingDays)`
+  is the per-cell gate consumed by the grid, PDF, generator worklist,
+  generator's `clearInvalidShifts` (`closed-day-part` reason), and
+  `isWeekComplete`. Save validation requires ≥1 day part open across
+  the week. PDF zebra-stripe column indices stay absolute (2 / 4 / 6
+  in the rendered table) — after a closure they fall on alternating
+  visible columns rather than specifically Tue / Thu / Sat.
 - **Per-employee work pattern (v0.12.0):**
   `employees/{id}.workingDaysPerWeek` is a number 1..7, default 5.
   Off-days are derived (`7 − N`). v0.12.0 stores + displays the
@@ -202,6 +216,19 @@ separate Firebase project, same UI conventions).
   It is NOT consumed by any scheduling logic yet — the auto-generator
   (v1.x) is the primary consumer. Legacy employees without the field
   display the default 5 / 2 on read; no Firebase migration.
+- **Scheduling priority (v1.3.0):** `employees/{id}.schedulingPriority`
+  is a boolean, default false. When true, the auto-generator picks
+  that employee before any non-priority employee — it becomes the
+  primary sort key in `rankCandidates` (specialists rule, combined
+  load, and name only tiebreak within the priority and non-priority
+  groups separately). It does NOT affect eligibility — a priority
+  employee still has to satisfy role, request, fixedDays, preference,
+  same-day strict, quota, and consecutive-off rules. Toggle lives on
+  the employee form ("Auto-generator priority"); roster row carries
+  a small "Priority" badge. The manual picker (ShiftFormModal) does
+  NOT reorder by priority — the manager picks one cell at a time and
+  can see priority directly on the employee badge. Legacy employees
+  without the field read as `false` (no migration).
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -219,7 +246,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.2.0)
+## File structure (current — v1.3.0)
 
 ```
 megustastu-scheduling/
@@ -278,6 +305,11 @@ megustastu-scheduling/
     │   │                           entry "shift-preference" with a
     │   │                           dayPart sub-choice on the request
     │   │                           record (preferredDayPart).
+    │   │                           v1.3.0: DEFAULT_OPENING_DAYS shape
+    │   │                           switched from `{mon: bool, …}` to
+    │   │                           `{mon: {day: bool, evening: bool}, …}`.
+    │   │                           Legacy boolean docs auto-migrate via
+    │   │                           normalizeOpeningDays in schedule-logic.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -293,6 +325,13 @@ megustastu-scheduling/
     │   │                           findShiftPreferenceMismatch(...,
     │   │                           dayPart) and hasConsecutiveDaysOff(...,
     │   │                           weekStart, shiftsMap, minN=2).
+    │   │                           v1.3.0: + normalizeOpeningDays(raw),
+    │   │                           + isDateOpen(openingDays, date),
+    │   │                           + isSlotOpenOnDate(date, slot,
+    │   │                           openingDays). visibleWeekDates +
+    │   │                           isWeekComplete now go through the
+    │   │                           per-day-part path (legacy boolean
+    │   │                           openingDays still accepted).
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -303,6 +342,10 @@ megustastu-scheduling/
     │   │                           out of the table head + body. Filename
     │   │                           date range uses first / last visible
     │   │                           date (no longer dates[6]).
+    │   │                           v1.3.0: cells where the slot's dayPart
+    │   │                           is closed on that date render as empty
+    │   │                           strings via isSlotOpenOnDate (legacy
+    │   │                           boolean openingDays still accepted).
     │   └── generator.js            v1.0.0: NEW. Pure greedy auto-generator.
     │                               generateWeek({weekStart, weekShifts,
     │                               employees, requests, shiftTemplate,
@@ -331,6 +374,14 @@ megustastu-scheduling/
     │                               clearInvalidShifts so Regenerate
     │                               clears stale shifts that violate the
     │                               new rules.
+    │                               v1.3.0: rankCandidates gains a new
+    │                               primary sort key (schedulingPriority
+    │                               true → wins). Worklist build skips
+    │                               cells where the slot's dayPart is
+    │                               closed on that date (via
+    │                               isSlotOpenOnDate). clearInvalidShifts
+    │                               gains a closed-day-part pass
+    │                               (reason "closed-day-part").
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -340,6 +391,9 @@ megustastu-scheduling/
         │                           v0.12.0: each row shows
         │                           "Pattern: N/M" below the role chips
         │                           (N = workingDaysPerWeek, M = 7 − N).
+        │                           v1.3.0: + small "Priority" badge
+        │                           alongside the role chips when
+        │                           emp.schedulingPriority === true.
         ├── EmployeeFormModal.jsx   add/edit employee modal.
         │                           v0.12.0: + "Working days per week"
         │                           segmented control (1..7) with live
@@ -347,6 +401,10 @@ megustastu-scheduling/
         │                           on /employees/{id}.workingDaysPerWeek.
         │                           Legacy / out-of-range values clamp to
         │                           the default (5) on read.
+        │                           v1.3.0: + "Auto-generator priority"
+        │                           pill (schedulingPriority bool).
+        │                           Default false. Helper text explains
+        │                           the generator behaviour.
         ├── RequestsList.jsx        upcoming/past requests + Add button.
         │                           v1.2.0: row renders a secondary line
         │                           "Day shifts only" / "Evening shifts
@@ -390,6 +448,13 @@ megustastu-scheduling/
         │                           under the helper caption, showing
         │                           "Name · N / quota" pills per active
         │                           employee.
+        │                           v1.3.0: cells whose slot's dayPart is
+        │                           closed on that date render as an
+        │                           inert "Closed" placeholder on desktop
+        │                           and are filtered out of the mobile
+        │                           day-card slot list. Empty-state
+        │                           pointer updated to "Settings →
+        │                           Operating time".
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -448,6 +513,16 @@ megustastu-scheduling/
         │                           shift-preference matching" — auto-
         │                           saves on flip (no Save click). Reset
         │                           to defaults clears it back to false.
+        │                           v1.3.0: top section renamed "Operating
+        │                           hours" → "Operating time". Open-days
+        │                           picker now stores per-day-part
+        │                           `{day,evening}`; each weekday pill
+        │                           shows a state indicator (D·E / D / E
+        │                           / —) and opens a small inline popover
+        │                           with two Toggle rows. Validation
+        │                           requires ≥1 day part open across the
+        │                           week. Legacy boolean docs auto-migrate
+        │                           through normalizeOpeningDays.
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
@@ -520,6 +595,8 @@ src/
   → { name, roles: [Role], fixedDays?: {mon,tue,wed,thu,fri,sat,sun},
       preference: "day"|"evening"|"either",
       workingDaysPerWeek?: number,  // v0.12.0 — 1..7, default 5; off = 7 − N
+      schedulingPriority?: boolean, // v1.3.0 — true → auto-generator picks
+                                     // this employee before non-priority ones
       active }
 
 /shiftTemplate
@@ -542,8 +619,13 @@ src/
 
 /settings
   → { operatingStart: "11:00", operatingEnd: "23:00",
-      openingDays?: {mon,tue,wed,thu,fri,sat,sun},  // v0.12.0 — closed
-                                                     // days drop from grid + PDF
+      openingDays?: {                              // v0.12.0; per-day-part v1.3.0
+        mon: {day: bool, evening: bool},
+        tue: {day: bool, evening: bool},
+        ...                                         // legacy boolean shape still
+                                                     // accepted via
+                                                     // normalizeOpeningDays
+      },
       showRolePills?: boolean,
       darkMode?: boolean,
       generatorStrictPreference?: boolean }          // v1.0.0 — true = Hard

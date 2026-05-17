@@ -10,11 +10,14 @@
 //   onDelete    (fn)     — called with employee.id on Delete (only when editing)
 //
 // Form fields:
-//   - name        (text, required)
-//   - roles       (multi-select from ROLES, ≥1 required)
-//   - preference  ("day" | "evening" | "either") — segmented control
-//   - fixedDays   ({mon..sun: bool} | null) — null when toggle off
-//   - active      (bool) — default true
+//   - name                  (text, required)
+//   - roles                 (multi-select from ROLES, ≥1 required)
+//   - preference            ("day" | "evening" | "either") — segmented
+//   - workingDaysPerWeek    (1..7, default 5)
+//   - fixedDays             ({mon..sun: bool} | null) — null when toggle off
+//   - schedulingPriority    (bool, v1.3.0) — generator picks these
+//                            employees before non-priority ones
+//   - active                (bool) — default true
 //
 // Form state mirrors props.employee when the modal opens. We don't share
 // state across opens — each open is a fresh edit session.
@@ -42,6 +45,7 @@ function emptyForm() {
     preference: "either",
     workingDaysPerWeek: DEFAULT_WORKING_DAYS,
     fixedDays: null,
+    schedulingPriority: false,  // v1.3.0
     active: true,
   };
 }
@@ -63,6 +67,7 @@ function formFromEmployee(emp) {
     fixedDays: emp.fixedDays
       ? { ...emp.fixedDays }
       : null,
+    schedulingPriority: emp.schedulingPriority === true,  // v1.3.0
     active: emp.active !== false,  // default true when undefined
   };
 }
@@ -127,6 +132,7 @@ export default function EmployeeFormModal({
       preference: form.preference,
       workingDaysPerWeek: form.workingDaysPerWeek,
       fixedDays: form.fixedDays ? { ...form.fixedDays } : null,
+      schedulingPriority: form.schedulingPriority === true,  // v1.3.0
       active: form.active,
     };
     onSave(payload);
@@ -307,6 +313,26 @@ export default function EmployeeFormModal({
     </button>
   );
 
+  // v1.3.0: scheduling-priority toggle. Same visual rhythm as the
+  // fixed-days toggle — pill button rather than a Toggle row because
+  // the modal already uses pill controls for the other booleans.
+  const priorityToggle = (
+    <button
+      type="button"
+      onClick={function () { setField("schedulingPriority", !form.schedulingPriority); }}
+      style={{
+        ...BTN.base,
+        padding: "6px 12px",
+        fontSize: 13,
+        background: form.schedulingPriority ? "var(--accent)" : "var(--bg-pill)",
+        color: form.schedulingPriority ? "var(--text-on-accent)" : "var(--text-primary)",
+        border: "1px solid " + (form.schedulingPriority ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+      }}
+    >
+      {form.schedulingPriority ? "Priority: ON" : "Priority: OFF"}
+    </button>
+  );
+
   const deleteButton = isEdit
     ? mkBtn({
         type: "button",
@@ -352,6 +378,13 @@ export default function EmployeeFormModal({
       <Fld label="Fixed working days">
         {fixedDaysToggle}
         {fixedDaysSection}
+      </Fld>
+
+      <Fld label="Auto-generator priority">
+        {priorityToggle}
+        <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>
+          When ON, the auto-generator picks this employee before any non-priority employee, regardless of role-specialist or load-balance ranking.
+        </div>
       </Fld>
 
       <Fld label="Status">

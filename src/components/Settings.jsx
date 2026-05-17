@@ -1,11 +1,18 @@
 // src/components/Settings.jsx
 // Settings tab body. v0.5.0 scope: shift template editor.
-// v0.7.0: + Operating Hours editor (writes to /settings).
+// v0.7.0: + Operating time editor (writes to /settings).
 // v0.9.0: + Display preferences (writes to /settings.showRolePills).
-// v0.10.0: single-open accordion layout (Operating Hours, Display, FoH,
+// v0.10.0: single-open accordion layout (Operating time, Display, FoH,
 //          Kitchen). Display section auto-saves on Toggle change — no
 //          Save click needed. Per-section dirty dot in the accordion
 //          header for Hours / FoH / Kitchen.
+// v1.3.0: Open days picker shifted from boolean pills to per-day-part
+//          popovers. Each weekday pill shows a state indicator
+//          (D·E / D / E / —) and opens a small inline popover with two
+//          Toggle rows. Stored shape is `{day: bool, evening: bool}`
+//          per weekday (legacy boolean docs auto-migrate via
+//          normalizeOpeningDays). Also renamed the accordion section
+//          label from "Operating hours" to "Operating time."
 //
 // What it edits:
 //   /shiftTemplate (singleton) → { foh: { day, evening }, kitchen: { day, evening } }
@@ -22,7 +29,7 @@
 //     - Explicit Save button (config surface, not a modal). Disabled until
 //       dirty AND valid.
 //   v0.7.0:
-//     - Operating hours are managed in a single bottom Save bar shared with
+//     - Operating time is managed in a single bottom Save bar shared with
 //       the shift template. Save writes only the dirty form(s) — separate
 //       dirty flags per Firebase path, but one user-facing Save action.
 //     - Template-row validation now also checks each block sits inside the
@@ -31,7 +38,7 @@
 //       manager must widen hours or shrink the template before saving.
 //   v0.10.0:
 //     - Sections are now accordion items (Collapsible atom). One open at
-//       a time. Operating Hours is the default-open section.
+//       a time. Operating time is the default-open section.
 //     - Display section auto-saves immediately on Toggle change. It is
 //       intentionally divergent from Hours/FoH/Kitchen (which need an
 //       explicit Save) because Display toggles have instant visual
@@ -53,7 +60,7 @@
 // SECTIONS.foh.label / .kitchen.label drive the card titles so renaming
 // a section in constants.js propagates automatically.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   S, BTN, SECTIONS,
   DEFAULT_SHIFT_TEMPLATE,
@@ -62,6 +69,7 @@ import {
   DEFAULT_GENERATOR_STRICT_PREFERENCE,
   WEEKDAYS,
 } from "../lib/constants.js";
+import { normalizeOpeningDays } from "../lib/schedule-logic.js";
 import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 
 // ── Deep-clone the template for local edit state ─────────────────────────
@@ -115,23 +123,33 @@ function hoursError(hours) {
   return null;
 }
 
-// v0.12.0: validate the openingDays form. Requires ≥1 day open — otherwise
-// the schedule grid would be empty and PDF export would never enable.
+// v0.12.0: validate the openingDays form. Requires ≥1 day part open across
+// the whole week — otherwise the schedule grid would be empty and PDF
+// export would never enable.
+// v1.3.0: the shape is `{mon: {day, evening}, …}`. A day is "open" iff at
+// least one of day/evening is true. The form always carries normalized
+// values so we don't need defensive type checks here.
 function openingDaysError(days) {
   if (!days) return "Pick at least one open day.";
   for (let i = 0; i < WEEKDAYS.length; i++) {
-    if (days[WEEKDAYS[i].key]) return null;
+    const entry = days[WEEKDAYS[i].key];
+    if (entry && (entry.day || entry.evening)) return null;
   }
   return "Pick at least one open day.";
 }
 
 // v0.12.0: per-form-vs-saved dirty comparison for opening-days. Drives the
-// Operating Hours accordion header dot alongside the existing hoursDirty.
+// Operating time accordion header dot alongside the existing hoursDirty.
+// v1.3.0: deep-compare the per-day-part objects. Both inputs always pass
+// through `normalizeOpeningDays` first so legacy boolean docs don't trip
+// the dirty dot on first render.
 function openingDaysDirty(form, saved) {
-  if (!form) return false;
+  if (!form || !saved) return false;
   for (let i = 0; i < WEEKDAYS.length; i++) {
     const k = WEEKDAYS[i].key;
-    if (Boolean(form[k]) !== Boolean(saved[k])) return true;
+    const a = form[k] || { day: false, evening: false };
+    const b = saved[k] || { day: false, evening: false };
+    if (a.day !== b.day || a.evening !== b.evening) return true;
   }
   return false;
 }
@@ -185,9 +203,33 @@ export default function Settings({
   // v0.12.0: opening-days local form. Falls back to DEFAULT_OPENING_DAYS
   // when /settings has no openingDays yet — same fallback as the rest of
   // the app uses on read, so the toggle row reflects the EFFECTIVE state.
+  // v1.3.0: always normalized to the per-day-part shape (legacy boolean
+  // docs round-trip through `normalizeOpeningDays`).
   const [openingDaysForm, setOpeningDaysForm] = useState(function () {
-    return { ...DEFAULT_OPENING_DAYS, ...((settings && settings.openingDays) || {}) };
+    return normalizeOpeningDays((settings && settings.openingDays) || DEFAULT_OPENING_DAYS);
   });
+
+  // v1.3.0: which weekday's open-days popover is currently expanded.
+  // `null` means closed. Outside click + Esc close it. Anchored under
+  // the matching pill via a relative-parent + absolute-popover layout.
+  const [openDayPopover, setOpenDayPopover] = useState(null);
+  const popoverRef = useRef(null);
+  useEffect(function () {
+    if (!openDayPopover) return undefined;
+    function handleDocMouseDown(e) {
+      const node = popoverRef.current;
+      if (node && !node.contains(e.target)) setOpenDayPopover(null);
+    }
+    function handleKey(e) {
+      if (e.key === "Escape") setOpenDayPopover(null);
+    }
+    document.addEventListener("mousedown", handleDocMouseDown);
+    document.addEventListener("keydown", handleKey);
+    return function () {
+      document.removeEventListener("mousedown", handleDocMouseDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [openDayPopover]);
 
   // v0.10.0: which accordion section is open. `null` means all collapsed.
   // Default to "hours" because it's the top section and also the one that
@@ -234,12 +276,13 @@ export default function Settings({
     setHoursDirty(true);
   }
 
-  // v0.12.0: opening-day toggle. Flip a single weekday key. Dirty state is
-  // derived from a comparison against the saved settings, so no separate
-  // setter is needed.
-  function toggleOpeningDay(key) {
+  // v1.3.0: per-day-part toggle. `dayPart` is "day" or "evening". Dirty
+  // state is derived from a comparison against the saved settings, so no
+  // separate setter is needed.
+  function setOpeningDayPart(weekdayKey, dayPart, value) {
     setOpeningDaysForm(function (prev) {
-      return { ...prev, [key]: !prev[key] };
+      const cur = prev[weekdayKey] || { day: false, evening: false };
+      return { ...prev, [weekdayKey]: { ...cur, [dayPart]: Boolean(value) } };
     });
   }
 
@@ -311,10 +354,13 @@ export default function Settings({
   // v0.12.0: opening-days dirty derived against the saved /settings doc
   // (falling back to DEFAULT_OPENING_DAYS so a never-saved settings doc
   // matches the form's default and the dot doesn't appear spuriously).
-  const savedOpeningDays =
-    (settings && settings.openingDays) || DEFAULT_OPENING_DAYS;
+  // v1.3.0: normalize both sides so a legacy boolean doc compares cleanly
+  // against the new per-day-part form.
+  const savedOpeningDays = normalizeOpeningDays(
+    (settings && settings.openingDays) || DEFAULT_OPENING_DAYS
+  );
   const openDaysFormDirty = openingDaysDirty(openingDaysForm, savedOpeningDays);
-  // Combined dirty flag for the Operating Hours accordion header dot —
+  // Combined dirty flag for the Operating time accordion header dot —
   // hours OR opening-days. Saved as part of the same Save click.
   const operatingDirty = hoursDirty || openDaysFormDirty;
 
@@ -362,7 +408,10 @@ export default function Settings({
       operatingStart: OPERATING_HOURS.start,
       operatingEnd:   OPERATING_HOURS.end,
     };
-    const defaultOpenDays = { ...DEFAULT_OPENING_DAYS };
+    // v1.3.0: normalize so the saved object has the per-day-part shape
+    // even though DEFAULT_OPENING_DAYS already declares it that way —
+    // belt-and-braces in case the constant ever changes shape.
+    const defaultOpenDays = normalizeOpeningDays(DEFAULT_OPENING_DAYS);
     setForm(defaults);
     setHoursForm(defaultHours);
     setOpeningDaysForm(defaultOpenDays);
@@ -477,12 +526,12 @@ export default function Settings({
       {/* v0.10.0: accordion column. Sections render in fixed order;
           openSection state controls which one is expanded. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {/* Operating hours.
+        {/* Operating time.
             Sits at the top because it constrains the template — narrowing
             the window surfaces errors on any template row that no longer
             fits, and the manager has to fix the window first. */}
         <Collapsible
-          title="Operating hours"
+          title="Operating time"
           open={openSection === "hours"}
           onToggle={function () { toggleSection("hours"); }}
           dirty={operatingDirty}
@@ -510,34 +559,142 @@ export default function Settings({
             </div>
           ) : null}
 
-          {/* v0.12.0: opening-days picker. A row of weekday pills (matches
-              the EmployeeFormModal fixed-days picker style) under the
-              hours fields. Closed days drop out of the schedule grid AND
-              the PDF export — controlled by visibleWeekDates() in
-              schedule-logic.js. */}
+          {/* v0.12.0 / v1.3.0: opening-days picker. A row of weekday pills,
+              each showing a state indicator (D·E / D / E / —). Tap a pill
+              to open a small inline popover with two Toggle rows for
+              Day / Evening. Storage shape is per-day-part `{day, evening}`;
+              the schedule grid and PDF export skip closed-dayPart cells. */}
           <div style={{ marginTop: 12 }}>
             <div style={{ ...S.fldLabel, marginBottom: 6 }}>Open days</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div
+              style={{ display: "flex", flexWrap: "wrap", gap: 6 }}
+              ref={popoverRef}
+            >
               {WEEKDAYS.map(function (d) {
-                const on = Boolean(openingDaysForm[d.key]);
+                const entry = openingDaysForm[d.key] || { day: false, evening: false };
+                const dayOn = entry.day === true;
+                const eveOn = entry.evening === true;
+                const both = dayOn && eveOn;
+                const closed = !dayOn && !eveOn;
+                const stateLabel = both
+                  ? "D·E"
+                  : (dayOn ? "D" : (eveOn ? "E" : "—"));
+                // Visual: solid accent when both open (default), soft tint
+                // when partial, muted when closed.
+                const bg = both
+                  ? "var(--accent)"
+                  : (closed ? "var(--bg-pill)" : "var(--accent-tint-soft)");
+                const fg = both
+                  ? "var(--text-on-accent)"
+                  : (closed ? "var(--text-muted)" : "var(--accent-on-tint)");
+                const border = both
+                  ? "var(--accent-deep)"
+                  : (closed ? "var(--btn-ghost-border)" : "var(--accent-tint-strong)");
+                const popped = openDayPopover === d.key;
                 return (
-                  <button
-                    key={d.key}
-                    type="button"
-                    onClick={function () { toggleOpeningDay(d.key); }}
-                    style={{
-                      ...BTN.base,
-                      padding: "6px 10px",
-                      fontSize: 12,
-                      borderRadius: 8,
-                      minWidth: 44,
-                      background: on ? "var(--accent)" : "var(--bg-pill)",
-                      color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                      border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
-                    }}
-                  >
-                    {d.label}
-                  </button>
+                  <div key={d.key} style={{ position: "relative" }}>
+                    <button
+                      type="button"
+                      onClick={function () {
+                        setOpenDayPopover(function (cur) {
+                          return cur === d.key ? null : d.key;
+                        });
+                      }}
+                      aria-haspopup="dialog"
+                      aria-expanded={popped ? "true" : "false"}
+                      style={{
+                        ...BTN.base,
+                        padding: "6px 10px",
+                        fontSize: 12,
+                        borderRadius: 8,
+                        minWidth: 56,
+                        background: bg,
+                        color: fg,
+                        border: "1px solid " + border,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 2,
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{d.label}</span>
+                      <span style={{ fontSize: 10, opacity: 0.85 }}>{stateLabel}</span>
+                    </button>
+                    {popped ? (
+                      // v1.3.0: anchored ABOVE the pill (bottom: 100% + 6px)
+                      // so the popover sits in the empty space between the
+                      // time-inputs row and the pill row — INSIDE the
+                      // Collapsible body. Anchoring below was clipped by
+                      // the Collapsible's overflow:hidden when the pill
+                      // row sat at the bottom of the body.
+                      <div
+                        role="dialog"
+                        aria-label={d.label + " open hours"}
+                        style={{
+                          position: "absolute",
+                          bottom: "calc(100% + 6px)",
+                          left: 0,
+                          zIndex: 50,
+                          minWidth: 200,
+                          background: "var(--bg-card)",
+                          border: "1px solid var(--hairline-strong)",
+                          borderRadius: 10,
+                          boxShadow: "var(--shadow-overlay)",
+                          padding: 10,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-secondary)",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            marginBottom: 2,
+                          }}
+                        >
+                          {d.label} — open for
+                        </div>
+                        {[
+                          { key: "day", label: "Day shifts", on: dayOn },
+                          { key: "evening", label: "Evening shifts", on: eveOn },
+                        ].map(function (opt) {
+                          return (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={function () {
+                                setOpeningDayPart(d.key, opt.key, !opt.on);
+                              }}
+                              style={{
+                                ...BTN.base,
+                                padding: "8px 12px",
+                                fontSize: 13,
+                                borderRadius: 8,
+                                textAlign: "left",
+                                background: opt.on ? "var(--accent)" : "var(--bg-pill)",
+                                color: opt.on ? "var(--text-on-accent)" : "var(--text-primary)",
+                                border: "1px solid " + (opt.on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <span>{opt.label}</span>
+                              <span style={{ fontSize: 11, opacity: 0.85, fontWeight: 700 }}>
+                                {opt.on ? "ON" : "OFF"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
@@ -546,8 +703,8 @@ export default function Settings({
                 {openDaysErr}
               </div>
             ) : (
-              <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>
-                Closed days are hidden from the schedule grid and excluded from PDF export.
+              <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
+                Tap a day to pick which shifts are open. Closed halves are hidden from the schedule grid and excluded from PDF export.
               </div>
             )}
           </div>

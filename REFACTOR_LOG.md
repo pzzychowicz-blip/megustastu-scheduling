@@ -5,6 +5,117 @@ an entry. Newest first.
 
 ---
 
+## v1.3.0 — Per-day-part opening + Employee priority + "Operating time"
+
+**Date:** 2026-05-17
+**Behavioural change:** Three independent quality-of-life improvements
+bundled into a single PR.
+
+1. **Per-day-part opening hours.** `/settings.openingDays` was a
+   per-weekday boolean (`{mon: true, tue: false, ...}`). v1.3.0 extends
+   each weekday to `{day: bool, evening: bool}` so the restaurant can
+   open for day shifts only or evening only on any weekday. Closed
+   halves are skipped by the auto-generator's worklist + Regenerate
+   pre-pass (reason `"closed-day-part"`), render as inert "Closed"
+   placeholders on the desktop grid, get filtered out of the mobile
+   day-card slot lists, and render as empty cells in the PDF. Legacy
+   boolean docs auto-migrate at read time via the new
+   `normalizeOpeningDays(raw)` helper (no Firebase write migration).
+2. **Per-employee "Auto-generator priority"** boolean. When ON, the
+   auto-generator picks that employee before any non-priority
+   employee — new primary sort key in `rankCandidates`. Specialists,
+   load-balance, and name only tiebreak within the priority and
+   non-priority groups separately. Eligibility chain is unchanged
+   (priority employees still need role match, request OK, fixedDays
+   OK, quota OK, consecutive-off OK). Roster row carries a "Priority"
+   badge for at-a-glance visibility.
+3. **Settings rename** — top accordion section "Operating hours" →
+   "Operating time" (label only; same internal `openSection === "hours"`
+   key).
+
+Version bump to **1.3.0** — new user-visible feature surface (per-day-
+part picker + per-employee priority).
+
+### What landed
+
+1. **`DEFAULT_OPENING_DAYS` reshape** in `src/lib/constants.js` —
+   per-day-part `{day, evening}` per weekday.
+2. **`normalizeOpeningDays(raw)`, `isDateOpen(openingDays, date)`,
+   `isSlotOpenOnDate(date, slot, openingDays)`** added to
+   `src/lib/schedule-logic.js`. Legacy boolean shape accepted by
+   the normalizer.
+3. **`visibleWeekDates` + `isWeekComplete`** updated to consult
+   the per-day-part normalized shape. A fully-closed day still drops
+   from `visibleWeekDates`; a half-closed day stays visible but its
+   closed half doesn't gate completeness.
+4. **`generator.generateWeek` worklist** skips cells where the slot's
+   dayPart is closed on that date (`isSlotOpenOnDate`).
+5. **`generator.clearInvalidShifts`** gains a closed-day-part pass
+   (reason `"closed-day-part"`) so Regenerate clears stale shifts
+   when the manager closes a half after assigning.
+6. **`generator.rankCandidates`** — new primary sort key
+   `schedulingPriority` (true wins). Specialists, combined load,
+   and name only tiebreak within the priority and non-priority
+   groups separately.
+7. **`pdf-export.buildTableBody`** — closed-dayPart cells render as
+   empty strings within the otherwise-visible date column.
+8. **`Settings.jsx` Open days picker rewrite.** Each weekday pill
+   shows a state indicator (D·E / D / E / —). Tap opens an inline
+   anchored popover with two `Toggle` rows (Day shifts / Evening
+   shifts). Outside click + Escape close the popover. Form state
+   always carries the normalized per-day-part shape; legacy boolean
+   docs round-trip cleanly.
+9. **`Settings.jsx` rename.** Accordion title "Operating hours" →
+   "Operating time". Comments + docstring updated. Internal
+   `openSection === "hours"` key unchanged so dirty-section
+   force-open logic still works.
+10. **`EmployeeFormModal.jsx`** — `schedulingPriority` added to
+    `emptyForm()`, `formFromEmployee(emp)`, and `handleSave()`'s
+    payload. New "Auto-generator priority" Fld with a pill toggle +
+    helper line.
+11. **`EmployeesList.jsx`** — small "Priority" badge in the role-chip
+    row when `emp.schedulingPriority === true`.
+12. **`ScheduleGrid.jsx`** — new `renderClosedCell(date, slot)`
+    helper. Desktop grid renders inert closed cells; mobile
+    day-cards pre-filter the slot list per date so section headers
+    only show for sections with open slots that day. Empty-state
+    notice pointer updated to "Operating time".
+13. **`__APP_SIGNATURE__` → `1.3.0`** (sha
+    `perday-opening-priority-operating-time`).
+14. **CLAUDE.md updated** — Opening-days, Settings layout, data
+    model, and file-structure annotations reflect the per-day-part
+    shape, schedulingPriority field, and renamed section.
+
+### Why bundle
+
+Three small features that don't depend on each other; merging
+sequentially would mean three Vercel redeploys and three PR
+round-trips for what reads as one coherent "v1.3.0 — Operating
+time refinements + employee priority" line on the user-facing
+changelog. Same bundling judgment that landed v1.0.0+v1.1.0+v1.2.0
+in PR #14.
+
+### Verification
+
+- `npm run build` succeeded; bundle gz delta from 156.81 kB.
+- Local DEV smoke (Vite at http://localhost:5173/, hot-reload):
+  - Settings → Operating time renames correctly; pills cycle through
+    state indicators; popover opens/closes on outside click + Esc.
+  - Toggling Mon evening off shrinks the desktop grid's Mon column
+    to day-only cells (evening rows become "Closed" placeholders);
+    PDF export remains enabled once the open cells are filled.
+  - Empty week + Generate fills cells respecting closed-dayPart;
+    Regenerate clears stale closed-dayPart shifts (reason
+    `"closed-day-part"`).
+  - Employee with Priority ON gets picked before non-priority
+    employees on the empty week.
+  - Legacy `openingDays: {mon: true, tue: false, ...}` boolean doc
+    in DEV Firebase renders correctly (the normalizer migrates on
+    read).
+- Production smoke pending Vercel auto-deploy.
+
+---
+
 ## v1.2.0 — Shift-preference request + Consecutive-off rule + Weekly summary
 
 **Date:** 2026-05-17
