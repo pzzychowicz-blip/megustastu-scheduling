@@ -51,25 +51,80 @@ export function weekDates(startDate) {
   return arr;
 }
 
-// ── Opening-days filter (v0.12.0) ────────────────────────────────────────
+// ── Opening-days filter (v0.12.0, per-day-part since v1.3.0) ────────────
 // Map a JS Date to the WEEKDAYS key used by /settings.openingDays. We do
 // our own table here instead of importing WEEKDAYS to keep this module
 // dependency-light (it's loaded by pdf-export which is a lazy chunk).
 // Mon = 0 in the WEEKDAYS array; JS getDay() returns 0=Sun..6=Sat.
 const WEEKDAY_KEY_FROM_JS_DAY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 export function weekdayKeyForDate(date) {
   return WEEKDAY_KEY_FROM_JS_DAY[date.getDay()];
 }
 
-// Returns the subset of weekDates(startDate) where openingDays[key] is
-// truthy. Undefined or missing openingDays → returns all 7 days (preserves
-// pre-v0.12.0 behaviour).
+// v1.3.0: per-day-part opening shape. Each weekday is
+// `{ day: bool, evening: bool }`. `normalizeOpeningDays` accepts either
+// the new object shape OR the legacy boolean shape (a v0.12.0 settings
+// doc) and returns a fully-populated normalized map. Missing weekdays
+// fall back to "both open" so a partial doc renders the rest as open.
+//
+// Legacy migration:
+//   true   → { day: true,  evening: true  }  (was: full day open)
+//   false  → { day: false, evening: false }  (was: full day closed)
+//
+// Used by every consumer (visibleWeekDates, isSlotOpenOnDate, Settings,
+// PDF export, generator). Cheap — clones the seven entries on every call.
+export function normalizeOpeningDays(raw) {
+  const out = {};
+  for (let i = 0; i < WEEKDAY_KEYS.length; i++) {
+    const k = WEEKDAY_KEYS[i];
+    const v = raw ? raw[k] : undefined;
+    if (v === true) {
+      out[k] = { day: true, evening: true };
+    } else if (v === false) {
+      out[k] = { day: false, evening: false };
+    } else if (v && typeof v === "object") {
+      out[k] = { day: v.day === true, evening: v.evening === true };
+    } else {
+      // Missing key → default to fully open. Matches DEFAULT_OPENING_DAYS.
+      out[k] = { day: true, evening: true };
+    }
+  }
+  return out;
+}
+
+// True iff at least one of (day, evening) is open for the given date.
+// Fully-closed days drop out of `visibleWeekDates`.
+export function isDateOpen(openingDays, date) {
+  const norm = normalizeOpeningDays(openingDays);
+  const entry = norm[weekdayKeyForDate(date)];
+  return Boolean(entry && (entry.day || entry.evening));
+}
+
+// True iff the slot's dayPart is open on the given date. Drives per-cell
+// rendering in ScheduleGrid + PDF export and per-cell worklist building
+// in the generator. Always reads through `normalizeOpeningDays` so a raw
+// settings doc (object or legacy boolean) works without callers caring.
+export function isSlotOpenOnDate(date, slot, openingDays) {
+  if (!slot || !slot.dayPart) return false;
+  const norm = normalizeOpeningDays(openingDays);
+  const entry = norm[weekdayKeyForDate(date)];
+  if (!entry) return false;
+  return entry[slot.dayPart] === true;
+}
+
+// Returns the subset of weekDates(startDate) where AT LEAST ONE dayPart
+// is open. Undefined / missing openingDays falls back to fully-open
+// (legacy behaviour — `normalizeOpeningDays` defaults missing entries to
+// both true).
 export function visibleWeekDates(startDate, openingDays) {
   const dates = weekDates(startDate);
   if (!openingDays) return dates;
+  const norm = normalizeOpeningDays(openingDays);
   return dates.filter(function (d) {
-    return Boolean(openingDays[weekdayKeyForDate(d)]);
+    const entry = norm[weekdayKeyForDate(d)];
+    return Boolean(entry && (entry.day || entry.evening));
   });
 }
 
@@ -398,13 +453,18 @@ export function shiftsForWeek(shiftsMap, weekStartDate) {
 }
 
 // ── Week completeness check (gates PDF export) ───────────────────────────
-// Returns true iff EVERY (date, slot) on every OPEN day has a shift record
-// with a non-null employeeId. Used by ExportButton — the locked v1 decision
-// is to refuse exporting partial weeks (the printed rota would be misleading).
+// Returns true iff EVERY (date, slot) on every OPEN dayPart has a shift
+// record with a non-null employeeId. Used by ExportButton — the locked v1
+// decision is to refuse exporting partial weeks (the printed rota would
+// be misleading).
 //
-// v0.12.0: `openingDays` (optional) lets the caller scope completeness to
-// open days only. Closed days don't contribute cells, so they don't need
-// fills. Omitted → all 7 days counted (legacy behaviour).
+// v0.12.0: `openingDays` (optional) scopes to open days only. Closed days
+// don't contribute cells, so they don't need fills. Omitted → all 7 days
+// counted.
+// v1.3.0: cells where the slot's dayPart is closed on that date are also
+// skipped (a Day-only Monday's evening slots no longer need to be filled
+// to export). Goes through `isSlotOpenOnDate` so legacy boolean docs
+// still work via normalization.
 // If every day is closed (visible dates empty), the rota is vacuously
 // "empty"; return false so the export button stays disabled rather than
 // emitting an empty PDF.
@@ -414,7 +474,9 @@ export function isWeekComplete(weekShifts, weekStartDate, slots, openingDays) {
   for (let d = 0; d < dates.length; d++) {
     const dIso = isoDate(dates[d]);
     for (let s = 0; s < slots.length; s++) {
-      const shift = findShiftForSlot(weekShifts, dIso, slots[s]);
+      const slot = slots[s];
+      if (!isSlotOpenOnDate(dates[d], slot, openingDays)) continue;
+      const shift = findShiftForSlot(weekShifts, dIso, slot);
       if (!shift || !shift.employeeId) return false;
     }
   }

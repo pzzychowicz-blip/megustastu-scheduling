@@ -55,13 +55,28 @@ export const DEFAULT_SHIFT_TEMPLATE = Object.freeze({
 // ── Operating hours ──────────────────────────────────────────────────────
 export const OPERATING_HOURS = Object.freeze({ start: "11:00", end: "23:00" });
 
-// ── Opening days (v0.12.0) ───────────────────────────────────────────────
-// Default = restaurant open every day. Used as a fallback when /settings has
-// no openingDays field yet, so legacy installs keep their 7-day week.
-// Shape matches WEEKDAYS keys so the same boolean map drops into the
-// Settings form, the schedule grid filter, and the PDF export filter.
+// ── Opening days (v0.12.0, per-day-part since v1.3.0) ───────────────────
+// Default = restaurant open every day, both day shifts and evening shifts.
+// Used as a fallback when /settings has no openingDays field, so legacy
+// installs keep their 7-day week.
+//
+// v1.3.0 shape: each weekday holds an object `{ day: bool, evening: bool }`.
+// A day is "closed" when both are false. Legacy boolean values from older
+// /settings docs (`openingDays.mon === true | false`) are normalized at
+// read time by `normalizeOpeningDays` in schedule-logic.js:
+//   - `true`  → { day: true,  evening: true  }   (fully open, as before)
+//   - `false` → { day: false, evening: false }   (fully closed, as before)
+// No Firebase write migration — docs upgrade lazily next time the manager
+// saves Operating time. Both the in-app consumers and the PDF export
+// always go through `normalizeOpeningDays` first.
 export const DEFAULT_OPENING_DAYS = Object.freeze({
-  mon: true, tue: true, wed: true, thu: true, fri: true, sat: true, sun: true,
+  mon: { day: true, evening: true },
+  tue: { day: true, evening: true },
+  wed: { day: true, evening: true },
+  thu: { day: true, evening: true },
+  fri: { day: true, evening: true },
+  sat: { day: true, evening: true },
+  sun: { day: true, evening: true },
 });
 
 // ── Employee work pattern (v0.12.0) ──────────────────────────────────────

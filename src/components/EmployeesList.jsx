@@ -145,8 +145,19 @@ export default function EmployeesList({ employees, actions, isMobile }) {
           </div>
           <span style={S.muted}>{preferenceLabel(emp.preference)}</span>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           {roleChips}
+          {emp.schedulingPriority === true ? (
+            <TBadge
+              palette={{
+                bg: "var(--accent-tint-soft)",
+                text: "var(--accent-on-tint)",
+                border: "var(--accent-tint-strong)",
+              }}
+            >
+              Priority
+            </TBadge>
+          ) : null}
         </div>
         <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
           {patternLabel(emp.workingDaysPerWeek)}
