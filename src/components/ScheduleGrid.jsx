@@ -28,6 +28,7 @@ import {
   startOfWeek,
   visibleWeekDates,
   isoDate,
+  parseIsoDate,
   formatDayHeader,
   formatWeekRange,
   slotsForDay,
@@ -83,7 +84,24 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   }, [slots]);
 
   // ── Week navigation ──────────────────────────────────────────────────
-  const [weekStart, setWeekStart] = useState(function () { return startOfWeek(new Date()); });
+  // v1.5.0: persist the displayed week across refresh / Vite HMR within
+  // the same browser tab via sessionStorage. The stored value is the
+  // ISO date of the week's Monday. On read we re-normalize through
+  // startOfWeek so any drift (manual edit, stale value) self-heals.
+  // First visit / fresh browser tab → current week.
+  const [weekStart, setWeekStart] = useState(function () {
+    try {
+      const stored = sessionStorage.getItem("mgt-sched.weekStart");
+      if (stored) {
+        const parsed = parseIsoDate(stored);
+        if (!isNaN(parsed.getTime())) return startOfWeek(parsed);
+      }
+    } catch (_e) { /* private-mode safari */ }
+    return startOfWeek(new Date());
+  });
+  useEffect(function () {
+    try { sessionStorage.setItem("mgt-sched.weekStart", isoDate(weekStart)); } catch (_e) {}
+  }, [weekStart]);
   const dates = useMemo(
     function () { return visibleWeekDates(weekStart, openingDays); },
     [weekStart, openingDays]

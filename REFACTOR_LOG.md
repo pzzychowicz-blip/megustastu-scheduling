@@ -5,6 +5,98 @@ an entry. Newest first.
 
 ---
 
+## v1.5.0 — Session persistence + generator most-constrained-first ordering
+
+**Date:** 2026-05-18
+**Behavioural change:** Three small UX improvements + two workflow
+rules. None of the code changes alter the data model; one is a
+generator algorithm change that produces *better* schedules but
+strictly within the existing constraint set.
+
+1. **In-session tab + week persistence.** The open tab (Schedule /
+   Employees / Requests / Settings) and the displayed week persist
+   across refresh / Vite HMR within the same browser tab via
+   `sessionStorage` under the `mgt-sched.*` key namespace. Closing the
+   tab clears the values, so a fresh browser tab / new sign-in still
+   defaults to Schedule + current week as before.
+2. **Generator most-constrained-cell-first ordering.** The worklist's
+   primary sort key is now the size of each cell's eligible candidate
+   pool (`buildCandidates(...).eligible.length`), ascending. Cells with
+   fewer qualifying employees get the versatile multi-role candidates,
+   instead of an early easy cell consuming them and starving a hard
+   cell later in the week. Existing keys (evening-before-day,
+   role-rarity, date, slot-key) remain as deterministic tiebreakers.
+3. **Workflow rule: Claude Code never runs `npm run preview`.** Locked
+   in CLAUDE.md's Local-preview-server section. Only `npm run dev`;
+   Patryk opens the localhost URL in his own browser. Eliminates the
+   risk of pointing inspection at PROD.
+4. **Workflow rule: keep the Claude-context folder in sync.** The
+   "Sync the local working folder" deploy step now also copies
+   `CLAUDE.md` + `REFACTOR_LOG.md` into
+   `~/Desktop/megustastu-scheduling Claude context/`. That folder is
+   what Patryk attaches to fresh chats; stale copies were the failure
+   mode pre-v1.4.0.
+
+Version bump to **1.5.0** — new persisted-state surface (tab + week)
+is user-visible; the generator ordering change is also user-visible
+in the sense that runs will produce different (better) schedules for
+mixed-role staffs. Minor bump rather than patch.
+
+### What landed
+
+1. **`AppShell.jsx`** — lazy useState initializer + write effect for
+   `tab` against `sessionStorage["mgt-sched.tab"]`. Stored value is
+   validated against the live `TABS` array so a stale / hand-edited
+   value falls back to `"schedule"`. All storage calls in try/catch
+   so Safari private mode (sessionStorage throws on `setItem`)
+   degrades gracefully.
+2. **`ScheduleGrid.jsx`** — same pattern for `weekStart` against
+   `sessionStorage["mgt-sched.weekStart"]` (stored as the ISO Monday
+   date). Read path re-normalizes through `startOfWeek` so any drift
+   self-heals. `parseIsoDate` added to the import list.
+3. **`generator.js`** — worklist build site (line ~546) now calls
+   `buildCandidates(...)` once per (date, slot) entry and stores
+   `eligibleCount` on it. `compareWorklistEntries` gains
+   `eligibleCount` as its new primary sort key (ascending).
+   `clearInvalidShifts` and `rankCandidates` unchanged.
+4. **`App.jsx`** — `__APP_SIGNATURE__` → version 1.5.0, build
+   `2026-05-18`, sha `session-persistence-most-constrained`.
+5. **`CLAUDE.md`** — two new locked-decision entries (session
+   persistence; generator most-constrained-first ordering); file-
+   structure annotations updated for `App.jsx`, `AppShell.jsx`,
+   `ScheduleGrid.jsx`, `generator.js`; Local-preview-server section
+   sharpened with the absolute no-`preview` rule; deploy step 13
+   extended with the two `cp` lines for the context folder.
+
+### What did NOT land
+
+- **Mobile day-card today tint** — deferred to a future session.
+- **15-second clock tick (`useNowMins.js`)** — still on the target
+  file list, not built.
+- **CSP-style dynamic constraint propagation in the generator.** The
+  v1.5.0 ordering pre-computes eligibility once at worklist-build
+  time; re-ranking after each greedy pick is a future option if
+  symptoms surface. Problem size (≤49 cells/week) makes the
+  pre-sort sufficient for now.
+
+### Verification
+
+- `npm run dev` — Vite ran clean. Tab persistence: clicked Settings →
+  refresh → landed on Settings. Closed tab + new tab → landed on
+  Schedule (default). Week persistence: navigated forward two weeks
+  → refresh → still on that week. `Today` button still goes back to
+  current.
+- Generator: ran Fill empty on a partially populated week; no
+  regressions, no new console warnings. Most-constrained-first
+  ordering visible in the result banner's filled count when an
+  intentional Chef+Bar mix is in play.
+- Cross-feature regression: dark mode, picker filters, manual shift
+  edits, PDF export, clear flow, generator details modal all behave
+  as in v1.4.0.
+- `npm run build` succeeded; main-bundle gz delta noted in the PR.
+
+---
+
 ## v1.4.0 — Today tint + Generator result details
 
 **Date:** 2026-05-18
