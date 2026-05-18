@@ -234,7 +234,27 @@ export default function Settings({
   // v0.10.0: which accordion section is open. `null` means all collapsed.
   // Default to "hours" because it's the top section and also the one that
   // gates template-row validation.
-  const [openSection, setOpenSection] = useState("hours");
+  // v1.6.0: persist across refresh / Vite HMR within the same browser tab
+  // via sessionStorage under "mgt-sched.settingsSection". Valid values are
+  // the section keys + the literal string "null" for all-collapsed.
+  const [openSection, setOpenSection] = useState(function () {
+    try {
+      const v = sessionStorage.getItem("mgt-sched.settingsSection");
+      if (v === null) return "hours";
+      if (v === "null") return null;
+      // Defensive: only accept known section keys; everything else falls back.
+      const known = ["hours", "display", "generator", "foh", "kitchen"];
+      if (known.indexOf(v) !== -1) return v;
+      return "hours";
+    } catch (_e) {
+      return "hours";
+    }
+  });
+  useEffect(function () {
+    try {
+      sessionStorage.setItem("mgt-sched.settingsSection", openSection === null ? "null" : openSection);
+    } catch (_e) {}
+  }, [openSection]);
 
   function toggleSection(key) {
     setOpenSection(function (cur) {
