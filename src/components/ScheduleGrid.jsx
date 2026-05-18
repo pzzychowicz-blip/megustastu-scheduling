@@ -424,31 +424,6 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           />
         ) : null}
 
-        {/* v1.4.0: vertical column rules between date columns. Same
-            absolute-positioning trick — these would otherwise block all
-            auto-flow cells in cols 3..N. marginLeft pulls the hairline
-            into the middle of the 6px grid gap so the line reads as a
-            column separator. */}
-        {dates.map(function (_, i) {
-          if (i === 0) return null;
-          return (
-            <div
-              key={"colrule-" + i}
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                top: 0,
-                bottom: 0,
-                gridColumn: (i + 2) + " / " + (i + 3),
-                borderLeft: "1px solid var(--hairline)",
-                marginLeft: -3,
-                pointerEvents: "none",
-                zIndex: 0,
-              }}
-            />
-          );
-        })}
-
         {/* Top-left empty + day pills.
             v0.10.2: each date sits in a soft pill so the column header
             row reads as a real anchor for its day. Today's date gets

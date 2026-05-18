@@ -5,21 +5,20 @@ an entry. Newest first.
 
 ---
 
-## v1.4.0 — Column rules + Today tint + Generator result details
+## v1.4.0 — Today tint + Generator result details
 
 **Date:** 2026-05-18
-**Behavioural change:** Three schedule-grid polish items bundled. Two are
-purely visual; the third is an information-only modal that surfaces data
-the auto-generator already produced but threw away.
+**Behavioural change:** Two schedule-grid polish items bundled. One is
+purely visual; the other is an information-only modal that surfaces
+data the auto-generator already produced but threw away.
 
-1. **Vertical column rules.** The desktop schedule grid renders a thin
-   hairline between every pair of date columns. Implemented as
-   grid-spanning underlay divs (one per inter-column boundary), with
-   `marginLeft: -3` pulling each line into the middle of the 6px grid
-   gap. Painted first in source order so cells layer above. Section
-   header rows (spanning `gridColumn: "1 / -1"`) are unaffected. No
-   mobile column rules — day-cards are independent.
-2. **Today-column tint.** Today's column gets a soft `--accent-tint-soft`
+Vertical column rules were prototyped during this session and removed
+before merge — they sliced section banners and didn't earn their
+visual weight once the today-column tint was in place. Section header
+keeps the `position: relative; zIndex: 1` stacking lift from that
+prototype as defensive future-proofing for any later underlay.
+
+1. **Today-column tint.** Today's column gets a soft `--accent-tint-soft`
    wash via a single underlay div with `gridColumn: <today+2>` and
    `gridRow: "1 / -1"`. Translucent cell backgrounds let the tint show
    through. Extends the existing today-pill highlight downward. No
@@ -32,7 +31,7 @@ the auto-generator already produced but threw away.
    open so closing the modal restores the banner cleanly.
 
 Version bump to **1.4.0** — new user-visible feature surface (info
-modal); the column rules + tint are visual polish but warrant a minor
+modal); the today-column tint is visual polish but warrants a minor
 bump alongside the modal.
 
 ### What landed
@@ -55,10 +54,12 @@ bump alongside the modal.
    lookup; `showResultsModal` state; "Details" button on the result
    banner (only renders when there's something to inspect); banner
    auto-dismiss effect now respects `showResultsModal`; today-column
-   tint underlay div + per-inter-column rule underlay divs prepended
-   to the desktop grid; `todayIndex` derived from `dates`.
+   tint underlay div prepended to the desktop grid; `todayIndex`
+   derived from `dates`. Section header gets `position: relative;
+   zIndex: 1` so the absolutely-positioned tint underlay can never
+   slice through the "Kitchen · Day" / "FoH · Evening" banners.
 5. **`App.jsx`** — `__APP_SIGNATURE__` bumped to v1.4.0, sha
-   `column-rules-today-tint-result-details`, build `2026-05-18`.
+   `today-tint-result-details`, build `2026-05-18`.
 
 ### Files
 
@@ -66,8 +67,9 @@ bump alongside the modal.
 - `src/lib/constants.js` — `+ GENERATOR_REASONS`.
 - `src/lib/generator.js` — enriched `clear()` records.
 - `src/components/GenerateResultsModal.jsx` — NEW (~180 lines).
-- `src/components/ScheduleGrid.jsx` — column-rule + tint underlays,
-  Details button, modal mount, auto-dismiss guard.
+- `src/components/ScheduleGrid.jsx` — today-tint underlay, Details
+  button, modal mount, auto-dismiss guard, section header z-index
+  lift.
 - `CLAUDE.md` — locked-decision block for v1.4.0 features;
   ScheduleGrid + GenerateResultsModal + constants file-structure
   annotations.
@@ -84,17 +86,21 @@ bump alongside the modal.
 - Local dev server (`npm run dev`) on DEV Firebase — boots cleanly,
   v1.4.0 banner confirmed in console, login page renders.
 - Visual + behavioural smoke-tests deferred to Vercel preview:
-  column rules align between rows, today-column tint follows the
-  current weekday, Details button on the banner only appears when
-  reasons exist, modal lists are grouped by reason, modal close
-  resumes banner auto-dismiss, dark mode renders correctly.
+  today-column tint follows the current weekday, Details button on
+  the banner only appears when reasons exist, modal lists are grouped
+  by reason, modal close resumes banner auto-dismiss, dark mode
+  renders correctly.
 
 ### Locked decisions (this session)
 
-- **Cell-level styling rejected** for column rules: would have
-  conflicted with status-palette borders. Grid-spanning underlay divs
-  with `pointerEvents: none` are cleaner and don't touch existing
-  cell render functions.
+- **Vertical column rules dropped.** Initial prototype rendered a
+  hairline between every pair of date columns. Two problems surfaced:
+  (a) absolutely-positioned underlays sliced through the section
+  banners until z-index was lifted (fixed mid-session); (b) once the
+  today-column tint was in place, the rules added visual noise without
+  earning their weight. Removed before merge. The section header's
+  zIndex lift stays as defensive future-proofing for any subsequent
+  underlay work.
 - **Per-cell failure badges rejected** in favour of the on-demand
   modal. Per-cell badges would require persisting generator-run
   state per-cell, plus a cleanup story when the manager manually

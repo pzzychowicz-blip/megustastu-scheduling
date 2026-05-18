@@ -23,7 +23,7 @@ import AppShell from "./components/AppShell.jsx";
 export const __APP_SIGNATURE__ = Object.freeze({
   version: "1.4.0",
   build: "2026-05-18",
-  sha: "column-rules-today-tint-result-details",
+  sha: "today-tint-result-details",
 });
 
 // Expose for DevTools / debugging.

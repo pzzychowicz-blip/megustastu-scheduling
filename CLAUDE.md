@@ -230,15 +230,6 @@ separate Firebase project, same UI conventions).
   can see priority directly on the employee badge. Legacy employees
   without the field read as `false` (no migration).
 - **Schedule grid visual polish (v1.4.0):**
-  - **Vertical column rules.** Desktop grid renders a hairline between
-    every pair of date columns. Implementation: one grid-spanning
-    underlay div per inter-column boundary
-    (`gridColumn: <i+2>`, `gridRow: "1 / -1"`, `borderLeft: 1px solid
-    var(--hairline)`, `marginLeft: -3` to centre the line in the 6px
-    grid gap). Underlay divs are `pointerEvents: none` and painted
-    first in source order so cells layer above. Section header rows
-    span `gridColumn: "1 / -1"` and so are unaffected. No column
-    rules on mobile.
   - **Today-column tint.** A single underlay div with
     `gridColumn: <todayIndex + 2>`, `gridRow: "1 / -1"`,
     `background: var(--accent-tint-soft)`. Translucent cell
@@ -502,21 +493,17 @@ megustastu-scheduling/
         │                           day-card slot list. Empty-state
         │                           pointer updated to "Settings →
         │                           Operating time".
-        │                           v1.4.0: + vertical column-rule
-        │                           underlays between date columns
-        │                           (one grid item per inter-column
-        │                           boundary; marginLeft: -3 centres the
-        │                           hairline in the 6px gap). + today-
-        │                           column tint underlay (single grid
-        │                           item at todayIndex+2, accent-tint-
-        │                           soft, gridRow 1 / -1). Both
-        │                           pointerEvents: none and painted
-        │                           first so cells layer above.
-        │                           + slotsByKey memo + showResultsModal
-        │                           state + "Details" button on the
-        │                           result banner + GenerateResultsModal
-        │                           mount. Banner auto-dismiss now holds
-        │                           while the details modal is open.
+        │                           v1.4.0: + today-column tint underlay
+        │                           (single absolutely-positioned div
+        │                           at gridColumn todayIndex+2, top/bottom
+        │                           0, accent-tint-soft; pointerEvents
+        │                           none; under section banner via
+        │                           zIndex stacking). + slotsByKey memo
+        │                           + showResultsModal state + "Details"
+        │                           button on the result banner +
+        │                           GenerateResultsModal mount. Banner
+        │                           auto-dismiss now holds while the
+        │                           details modal is open.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
