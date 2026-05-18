@@ -13,6 +13,11 @@
 //   onClose     (fn)
 //   onSave      (fn)            — receives the shift payload
 //   onDelete    (fn)            — receives shiftId; only call when shift exists
+//   onStartSwap (fn?)           — v1.7.0. Fires with {dateIso, slotDef, shift}
+//                                  when the manager clicks "Move/Swap to…".
+//                                  Caller closes the modal and enters
+//                                  swap-target-select mode. Only rendered
+//                                  when shift has an employeeId.
 //
 // Behaviour:
 //   - Defaults pulled from slotDef (template values).
@@ -77,7 +82,7 @@ function initialForm(slotDef, shift) {
 
 export default function ShiftFormModal({
   open, dateIso, slotDef, shift, employees, requests, weekShifts, isMobile,
-  onClose, onSave, onDelete,
+  onClose, onSave, onDelete, onStartSwap,
 }) {
   const [form, setForm] = useState(function () { return initialForm(slotDef || {}, shift); });
   // v0.8.0: when on, the picker stops hiding employees who have a covering
@@ -244,6 +249,14 @@ export default function ShiftFormModal({
     if (!shift || !shift.id) return;
     const ok = window.confirm("Clear this shift slot? Times return to template defaults and the assignee is removed.");
     if (ok) onDelete(shift.id);
+  }
+
+  // v1.7.0: hand the cell off to the parent's swap-target-select mode.
+  // The modal closes; the next cell-click on the grid completes the
+  // move (target empty) or swap (target filled).
+  function handleStartSwap() {
+    if (!onStartSwap || !shift || !shift.id || !shift.employeeId) return;
+    onStartSwap({ dateIso: dateIso, slotDef: slotDef, shift: shift });
   }
 
   // ── Subrenders ───────────────────────────────────────────────────────
@@ -441,6 +454,18 @@ export default function ShiftFormModal({
     ? mkBtn({ type: "button", variant: "danger", onClick: handleDelete, children: "Clear" })
     : null;
 
+  // v1.7.0: Move/Swap entry. Only visible when an assignment exists AND
+  // the parent supplied an onStartSwap handler. Hidden for fresh / empty
+  // cells (nothing to move) and for legacy callers without the prop.
+  const swapButton = (shift && shift.id && shift.employeeId && onStartSwap)
+    ? mkBtn({
+        type: "button",
+        variant: "secondary",
+        onClick: handleStartSwap,
+        children: "Move / Swap…",
+      })
+    : null;
+
   return (
     <Overlay open={open} isMobile={isMobile} onClose={onClose} title={headerTitle}>
       <Fld label="Assignee">
@@ -507,8 +532,9 @@ export default function ShiftFormModal({
           flexWrap: isMobile ? "wrap" : "nowrap",
         }}
       >
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {deleteButton}
+          {swapButton}
         </div>
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
           {mkBtn({ type: "button", variant: "ghost",   onClick: onClose,    children: "Cancel" })}

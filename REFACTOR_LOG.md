@@ -5,6 +5,113 @@ an entry. Newest first.
 
 ---
 
+## v1.7.0 — Swap UX, pill-click highlight, Regenerate wipe-and-refill, Priority badge re-pin
+
+**Date:** 2026-05-18
+**Behavioural change:** Four user-facing changes bundled, all in the
+Schedule grid + Employees list surfaces.
+
+1. **Move / Swap mechanic.** Manual cell edits gain a one-flow path
+   for relocating an assignment. Two entry points: a "Move / Swap…"
+   button in the picker modal (visible for any filled cell) and a
+   nav-bar Swap toggle on the Schedule grid. Both feed the same
+   mechanic: target empty → MOVE (deleteShift + upsertShift), target
+   filled → SWAP (two upsertShifts switching employeeIds while each
+   cell keeps its own role/time identity). Hard validation on role
+   match, request conflicts, shift-preference, and same-day
+   double-booking; refusal surfaces a red banner. Source cell pulses
+   via inline `@keyframes mgt-swap-pulse`. Esc cancels.
+2. **Shifts-assigned pill → cell highlight.** Pills became clickable
+   buttons. Clicking a pill paints every cell assigned to that
+   employee with an accent ring; clicking again (or pressing Esc, or
+   selecting another pill) clears or switches. Both desktop and
+   mobile day-card layouts participate (shared `renderCell`).
+3. **Regenerate is now wipe-and-refill.** What was
+   "clear-invalid-then-fill" became "wipe-all-then-fill-empty fresh".
+   When new requests land mid-week, the manager wanted a fresh global
+   allocation rather than localized constraint repairs. The previous
+   `clearInvalidShifts` pre-pass (≈190 lines) is gone; the new
+   `wipeAllShifts` empties every record with reason "regenerated"
+   before the fill-empty pass runs. The Regenerate button's variant
+   switched to `danger` (red) and the modal explainer leads with
+   "clears every shift in this week" to flag the destructive nature.
+4. **Priority badge re-pin.** Moved out of the top-right cluster
+   into its own bottom-right sibling row on each Employees list row.
+   Hidden entirely when `schedulingPriority !== true` so row height
+   doesn't shift between priority and non-priority employees.
+
+Version bump to **1.7.0** — four user-visible surfaces (swap mechanic,
+highlight, destructive Regenerate semantics, badge re-pin).
+
+### What landed
+
+1. **`src/lib/schedule-logic.js`** — + `roleMatchesSlot(emp, slot)`
+   exported. Lifted from generator.js's local `roleMatches`. Shared
+   by the generator's eligibility filter and the new Swap mechanic
+   in ScheduleGrid.
+2. **`src/lib/constants.js`** — `GENERATOR_REASONS` audit: removed
+   the 11 reason codes only emitted by `clearInvalidShifts` (`closed-day`,
+   `closed-day-part`, `unassigned`, `slot-removed`, `no-employee`,
+   `archived`, `on-request`, `shift-preference`, `fixed-days`,
+   `same-day-dup`, `over-quota`). Added `"regenerated"` →
+   "Cleared for regeneration".
+3. **`src/lib/generator.js`** — `clearInvalidShifts` deleted in full.
+   `wipeAllShifts(workingShifts)` added — empties every record with
+   reason "regenerated", returning the cleared-records list. `generateWeek`
+   regenerate branch simplified to one line. Local `roleMatches`
+   replaced by the imported `roleMatchesSlot`. Pruned now-unused
+   `parseIsoDate` import and the `slotsByKey` / `visibleDateSet`
+   locals.
+4. **`src/components/SwapButton.jsx`** — NEW. Nav-bar toggle button
+   between Generate and Clear. Dumb — reads `active` from parent and
+   fires `onToggle`. Label switches between "Swap…" and "Swap: cancel".
+5. **`src/components/ScheduleGrid.jsx`** — + `swapMode` state
+   (phase "source-select" | "target-select" | null) + `swapBanner`
+   (info/success/error). + `cellClick` router that branches on swap
+   mode. + `attemptSwap(source, target)` does the full validation
+   chain. + inline `@keyframes mgt-swap-pulse` style block.
+   `renderCell` paints highlight + swap-source decorations.
+   `highlightedEmployeeId` state + `onHighlight` callback fed to
+   WeeklyShiftSummary. Esc keydown handler cancels swap first, then
+   clears the pill highlight. `<SwapButton>` mounted in the nav bar.
+6. **`src/components/ShiftFormModal.jsx`** — + `onStartSwap` prop.
+   "Move / Swap…" secondary button rendered only when the cell has
+   an assignment AND the parent supplied `onStartSwap`.
+7. **`src/components/WeeklyShiftSummary.jsx`** — pill `<span>` →
+   `<button>` with `onClick`. + `highlightedEmployeeId` +
+   `onHighlight` props. Selected pill gains accent fill + accent
+   border + 2-px accent ring via box-shadow.
+8. **`src/components/EmployeesList.jsx`** — Priority badge moved
+   into its own bottom-right sibling div, conditionally rendered.
+9. **`src/components/GenerateConfirmModal.jsx`** — Regenerate button
+   switched to `danger` variant. Explainer card emphasizes
+   "clears every shift in this week" with a bolded red label.
+10. **`src/components/GenerateResultsModal.jsx`** — file-header
+    comment updated; rendering unchanged (the existing groupByReason
+    collapses to one bucket when every cleared record carries the
+    same reason).
+11. **`src/App.jsx`** — `__APP_SIGNATURE__` → version 1.7.0, sha
+    `swap-highlight-regen-priority`.
+12. **`CLAUDE.md`** — new locked-decision entries (Move/Swap;
+    pill-click highlight; new Regenerate semantics; Priority badge
+    re-pin). File-structure annotations updated for every touched
+    file plus the new `SwapButton.jsx` entry.
+
+### Verification
+
+- `npm run build` — Vite produced a clean production bundle in 1.27s.
+  319 modules transformed (up from 318 — the new SwapButton.jsx).
+  Main bundle 161.17 kB gzipped (v1.6.1: 160.71 kB; delta **+0.46 kB**
+  — well inside the +5 kB budget).
+- Behavioural smoke (DEV via `npm run dev`): pending Patryk's manual
+  pass against the 17-step checklist in the plan file.
+- Cross-feature: pill click during swap mode is ignored
+  (`onHighlight` still fires but cell clicks route through swap);
+  swap source cell still routes through swap router for cancel-click
+  detection.
+
+---
+
 ## v1.6.1 — Effective quota in the auto-generator
 
 **Date:** 2026-05-18

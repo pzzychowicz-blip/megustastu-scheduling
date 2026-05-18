@@ -260,6 +260,63 @@ separate Firebase project, same UI conventions).
   `workingDaysPerWeek` and floors at 0. Quota=0 employees collapse
   to ratio=1 for the under-utilization sort so they don't dominate
   the leftmost slots.
+- **Move / Swap mechanic (v1.7.0):** manual cell edits now have a
+  one-flow path for relocating an assignment. Two entry points feed the
+  same mechanic:
+  - **In-modal "Move / Swap…"** — opens for any filled cell. Closes
+    the picker; ScheduleGrid enters `swapMode: "target-select"` with
+    the source preloaded.
+  - **Nav-bar `<SwapButton>` toggle** — between Generate and Clear.
+    Click → "source-select" phase; the first filled cell click becomes
+    the source; the next cell click attempts the move/swap.
+  Mechanic: target empty → MOVE (`deleteShift(source.id)` +
+  `upsertShift(target payload with sourceEmp)`). Target filled →
+  SWAP (two `upsertShift` calls switching the employeeIds while the
+  cells keep their own role/time identities). Validation is HARD on
+  role match (via `roleMatchesSlot` lifted from generator.js to
+  schedule-logic.js so all three callers share one rule), request
+  conflicts (`findRequestConflict` + `findShiftPreferenceMismatch`),
+  and same-day double-booking; refusal surfaces as a red banner +
+  exits swap mode. Swap visuals run on the **yellow warning palette**
+  (`--bg-warning-tint` / `--border-warning-tint` / `--text-warning`)
+  — pulse keyframes, source cell ring, banner, and the SwapButton's
+  active state all share that family so swap-mode reads as one
+  visual identity, distinct from accent-blue (picker/today) and
+  green (pill highlights). Esc cancels swap mode anywhere on the grid.
+- **Shifts-assigned pill → cell highlight (v1.7.0):** every pill in
+  `<WeeklyShiftSummary>` became a `<button>` with an `onClick` handler.
+  State (`highlightedEmployeeId`) lives in ScheduleGrid since it owns
+  both the pills and the cells. Clicking a pill toggles the highlight;
+  clicking a different pill switches; Esc clears. Visual identity uses
+  the **iOS-green** `--bg-active-on` / `--border-active-on` tokens
+  (reused from the Toggle atom's "on" state). Highlighted cells get a
+  green background, a 2-px green border, and a 3-px green box-shadow
+  ring so the lit pattern reads at a glance against neutral / blue /
+  yellow surfaces elsewhere on the grid. The selected pill paints in
+  the same green so the pill ↔ cells tie is unmistakable. Both
+  desktop grid and mobile day-cards participate (shared `renderCell`).
+- **Regenerate is wipe-and-refill (v1.7.0):** what was
+  "clear-invalid-then-fill" became "wipe-all-then-fill-empty-fresh".
+  `generateWeek({mode: "regenerate"})` empties `workingShifts`
+  unconditionally via `wipeAllShifts`, then proceeds through the
+  normal fill-empty loop. The previous `clearInvalidShifts` pre-pass
+  is gone (≈190 lines of per-constraint repair logic deleted along
+  with its tests-shaped reason codes from `GENERATOR_REASONS`).
+  Cleared records all carry the single reason `"regenerated"`. UI
+  consequences: GenerateConfirmModal's Regenerate explainer leads
+  with "clears every shift in this week"; the Regenerate button
+  variant is now `danger` (red) to flag the destructive nature; the
+  GenerateResultsModal's cleared-group bucket collapses to one row.
+  Rationale: when new requests land mid-week, the manager wants a
+  fresh global allocation, not localized constraint repairs.
+- **Priority badge re-pin (v1.7.0):** the "Priority" `<TBadge>` in
+  EmployeesList moved out of the top-right cluster. It now shares the
+  bottom row with the Pattern + fixed-days text — the badge anchors
+  to the right via flex space-between with `alignItems: flex-end`,
+  so the row gains the badge's height only when there's also a
+  fixed-days line longer than the badge. No stand-alone row is added.
+  Hidden entirely when `emp.schedulingPriority !== true` so the row
+  height doesn't shift between priority and non-priority employees.
 - **Effective quota in the auto-generator (v1.6.1):** the generator
   now applies the same effective-cap math the v1.6.0 pill displays.
   The shared helper `daysOffInWeekByEmployee(requests, dates)` was
@@ -341,7 +398,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.6.1)
+## File structure (current — v1.7.0)
 
 ```
 megustastu-scheduling/
@@ -366,6 +423,8 @@ megustastu-scheduling/
     │                                 quota-settings-section".
     │                                 v1.6.1: → 1.6.1, sha
     │                                 "generator-effective-quota".
+    │                                 v1.7.0: → 1.7.0, sha
+    │                                 "swap-highlight-regen-priority".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -417,6 +476,15 @@ megustastu-scheduling/
     │   │                           reason-code → human-readable label
     │   │                           lookup consumed by the new
     │   │                           GenerateResultsModal.
+    │   │                           v1.7.0: GENERATOR_REASONS audit —
+    │   │                           Regenerate became wipe-and-refill,
+    │   │                           so the clearInvalidShifts-only
+    │   │                           codes (closed-day, closed-day-part,
+    │   │                           unassigned, slot-removed, no-employee,
+    │   │                           archived, on-request, shift-preference,
+    │   │                           fixed-days, same-day-dup, over-quota)
+    │   │                           were removed. + "regenerated" entry
+    │   │                           labelled "Cleared for regeneration".
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -446,6 +514,14 @@ megustastu-scheduling/
     │   │                           the v1.6.0 effective-quota math is
     │   │                           shared with the auto-generator's
     │   │                           quota gate.
+    │   │                           v1.7.0: + roleMatchesSlot(emp, slot)
+    │   │                           lifted from generator.js. Day slots
+    │   │                           honour requiredRoles / coversRoles;
+    │   │                           evening slots honour defaultRole /
+    │   │                           eligibleRoles. Shared by the
+    │   │                           generator's eligibility filter and
+    │   │                           the v1.7.0 Swap mechanic in
+    │   │                           ScheduleGrid.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -534,6 +610,20 @@ megustastu-scheduling/
     │                               advertises. Reason code stays
     │                               "over-quota"; algorithm otherwise
     │                               byte-identical to v1.6.0.
+    │                               v1.7.0: Regenerate became
+    │                               wipe-and-refill. clearInvalidShifts
+    │                               (≈190 lines of per-constraint
+    │                               repair logic) deleted entirely; the
+    │                               new wipeAllShifts helper empties
+    │                               every record with reason
+    │                               "regenerated" before the fill-empty
+    │                               pass runs. Local `roleMatches` was
+    │                               lifted into schedule-logic.js as
+    │                               `roleMatchesSlot` (shared with the
+    │                               Swap mechanic in ScheduleGrid).
+    │                               Imports of parseIsoDate and the
+    │                               now-unused slotsByKey /
+    │                               visibleDateSet locals were pruned.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -556,6 +646,12 @@ megustastu-scheduling/
         │                           v1.3.0: + small "Priority" badge
         │                           alongside the role chips when
         │                           emp.schedulingPriority === true.
+        │                           v1.7.0: Priority badge moved out of
+        │                           the top-right cluster into its own
+        │                           bottom-right sibling row at the foot
+        │                           of each roster row. Hidden entirely
+        │                           when schedulingPriority is false so
+        │                           the row height doesn't shift.
         ├── EmployeeFormModal.jsx   add/edit employee modal.
         │                           v0.12.0: + "Working days per week"
         │                           segmented control (1..7) with live
@@ -646,6 +742,22 @@ megustastu-scheduling/
         │                           WeeklyShiftSummary now also receives
         │                           `requests` for the effective-quota
         │                           computation.
+        │                           v1.7.0: + swapMode +
+        │                           highlightedEmployeeId state +
+        │                           cellClick router. + SwapButton
+        │                           mount between Generate and Clear in
+        │                           the nav bar. + inline @keyframes
+        │                           mgt-swap-pulse style block for the
+        │                           source-cell animation. + swapBanner
+        │                           (info / success / error) above the
+        │                           grid. + Esc keydown handler
+        │                           (cancels swap mode first, then
+        │                           clears the pill highlight). Cells
+        │                           paint with accent-tint background
+        │                           when their assignee matches the lit
+        │                           pill. enterSwapTargetFromModal
+        │                           forwarded to ShiftFormModal as
+        │                           onStartSwap.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -671,6 +783,12 @@ megustastu-scheduling/
         │                           non-blocking) and on a
         │                           consecutive-2-off rule break for the
         │                           proposed assignment. Banners stack.
+        │                           v1.7.0: + "Move / Swap…" secondary
+        │                           button rendered only when the cell
+        │                           has an assignment. Click fires the
+        │                           new onStartSwap prop with the source
+        │                           shape; ScheduleGrid closes the modal
+        │                           and enters swap-target-select mode.
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
@@ -750,6 +868,21 @@ megustastu-scheduling/
         │                           card above the buttons clarifies the
         │                           difference. Cancel disabled while
         │                           busy.
+        │                           v1.7.0: Regenerate is now
+        │                           destructive (wipe-and-refill). The
+        │                           button switched to the danger
+        │                           variant (red) and the explainer
+        │                           card leads with "clears every shift
+        │                           in this week" + bolded red label so
+        │                           the manager can't miss the
+        │                           destructive nature.
+        ├── SwapButton.jsx          v1.7.0: NEW. Schedule nav-bar
+        │                           toggle between Generate and Clear.
+        │                           Owns no swap state — reads `active`
+        │                           from the ScheduleGrid parent and
+        │                           fires onToggle on click. Label
+        │                           switches between "Swap…" and
+        │                           "Swap: cancel" depending on `active`.
         ├── ClearButton.jsx         v1.1.0: NEW. "Clear…" entry point
         │                           in the Schedule nav bar between
         │                           Generate and Export. Owns the
@@ -788,6 +921,13 @@ megustastu-scheduling/
         │                           daysOffInWeekByEmployee — shared
         │                           with the auto-generator's quota
         │                           gate. Pill behaviour unchanged.
+        │                           v1.7.0: pill `<span>` became a
+        │                           `<button>` with onClick. + new
+        │                           `highlightedEmployeeId` +
+        │                           `onHighlight` props from
+        │                           ScheduleGrid. Selected pill gains
+        │                           accent fill + accent border + 2px
+        │                           accent ring via box-shadow.
         ├── WeeklyRequestsPreview.jsx v1.6.0: NEW. Footer panel under
         │                           WeeklyShiftSummary on the Schedule
         │                           grid. Lists every request whose date
@@ -817,6 +957,12 @@ megustastu-scheduling/
                                     Close button or backdrop click;
                                     closing resumes the banner's auto-
                                     dismiss countdown.
+                                    v1.7.0: Regenerate's clearedReasons
+                                    all carry the single reason
+                                    "regenerated"; the existing reason-
+                                    grouping logic collapses to one
+                                    bucket naturally — only the
+                                    file-header comment was updated.
 ```
 
 ### File structure (target — added in later sessions)

@@ -3,6 +3,11 @@
 // banner. Lists unfilled cells and (for Regenerate) cleared shifts,
 // grouped by reason with human-readable labels.
 //
+// v1.7.0 — Regenerate became wipe-and-refill, so every cleared shift
+// now arrives with the single reason "regenerated". groupByReason
+// collapses naturally to one bucket; the only change in this file is
+// the title's mode label ("Regenerate" still reads correctly).
+//
 // Pure presentational — owns no state beyond `open` (controlled by
 // ScheduleGrid). Reads the summary captured at generator-run time.
 //

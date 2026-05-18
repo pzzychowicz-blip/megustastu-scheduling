@@ -4,6 +4,11 @@
 //   Regenerate (secondary, re-evaluates current constraints, clears
 //   stale assignments first). The mode picked is passed to the parent's
 //   onConfirm(mode).
+// v1.7.0 — Regenerate became destructive: clears every shift in the
+//   week and re-allocates fresh. Explainer copy + button language
+//   updated to make the destructive nature explicit. Mechanic stays
+//   the same (onConfirm("regenerate")) — only generator.js + the copy
+//   here changed.
 //
 // Reuses Overlay (the single source of backdrop blur per the
 // ≤4-blur-instances rule). The actual algorithm runs in the parent's
@@ -71,8 +76,8 @@ export default function GenerateConfirmModal({
         </div>
       </div>
 
-      {/* v1.1.0: explainer for Fill empty vs Regenerate. Kept compact —
-          one-line each — so the modal stays scannable on mobile. */}
+      {/* v1.1.0: explainer for Fill empty vs Regenerate.
+          v1.7.0: Regenerate copy made destructive-explicit. */}
       <div
         style={{
           ...S.surfaceSoft,
@@ -88,9 +93,9 @@ export default function GenerateConfirmModal({
           </span>
         </div>
         <div>
-          <span style={{ fontWeight: 600 }}>Regenerate</span>
+          <span style={{ fontWeight: 600, color: "var(--text-danger)" }}>Regenerate</span>
           <span style={{ color: "var(--text-secondary)" }}>
-            {" — also re-applies current constraints. Existing assignments that now violate a request, fixed-days, preference (Hard), or quota are cleared and re-filled."}
+            {" — "}<strong>clears every shift in this week</strong>{" and re-allocates the whole rota fresh. Use when new requests have landed and you want the generator to plan from scratch."}
           </span>
         </div>
       </div>
@@ -113,7 +118,7 @@ export default function GenerateConfirmModal({
         })}
         {mkBtn({
           type: "button",
-          variant: "secondary",
+          variant: "danger",
           onClick: function () { onConfirm("regenerate"); },
           disabled: busy,
           style: busy ? { opacity: 0.6, cursor: "wait" } : undefined,

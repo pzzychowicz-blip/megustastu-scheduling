@@ -292,11 +292,13 @@ export const DAY_PARTS = Object.freeze({
 // Surfaced by the "Details" modal opened from the generator result banner —
 // the manager sees grouped-by-reason lists instead of a bare count.
 //
-// Two sets share this map: codes only emitted by the eligibility filter
-// in generateWeek (`no-eligible`, `all-on-request`, etc.) and codes only
-// emitted by `clearInvalidShifts` (`closed-day`, `slot-removed`, etc.).
-// `no-role-match` and `preference` are emitted by both surfaces and share
-// the same label — keep it that way; the modal groups by code, not surface.
+// v1.7.0: Regenerate became wipe-and-refill (every shift in the week is
+// cleared with reason "regenerated" before fill-empty runs). The
+// constraint-by-constraint reason codes that the old `clearInvalidShifts`
+// pre-pass emitted (closed-day, on-request, fixed-days, etc.) are gone —
+// none of that machinery survives the rewrite. The codes still listed
+// below are the ones `buildCandidates` continues to emit when no
+// candidate fits a cell.
 export const GENERATOR_REASONS = Object.freeze({
   // Unfilled (eligibility filter, in order from generator.js buildCandidates)
   "no-role-match": "No employee holds the required role",
@@ -307,18 +309,8 @@ export const GENERATOR_REASONS = Object.freeze({
   "all-at-quota": "All eligible staff have reached their working-days quota",
   "no-2-off": "Would break the 2-consecutive-days-off rule for every candidate",
   "preference": "No staff with matching shift preference (Hard mode)",
-  // Cleared (Regenerate pre-pass, from clearInvalidShifts)
-  "closed-day": "Day was closed in Operating time",
-  "closed-day-part": "Day-part (day or evening) was closed",
-  "unassigned": "Record was already unassigned",
-  "slot-removed": "Slot no longer exists in the shift template",
-  "no-employee": "Employee no longer exists",
-  "archived": "Employee was archived",
-  "on-request": "Employee has a covering day off or holiday",
-  "shift-preference": "Employee's shift-preference no longer matches",
-  "fixed-days": "Employee's fixed days no longer allow this date",
-  "same-day-dup": "Same employee was double-booked on the date",
-  "over-quota": "Employee was over their working-days quota",
+  // Cleared (v1.7.0 Regenerate wipe — every record gets this one reason)
+  "regenerated": "Cleared for regeneration",
 });
 
 // ── Weekday helpers ──────────────────────────────────────────────────────

@@ -14,6 +14,11 @@
 // `daysOffInWeekByEmployee` in schedule-logic.js. Single source of
 // truth now shared with the auto-generator's quota gate.
 //
+// v1.7.0 — Pills are now clickable. Clicking a pill highlights every
+// cell assigned to that employee on the Schedule grid; clicking again
+// (or pressing Esc) clears the highlight. State lives in ScheduleGrid
+// because it owns both the pills (via this component) and the cells.
+//
 // Sort order: under-utilization ratio asc (most-under first), then by
 // name. Helps the manager triage who needs more shifts when they
 // scroll the panel left-to-right.
@@ -22,13 +27,15 @@
 // manager notices the orphan assignment.
 //
 // Props:
-//   employees   ({ [id]: employee })  — full map
-//   weekShifts  ({ [id]: shift })     — already narrowed to the displayed week
-//   requests    ({ [id]: request })   — full map; v1.6.0
-//   dates       (Date[])              — visible week dates (closed days
-//                                       already filtered out); v1.6.0
-//   weekLabel   (string)              — e.g. "12–18 May 2026"
-//   isMobile    (bool)
+//   employees             ({ [id]: employee })  — full map
+//   weekShifts            ({ [id]: shift })     — narrowed to the displayed week
+//   requests              ({ [id]: request })   — full map; v1.6.0
+//   dates                 (Date[])              — visible week dates (closed days
+//                                                  already filtered out); v1.6.0
+//   weekLabel             (string)              — e.g. "12–18 May 2026"
+//   isMobile              (bool)
+//   highlightedEmployeeId (string|null)         — v1.7.0; currently lit pill
+//   onHighlight           (fn(id|null))         — v1.7.0; click handler
 
 import { S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
 import { daysOffInWeekByEmployee } from "../lib/schedule-logic.js";
@@ -61,7 +68,10 @@ function buildCountByEmployee(weekShifts) {
   return out;
 }
 
-export default function WeeklyShiftSummary({ employees, weekShifts, requests, dates, weekLabel, isMobile }) {
+export default function WeeklyShiftSummary({
+  employees, weekShifts, requests, dates, weekLabel, isMobile,
+  highlightedEmployeeId, onHighlight,
+}) {
   const counts = buildCountByEmployee(weekShifts);
   // v1.6.0: per-employee count of visible-week dates blocked by a
   // day-off / holiday request. Subtracted from raw quota to get the
@@ -142,24 +152,48 @@ export default function WeeklyShiftSummary({ employees, weekShifts, requests, da
           //   0 / quota → low-opacity, manager attention
           //   under quota → soft accent tint
           //   at or above quota → neutral
+          // v1.7.0: when this pill is the highlighted one, override the
+          // tint with a stronger accent fill + accent border so it reads
+          // as "selected" regardless of the under/at/over-quota state.
           const isZero = r.count === 0;
           const isUnder = r.count > 0 && r.count < r.quota;
-          const tint = isZero
-            ? { background: "var(--bg-pill)", color: "var(--text-muted)" }
-            : isUnder
-              ? { background: "var(--accent-tint-soft)", color: "var(--accent-on-tint)" }
-              : { background: "var(--bg-pill)", color: "var(--text-primary)" };
+          const isSelected = highlightedEmployeeId === r.id;
+          // v1.7.0: selected pill paints in green (reusing the iOS-green
+          // "active toggle on" tokens) so it stands out clearly from the
+          // accent-blue used elsewhere on the schedule grid. Matches the
+          // green cell highlight on the grid — single visual identity
+          // ties the pill to the cells it lights up.
+          const tint = isSelected
+            ? {
+                background: "var(--bg-active-on)",
+                color: "var(--text-primary)",
+              }
+            : isZero
+              ? { background: "var(--bg-pill)", color: "var(--text-muted)" }
+              : isUnder
+                ? { background: "var(--accent-tint-soft)", color: "var(--accent-on-tint)" }
+                : { background: "var(--bg-pill)", color: "var(--text-primary)" };
+          const borderColor = isSelected
+            ? "var(--border-active-on)"
+            : "var(--hairline-strong)";
+          const interactive = typeof onHighlight === "function";
           return (
-            <span
+            <button
               key={r.id}
+              type="button"
+              onClick={interactive
+                ? function () { onHighlight(isSelected ? null : r.id); }
+                : undefined}
               style={{
                 ...BTN.base,
                 padding: "4px 10px",
                 fontSize: 12,
-                cursor: "default",
-                border: "1px solid var(--hairline-strong)",
+                cursor: interactive ? "pointer" : "default",
+                border: "1px solid " + borderColor,
                 opacity: r.archived ? 0.55 : 1,
                 ...tint,
+                boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : undefined,
+                fontWeight: isSelected ? 700 : undefined,
               }}
               title={r.archived ? r.name + " (archived)" : r.name}
             >
@@ -174,7 +208,7 @@ export default function WeeklyShiftSummary({ employees, weekShifts, requests, da
               <span style={{ marginLeft: 6, opacity: 0.85 }}>
                 {r.count} / {r.quota}
               </span>
-            </span>
+            </button>
           );
         })}
       </div>

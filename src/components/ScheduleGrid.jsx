@@ -37,11 +37,16 @@ import {
   shiftsForWeek,
   addDays,
   isSlotOpenOnDate,
+  roleMatchesSlot,
+  findRequestConflict,
+  findShiftPreferenceMismatch,
+  findSameDayShift,
 } from "../lib/schedule-logic.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import ExportButton from "./ExportButton.jsx";
 import GenerateButton from "./GenerateButton.jsx";
 import ClearButton from "./ClearButton.jsx";
+import SwapButton from "./SwapButton.jsx";
 import WeeklyShiftSummary from "./WeeklyShiftSummary.jsx";
 import WeeklyRequestsPreview from "./WeeklyRequestsPreview.jsx";
 import GenerateResultsModal from "./GenerateResultsModal.jsx";
@@ -140,6 +145,62 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   }
   function closeModal() { setModalCell(null); }
 
+  // ── Swap / Move mode (v1.7.0) ────────────────────────────────────────
+  // Two entry points feed the same mechanic:
+  //   - SwapButton in the nav bar → enters "source-select" phase.
+  //   - "Move/Swap to…" button in ShiftFormModal → closes the modal and
+  //     enters "target-select" phase with `source` preloaded.
+  // Cell-click behaviour branches on the phase. See cellClick().
+  const [swapMode, setSwapMode] = useState(null);
+  // Inline banner shown above the grid: hint while a swap is in progress,
+  // or an error when validation blocks the commit. { tone, text }.
+  const [swapBanner, setSwapBanner] = useState(null);
+
+  function exitSwapMode() {
+    setSwapMode(null);
+    setSwapBanner(null);
+  }
+  function toggleSwapMode() {
+    if (swapMode) {
+      exitSwapMode();
+    } else {
+      setSwapMode({ phase: "source-select" });
+      setSwapBanner({ tone: "info", text: "Pick a filled cell as the source." });
+    }
+  }
+  function enterSwapTargetFromModal(source) {
+    // source = { dateIso, slotDef, shift } from ShiftFormModal.
+    closeModal();
+    setSwapMode({ phase: "target-select", source: source });
+    setSwapBanner({
+      tone: "info",
+      text: "Pick the target cell to move or swap. Click the source again to cancel.",
+    });
+  }
+
+  // ── Pill-click highlight (v1.7.0) ────────────────────────────────────
+  // Lit when the manager clicks a Shifts-assigned pill; every cell whose
+  // shift.employeeId === this id paints with an accent ring. Click the
+  // same pill (or press Esc) to clear.
+  const [highlightedEmployeeId, setHighlightedEmployeeId] = useState(null);
+  function onHighlight(empId) { setHighlightedEmployeeId(empId); }
+
+  // ── Esc key: cancel swap or clear highlight ──────────────────────────
+  useEffect(function () {
+    function onKey(e) {
+      if (e.key !== "Escape") return;
+      // Modal overlay handles its own Esc; don't fight it.
+      if (modalCell) return;
+      if (swapMode) {
+        exitSwapMode();
+      } else if (highlightedEmployeeId) {
+        setHighlightedEmployeeId(null);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return function () { document.removeEventListener("keydown", onKey); };
+  }, [swapMode, highlightedEmployeeId, modalCell]);
+
   // ── Result banner (v1.0.0 generator + v1.1.0 clear) ──────────────────
   // After a Generate run, GenerateButton fires onResult({filled, unfilled,
   // total, cleared, mode, unfilledCells}). After a Clear run, ClearButton
@@ -183,6 +244,191 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     actions.deleteShift(id);
     closeModal();
   }
+
+  // ── Swap commit (v1.7.0) ─────────────────────────────────────────────
+  // Validates the source/target pair against role match, request conflicts,
+  // shift-preference, and same-day double-booking. On pass:
+  //   - move (target empty): deleteShift(source.id) + upsertShift(target
+  //     payload with source.employeeId).
+  //   - swap (target filled): upsertShift each side, employeeIds swapped.
+  // Times and roles stay with the cell — the cell, not the employee, owns
+  // those. Failures surface as a red banner; the swap mode exits either way.
+  function attemptSwap(source, target) {
+    const sourceEmp = employees[source.shift.employeeId];
+    const targetEmp = target.shift && target.shift.employeeId
+      ? employees[target.shift.employeeId]
+      : null;
+
+    if (!sourceEmp) {
+      setSwapBanner({ tone: "error", text: "Source employee no longer exists." });
+      setSwapMode(null);
+      return;
+    }
+
+    // Role match for receivers.
+    if (!roleMatchesSlot(sourceEmp, target.slotDef)) {
+      setSwapBanner({
+        tone: "error",
+        text: sourceEmp.name + " doesn't hold a role for " + target.slotDef.humanLabel + ".",
+      });
+      setSwapMode(null);
+      return;
+    }
+    if (targetEmp && !roleMatchesSlot(targetEmp, source.slotDef)) {
+      setSwapBanner({
+        tone: "error",
+        text: targetEmp.name + " doesn't hold a role for " + source.slotDef.humanLabel + ".",
+      });
+      setSwapMode(null);
+      return;
+    }
+
+    // Request conflicts on receiving cells.
+    if (findRequestConflict(requests, sourceEmp.id, target.dateIso)) {
+      setSwapBanner({
+        tone: "error",
+        text: sourceEmp.name + " has a day-off or holiday on the target date.",
+      });
+      setSwapMode(null);
+      return;
+    }
+    if (findShiftPreferenceMismatch(requests, sourceEmp.id, target.dateIso, target.slotDef.dayPart)) {
+      setSwapBanner({
+        tone: "error",
+        text: sourceEmp.name + "'s shift-preference request excludes the target day-part.",
+      });
+      setSwapMode(null);
+      return;
+    }
+    if (targetEmp) {
+      if (findRequestConflict(requests, targetEmp.id, source.dateIso)) {
+        setSwapBanner({
+          tone: "error",
+          text: targetEmp.name + " has a day-off or holiday on the source date.",
+        });
+        setSwapMode(null);
+        return;
+      }
+      if (findShiftPreferenceMismatch(requests, targetEmp.id, source.dateIso, source.slotDef.dayPart)) {
+        setSwapBanner({
+          tone: "error",
+          text: targetEmp.name + "'s shift-preference request excludes the source day-part.",
+        });
+        setSwapMode(null);
+        return;
+      }
+    }
+
+    // Same-day strict. The source shift is being deleted (move) or its
+    // assignee is changing (swap), so we exclude both shifts' ids from the
+    // check. After the swap completes, the receiving employee must not be
+    // on ANOTHER shift on the receiving date.
+    const targetShiftId = target.shift ? target.shift.id : null;
+    if (target.dateIso !== source.dateIso) {
+      const sourceEmpClash = findSameDayShift(weekShifts, sourceEmp.id, target.dateIso, targetShiftId);
+      if (sourceEmpClash && sourceEmpClash.id !== source.shift.id) {
+        setSwapBanner({
+          tone: "error",
+          text: sourceEmp.name + " is already on another shift on " + target.dateIso + ".",
+        });
+        setSwapMode(null);
+        return;
+      }
+      if (targetEmp) {
+        const targetEmpClash = findSameDayShift(weekShifts, targetEmp.id, source.dateIso, source.shift.id);
+        if (targetEmpClash && targetEmpClash.id !== targetShiftId) {
+          setSwapBanner({
+            tone: "error",
+            text: targetEmp.name + " is already on another shift on " + source.dateIso + ".",
+          });
+          setSwapMode(null);
+          return;
+        }
+      }
+    }
+
+    // Commit.
+    if (targetEmp) {
+      // Swap two assignments. Each cell keeps its own role/start/end.
+      actions.upsertShift({ ...source.shift, employeeId: targetEmp.id });
+      actions.upsertShift({ ...target.shift, employeeId: sourceEmp.id });
+      setSwapBanner({
+        tone: "success",
+        text: "Swapped " + sourceEmp.name + " ↔ " + targetEmp.name + ".",
+      });
+    } else {
+      // Move: delete source, upsert target with source's employee.
+      // Reuse target's existing record id if there is one (unassigned
+      // placeholder); otherwise upsertShift creates a fresh record.
+      const targetPayload = {
+        date: target.dateIso,
+        section: target.slotDef.section,
+        dayPart: target.slotDef.dayPart,
+        slotIndex: target.slotDef.slotIndex,
+        role: target.slotDef.isDay
+          ? null
+          : ((target.shift && target.shift.role) || target.slotDef.defaultRole || null),
+        start: (target.shift && target.shift.start) || target.slotDef.defaultStart,
+        end:   (target.shift && target.shift.end)   || target.slotDef.defaultEnd,
+        employeeId: sourceEmp.id,
+      };
+      if (target.shift && target.shift.id) targetPayload.id = target.shift.id;
+      actions.deleteShift(source.shift.id);
+      actions.upsertShift(targetPayload);
+      setSwapBanner({
+        tone: "success",
+        text: "Moved " + sourceEmp.name + " to " + target.slotDef.humanLabel + ".",
+      });
+    }
+    setSwapMode(null);
+  }
+
+  // Cell-click router. Routes to swap mechanic when swap mode is on, else
+  // to the regular picker modal.
+  function cellClick(dateIso, slotDef, shift) {
+    if (swapMode) {
+      // Source-select: only filled cells qualify.
+      if (swapMode.phase === "source-select") {
+        if (!shift || !shift.employeeId) {
+          setSwapBanner({
+            tone: "info",
+            text: "Pick a filled cell as the source (this cell is empty).",
+          });
+          return;
+        }
+        setSwapMode({
+          phase: "target-select",
+          source: { dateIso: dateIso, slotDef: slotDef, shift: shift },
+        });
+        setSwapBanner({
+          tone: "info",
+          text: "Pick the target cell to move or swap. Click the source again to cancel.",
+        });
+        return;
+      }
+      // Target-select: click on the source again → cancel.
+      const source = swapMode.source;
+      const isSourceClick =
+        shift && source.shift && shift.id === source.shift.id;
+      if (isSourceClick) {
+        exitSwapMode();
+        return;
+      }
+      attemptSwap(source, { dateIso: dateIso, slotDef: slotDef, shift: shift || null });
+      return;
+    }
+    openCell(dateIso, slotDef, shift);
+  }
+
+  // Auto-dismiss the swap success/error banner after a short delay so the
+  // grid stays clean. Info banners (during in-progress swap selection)
+  // persist until swap mode exits.
+  useEffect(function () {
+    if (!swapBanner) return undefined;
+    if (swapBanner.tone === "info") return undefined;
+    const t = setTimeout(function () { setSwapBanner(null); }, 4000);
+    return function () { clearTimeout(t); };
+  }, [swapBanner]);
 
   // v1.3.0: closed-dayPart placeholder. Renders a non-interactive cell so
   // the grid keeps its row/column rhythm but the manager can see the slot
@@ -252,16 +498,47 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     const timeOverridden =
       cell.hasRecord && (cell.start !== slot.defaultStart || cell.end !== slot.defaultEnd);
 
+    // v1.7.0: visual states layered on top of the status palette.
+    //   isHighlighted — this cell's employee is the currently lit pill.
+    //                   Strong green tint + 2-px green border + 3-px
+    //                   green ring so it reads at a glance against the
+    //                   neutral pill / accent-blue palette already on
+    //                   the grid. Reuses --bg-active-on / --border-active-on
+    //                   (iOS-green) — same tokens as the pill's selected
+    //                   state, single visual identity.
+    //   isSwapSource  — swap mode picked this cell as the source. Pulsing
+    //                   yellow outline via @keyframes mgt-swap-pulse;
+    //                   yellow keeps swap visually distinct from green
+    //                   pill-highlights and blue accent surfaces.
+    const isHighlighted =
+      highlightedEmployeeId && existing && existing.employeeId === highlightedEmployeeId;
+    const isSwapSource =
+      swapMode && swapMode.phase === "target-select" &&
+      swapMode.source && existing && existing.id === swapMode.source.shift.id;
+
+    const baseBg = isHighlighted ? "var(--bg-active-on)" : palette.bg;
+    const baseBorder = isSwapSource
+      ? "var(--border-warning-tint)"
+      : isHighlighted
+        ? "var(--border-active-on)"
+        : palette.border;
+    const baseBorderWidth = (isSwapSource || isHighlighted) ? 2 : 1;
+    const ringShadow = isSwapSource
+      ? "0 0 0 3px var(--bg-warning-tint), var(--shadow-soft)"
+      : isHighlighted
+        ? "0 0 0 3px var(--bg-active-on), var(--shadow-soft)"
+        : "var(--shadow-soft)";
+
     return (
       <button
         key={slot.key + "-" + dIso}
         type="button"
-        onClick={function () { openCell(dIso, slot, existing); }}
+        onClick={function () { cellClick(dIso, slot, existing); }}
         style={{
           width: "100%",
           textAlign: "left",
-          background: palette.bg,
-          border: "1px solid " + palette.border,
+          background: baseBg,
+          border: baseBorderWidth + "px solid " + baseBorder,
           borderRadius: 10,
           padding: "8px 10px",
           fontSize: 12,
@@ -271,7 +548,8 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           flexDirection: "column",
           justifyContent: "space-between",
           gap: 4,
-          boxShadow: "var(--shadow-soft)",
+          boxShadow: ringShadow,
+          animation: isSwapSource ? "mgt-swap-pulse 1.6s ease-in-out infinite" : undefined,
         }}
       >
         <div
@@ -372,6 +650,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           isMobile={isMobile}
           actions={actions}
           onResult={handleGenerateResult}
+        />
+        <SwapButton
+          active={Boolean(swapMode)}
+          phase={swapMode ? swapMode.phase : undefined}
+          isMobile={isMobile}
+          onToggle={toggleSwapMode}
         />
         <ClearButton
           weekStart={weekStart}
@@ -698,9 +982,86 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     )
     : null;
 
+  // v1.7.0: swap-mode banner. Three tones:
+  //   info    — yellow guidance during in-progress source/target selection
+  //   success — yellow confirmation after a commit (same palette so
+  //              the manager visually parses swap output as one family)
+  //   error   — red banner when validation refused a swap
+  const swapBannerView = swapBanner
+    ? (
+      <div
+        style={{
+          marginBottom: 12,
+          padding: "8px 12px",
+          background:
+            swapBanner.tone === "error"
+              ? "var(--bg-danger-tint)"
+              : "var(--bg-warning-tint)",
+          border:
+            "1px solid " +
+            (swapBanner.tone === "error"
+              ? "var(--border-danger-tint)"
+              : "var(--border-warning-tint)"),
+          color:
+            swapBanner.tone === "error"
+              ? "var(--text-danger)"
+              : "var(--text-warning)",
+          borderRadius: 10,
+          fontSize: 13,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          boxShadow: "var(--shadow-soft)",
+        }}
+      >
+        <span>{swapBanner.text}</span>
+        {/* v1.7.0: dismiss control. Both the in-progress "Cancel" and
+            the end-of-flow "×" use the danger palette tokens
+            (`--btn-danger-bg` / `--btn-danger-border` /
+            `--text-on-accent`) — the same colors mkBtn(variant:
+            "danger") gives the Delete button in EmployeeFormModal —
+            but keep the compact banner-button sizing (padding 2/8,
+            no shadow) so the row height isn't affected. */}
+        {swapMode || swapBanner.tone !== "info" ? (
+          <button
+            type="button"
+            onClick={swapMode ? exitSwapMode : function () { setSwapBanner(null); }}
+            aria-label={swapMode ? "Cancel" : "Dismiss"}
+            style={{
+              ...BTN.base,
+              background: "var(--btn-danger-bg)",
+              color: "var(--text-on-accent)",
+              border: "1px solid var(--btn-danger-border)",
+              padding: "3px 9px",
+              fontSize: 14,
+              lineHeight: 1,
+              boxShadow: "none",
+              flexShrink: 0,
+            }}
+          >
+            {swapMode ? "Cancel" : "×"}
+          </button>
+        ) : null}
+      </div>
+    )
+    : null;
+
   return (
     <div>
+      {/* v1.7.0: single keyframes block for the swap-source pulse.
+          Inline at the component root so the animation token is in
+          scope wherever renderCell paints a cell. Yellow palette
+          keeps swap visually distinct from accent-blue (pickers,
+          today-tint) and green (pill highlights). */}
+      <style>{
+        "@keyframes mgt-swap-pulse {" +
+        "  0%,100% { box-shadow: 0 0 0 3px var(--bg-warning-tint), var(--shadow-soft); }" +
+        "  50%     { box-shadow: 0 0 0 6px var(--border-warning-tint), var(--shadow-soft); }" +
+        "}"
+      }</style>
       {navBar}
+      {swapBannerView}
       {generateBanner}
       {allClosedNotice}
       {dates.length > 0 ? (isMobile ? mobileStack : desktopGrid) : null}
@@ -720,6 +1081,8 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         dates={dates}
         weekLabel={formatWeekRange(weekStart)}
         isMobile={isMobile}
+        highlightedEmployeeId={highlightedEmployeeId}
+        onHighlight={onHighlight}
       />
 
       <WeeklyRequestsPreview
@@ -741,6 +1104,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         onClose={closeModal}
         onSave={handleSave}
         onDelete={handleDelete}
+        onStartSwap={enterSwapTargetFromModal}
       />
 
       {/* v1.4.0: generator-results "Details" modal. Open state is

@@ -265,6 +265,45 @@ export function slotsForDay(template) {
   return slots;
 }
 
+// ── Role-match for an employee filling a slot (v1.7.0; lifted) ──────────
+// Day slot: when the slot carries `requiredRoles`, the employee must hold
+// AT LEAST ONE of them. Otherwise (legacy / FoH) any of `coversRoles` is
+// enough. Evening slot: the slot's specific `defaultRole`, or any of
+// `eligibleRoles` when defaultRole is null (slot index > role count edge
+// case).
+//
+// Two callers: the auto-generator's eligibility filter (generator.js
+// `buildCandidates`) and the v1.7.0 Swap/Move mechanic in ScheduleGrid.
+// Single definition keeps the rule consistent across surfaces.
+//
+// Returns boolean. Empty roles list → false (the employee can't fill any
+// role-restricted cell).
+export function roleMatchesSlot(emp, slotDef) {
+  if (!emp || !slotDef) return false;
+  const roles = Array.isArray(emp.roles) ? emp.roles : [];
+  if (roles.length === 0) return false;
+  if (slotDef.isDay) {
+    const required = slotDef.requiredRoles || [];
+    if (required.length > 0) {
+      for (let i = 0; i < roles.length; i++) {
+        if (required.indexOf(roles[i]) !== -1) return true;
+      }
+      return false;
+    }
+    const covers = slotDef.coversRoles || [];
+    for (let i = 0; i < roles.length; i++) {
+      if (covers.indexOf(roles[i]) !== -1) return true;
+    }
+    return false;
+  }
+  if (slotDef.defaultRole) return roles.indexOf(slotDef.defaultRole) !== -1;
+  const elig = slotDef.eligibleRoles || [];
+  for (let i = 0; i < roles.length; i++) {
+    if (elig.indexOf(roles[i]) !== -1) return true;
+  }
+  return false;
+}
+
 // ── Shift ↔ slot matching ────────────────────────────────────────────────
 
 export function findShiftForSlot(shiftsMap, dateIso, slotDef) {
