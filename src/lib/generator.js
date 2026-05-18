@@ -24,6 +24,12 @@
 // The algorithm mirrors the manual picker's eligibility chain
 // (ShiftFormModal.jsx) so a generator-assigned cell matches what a
 // careful manager would have picked themselves.
+//
+// v1.6.1: the per-candidate working-days cap now respects the same
+// "effective quota" math the v1.6.0 Shifts-assigned pill shows —
+// raw workingDaysPerWeek minus the count of visible-week dates the
+// employee has a dayoff/holiday request covering. Single source of
+// truth via `daysOffInWeekByEmployee` in schedule-logic.js.
 
 import {
   visibleWeekDates,
@@ -37,6 +43,7 @@ import {
   findShiftPreferenceMismatch,
   hasConsecutiveDaysOff,
   isSlotOpenOnDate,
+  daysOffInWeekByEmployee,
 } from "./schedule-logic.js";
 import { DEFAULT_WORKING_DAYS } from "./constants.js";
 
@@ -234,12 +241,21 @@ function rankCandidates(candidates, currentShifts, priorShifts) {
 //   "all-conflicted"    — would-be candidates are already on another shift
 //                          this date or blocked by fixedDays
 //   "all-at-quota"      — would-be candidates have hit workingDaysPerWeek
+//                          (v1.6.1: effective cap = raw − days-off-in-week)
 //   "no-2-off"          — v1.2.0: adding this shift would leave the
 //                          candidate without 2 consecutive days off
 //   "preference"        — Hard mode left no preference-matching candidates
+//
+// v1.6.1: `daysOffByEmp` (optional) is the {[empId]: count} map of
+// distinct visible-week dates each employee has covered by a dayoff /
+// holiday request. The quota gate uses it to lower each candidate's
+// effective cap (max(0, raw − off)). Missing / undefined defaults to
+// 0 per-candidate so legacy callers that don't pass it keep raw-cap
+// behaviour.
 function buildCandidates(
   slotDef, dateIso, date, weekStart,
-  employees, requests, currentShifts, strictPreference
+  employees, requests, currentShifts, strictPreference,
+  daysOffByEmp
 ) {
   const all = Object.values(employees || {});
   if (all.length === 0) return { eligible: [], reason: "no-role-match" };
@@ -275,9 +291,13 @@ function buildCandidates(
   });
   if (dayOk.length === 0) return { eligible: [], reason: "all-conflicted" };
 
-  // (5) Working-days quota.
+  // (5) Working-days quota. v1.6.1: effective cap = raw − dayoff/holiday
+  // days in the visible week (Math.max floor at 0 so a fully-on-holiday
+  // employee can't be picked). Mirrors WeeklyShiftSummary's pill math.
   const quotaOk = dayOk.filter(function (e) {
-    const cap = workingDaysFor(e);
+    const rawCap = workingDaysFor(e);
+    const off = (daysOffByEmp && daysOffByEmp[e.id]) || 0;
+    const cap = Math.max(0, rawCap - off);
     return countAssignedDates(currentShifts, e.id) < cap;
   });
   if (quotaOk.length === 0) return { eligible: [], reason: "all-at-quota" };
@@ -341,6 +361,9 @@ function clearInvalidShifts(workingShifts, args, slotsByKey, visibleDateSet) {
   const strictPreference = args.strictPreference;
   const weekStart = args.weekStart;
   const openingDays = args.openingDays;
+  // v1.6.1: { [empId]: count } of visible-week dates blocked by a dayoff/
+  // holiday request. Drives the effective-cap math in step 10.
+  const daysOffByEmp = args.daysOffByEmp || {};
   const cleared = [];
 
   // v1.4.0: capture the pre-clear record fields the result modal needs
@@ -431,6 +454,8 @@ function clearInvalidShifts(workingShifts, args, slotsByKey, visibleDateSet) {
 
   // Step 10: workplace-quota over-cap. Distinct-date count per employee
   // > cap → clear the LATEST-date surplus shifts (deterministic).
+  // v1.6.1: cap is the effective quota (raw − dayoff/holiday days in the
+  // visible week), matching the buildCandidates gate and the UI pill.
   const byEmployee = {};
   const stillRemaining = Object.keys(workingShifts);
   for (let i = 0; i < stillRemaining.length; i++) {
@@ -441,7 +466,9 @@ function clearInvalidShifts(workingShifts, args, slotsByKey, visibleDateSet) {
   for (const empId in byEmployee) {
     const emp = employees[empId];
     if (!emp) continue;
-    const cap = workingDaysFor(emp);
+    const rawCap = workingDaysFor(emp);
+    const off = daysOffByEmp[empId] || 0;
+    const cap = Math.max(0, rawCap - off);
     const empShifts = byEmployee[empId];
     const dateSet = {};
     for (let i = 0; i < empShifts.length; i++) dateSet[empShifts[i].date] = true;
@@ -528,6 +555,12 @@ export function generateWeek(args) {
 
   const rarity = buildRoleRarity(employees);
 
+  // v1.6.1: per-employee count of visible-week dates blocked by a dayoff/
+  // holiday request. Computed once and threaded through buildCandidates +
+  // clearInvalidShifts so both the quota gate and the over-quota clear
+  // pass respect the same effective cap the UI advertises.
+  const daysOffByEmp = daysOffInWeekByEmployee(requests, dates);
+
   // workingShifts starts as a shallow clone so we never mutate caller data.
   // In regenerate mode, the pre-pass strips invalid entries; in fill-empty
   // mode, the clone is just a defensive copy.
@@ -542,6 +575,7 @@ export function generateWeek(args) {
         strictPreference: strictPreference,
         weekStart: weekStart,                  // v1.2.0: consecutive-off pass
         openingDays: openingDays,              // v1.3.0: closed-day-part clear
+        daysOffByEmp: daysOffByEmp,            // v1.6.1: effective quota cap
       },
       slotsByKey,
       visibleDateSet
@@ -575,7 +609,7 @@ export function generateWeek(args) {
       if (existing) continue;
       const built = buildCandidates(
         slot, dIso, date, weekStart,
-        employees, requests, workingShifts, strictPreference
+        employees, requests, workingShifts, strictPreference, daysOffByEmp
       );
       work.push({
         dateIso: dIso,
@@ -599,7 +633,7 @@ export function generateWeek(args) {
     const slot = entry.slot;
     const built = buildCandidates(
       slot, entry.dateIso, entry.date, weekStart,
-      employees, requests, pendingShifts, strictPreference
+      employees, requests, pendingShifts, strictPreference, daysOffByEmp
     );
     if (built.eligible.length === 0) {
       unfilledCells.push({

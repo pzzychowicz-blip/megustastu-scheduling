@@ -5,6 +5,79 @@ an entry. Newest first.
 
 ---
 
+## v1.6.1 — Effective quota in the auto-generator
+
+**Date:** 2026-05-18
+**Behavioural change:** The auto-generator now respects the same
+effective-quota cap the v1.6.0 "Shifts assigned" pill displays. A
+five-day employee with two dayoff/holiday days in the visible week is
+capped at three generator-assigned shifts (was five), freeing the
+remaining cells for other staff. Algorithm is otherwise byte-identical
+to v1.6.0 (ordering, ranking, request / preference / consecutive-off /
+fixedDays filters unchanged). No data-model change.
+
+Patch bump rather than minor because this completes v1.6.0's
+effective-quota story rather than introducing a new surface — the UI
+math and the algorithm now read from a single definition.
+
+### What landed
+
+1. **`src/lib/schedule-logic.js`** — added
+   `daysOffInWeekByEmployee(requestsMap, dates) → { [empId]: count }`.
+   Same algorithm previously living in WeeklyShiftSummary's local
+   `buildDaysOffByEmployee`. Counts the distinct visible-week dates
+   each employee has covered by a `dayoff` or `holiday` request;
+   `shift-preference` intentionally skipped (constrains dayPart, not
+   whether the person works); closed weekdays don't enter the count
+   because callers pass the post-filter `visibleWeekDates(...)`.
+2. **`src/components/WeeklyShiftSummary.jsx`** — removed the local
+   `buildDaysOffByEmployee`; imports and calls the lifted
+   `daysOffInWeekByEmployee` instead. Behaviour identical (single
+   source of truth for the pill math and the generator's quota gate).
+3. **`src/lib/generator.js`** — `generateWeek` builds the
+   per-employee dayoff/holiday count once after computing visible
+   dates and threads it through:
+   - **`buildCandidates`** step (5) — per-candidate cap becomes
+     `max(0, workingDaysPerWeek − off)`. Reason code on cap-out
+     stays `"all-at-quota"`.
+   - **`clearInvalidShifts`** step 10 (workplace-quota over-cap) —
+     same effective cap, so Regenerate clears excess assignments
+     down to the effective number. Reason code stays
+     `"over-quota"`.
+   Both `buildCandidates` call sites (worklist pre-sort + main fill
+   loop) pass `daysOffByEmp`. The new arg defaults to `{}` inside
+   `buildCandidates` and `clearInvalidShifts` so any future caller
+   that omits it falls back to raw-cap behaviour.
+4. **`src/App.jsx`** — `__APP_SIGNATURE__` → version 1.6.1, sha
+   `generator-effective-quota`.
+5. **`CLAUDE.md`** — new locked-decision entry under v1.6.0's
+   effective-quota note explaining the generator consumes the same
+   cap. File-structure annotations updated for `schedule-logic.js`,
+   `generator.js`, `WeeklyShiftSummary.jsx`, `App.jsx`.
+
+### Verification
+
+- `npm run build` — Vite produced the production bundle without
+  warnings; bundle size delta noted below.
+- Behavioural smoke (DEV via `npm run dev`):
+  - 5-day employee with a 2-day holiday in the displayed week →
+    Generate Fill-empty now assigns ≤3 distinct dates, matching the
+    pill cap. Remaining open cells go to other employees.
+  - Same setup with 3 holiday days → cap drops to 2.
+  - Shift-preference (Day only) request on a different employee →
+    pill quota unchanged; generator still respects the dayPart
+    filter from v1.2.0.
+  - Regenerate after manually assigning the 5-day employee to 4
+    non-holiday dates → Results modal lists one shift cleared with
+    reason "Over quota"; pill drops to 3 / 3.
+  - Negative test: a week with zero holiday requests yields identical
+    generator output to v1.6.0 (every effective cap equals raw cap).
+- Cross-feature regression: tab + week + Settings-section
+  persistence still works; WeeklyRequestsPreview still renders;
+  manual picker warnings unchanged; PDF export gate unchanged.
+
+---
+
 ## v1.6.0 — Weekly requests preview + effective quota + Settings section persistence
 
 **Date:** 2026-05-18

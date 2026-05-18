@@ -387,6 +387,49 @@ export function findShiftPreferenceMismatch(requestsMap, employeeId, dateIso, da
   return null;
 }
 
+// ── Days off in week (v1.6.0; lifted v1.6.1) ─────────────────────────────
+// Per-employee count of distinct dates in `dates` that are covered by a
+// `dayoff` or `holiday` request. Two consumers:
+//   - WeeklyShiftSummary — drives the effective-quota number on the
+//     "Shifts assigned" pill (raw workingDaysPerWeek − this count).
+//   - generator.js (v1.6.1) — applies the same effective cap in the
+//     candidate quota gate and the Regenerate over-quota clear pass.
+//
+// `shift-preference` requests are intentionally skipped — they
+// constrain which dayPart the employee can work, not whether they
+// work that day. Closed weekdays are already absent from `dates`
+// (callers pass the post-filter `visibleWeekDates(...)` list), so
+// requests covering closed days don't inflate the count.
+//
+// Returns { [employeeId]: count }. Employees with no matching dates
+// are absent from the map (callers treat missing as 0). `dates` is a
+// JS Date[]; we ISO-format internally for the YYYY-MM-DD string
+// compare against `dateFrom` / `dateTo`.
+export function daysOffInWeekByEmployee(requestsMap, dates) {
+  const out = {};
+  if (!requestsMap) return out;
+  const dateIsos = [];
+  for (let i = 0; i < dates.length; i++) dateIsos.push(isoDate(dates[i]));
+  const all = Object.values(requestsMap);
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i];
+    if (!r || !r.employeeId || !r.dateFrom) continue;
+    if (r.type !== "dayoff" && r.type !== "holiday") continue;
+    const from = r.dateFrom;
+    const to = r.dateTo || r.dateFrom;
+    let hits = out[r.employeeId];
+    if (!hits) hits = out[r.employeeId] = {};
+    for (let d = 0; d < dateIsos.length; d++) {
+      const iso = dateIsos[d];
+      if (iso >= from && iso <= to) hits[iso] = true;
+    }
+  }
+  // Collapse the per-employee set to a count.
+  const counts = {};
+  for (const id in out) counts[id] = Object.keys(out[id]).length;
+  return counts;
+}
+
 // ── Consecutive days off check (v1.2.0) ──────────────────────────────────
 // Labour wellness rule: every employee needs at least N consecutive days
 // off per calendar week (Mon..Sun). v1.2.0 ships with N=2.
