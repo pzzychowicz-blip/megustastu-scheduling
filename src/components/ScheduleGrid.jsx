@@ -306,6 +306,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           color: "var(--text-primary)",
           textAlign: "center",
           boxShadow: "var(--shadow-soft)",
+          // v1.4.0 fixup: lift the section banner above the absolutely-
+          // positioned column-rule + today-tint underlays so the hairline
+          // doesn't slice through the "Kitchen · Day" / "FoH · Evening"
+          // text. Without this, positioned (zIndex 0) underlays paint
+          // above static elements regardless of source order.
+          position: "relative",
+          zIndex: 1,
         }}
       >
         {slot.sectionLabel} · {slot.dayPartLabel}
