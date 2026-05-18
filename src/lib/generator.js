@@ -30,12 +30,18 @@
 // raw workingDaysPerWeek minus the count of visible-week dates the
 // employee has a dayoff/holiday request covering. Single source of
 // truth via `daysOffInWeekByEmployee` in schedule-logic.js.
+//
+// v1.7.0: Regenerate became wipe-and-refill — every shift in the week
+// is cleared, then the fill-empty pass runs against an empty map.
+// The old `clearInvalidShifts` pre-pass is gone (manager wanted a
+// fresh global allocation rather than localized constraint repairs).
+// `roleMatches` was lifted into schedule-logic.js as
+// `roleMatchesSlot` (now shared with the v1.7.0 Swap mechanic).
 
 import {
   visibleWeekDates,
   weekdayKeyForDate,
   isoDate,
-  parseIsoDate,
   slotsForDay,
   findShiftForSlot,
   findSameDayShift,
@@ -44,6 +50,7 @@ import {
   hasConsecutiveDaysOff,
   isSlotOpenOnDate,
   daysOffInWeekByEmployee,
+  roleMatchesSlot,
 } from "./schedule-logic.js";
 import { DEFAULT_WORKING_DAYS } from "./constants.js";
 
@@ -56,38 +63,6 @@ function workingDaysFor(emp) {
   if (v < 1) return 1;
   if (v > 7) return 7;
   return Math.round(v);
-}
-
-// Day shift: when the slot carries `requiredRoles` (v1.1.0), the
-// employee must hold AT LEAST ONE of them. Otherwise (legacy / FoH) any
-// of `coversRoles` is enough.
-// Evening shift: the slot's specific defaultRole, or any of eligibleRoles
-// when defaultRole is null (count > role list — edge case).
-function roleMatches(emp, slotDef) {
-  const roles = Array.isArray(emp.roles) ? emp.roles : [];
-  if (roles.length === 0) return false;
-  if (slotDef.isDay) {
-    const required = slotDef.requiredRoles || [];
-    if (required.length > 0) {
-      for (let i = 0; i < roles.length; i++) {
-        if (required.indexOf(roles[i]) !== -1) return true;
-      }
-      return false;
-    }
-    // Fallback: permissive "any of coversRoles".
-    const covers = slotDef.coversRoles || [];
-    for (let i = 0; i < roles.length; i++) {
-      if (covers.indexOf(roles[i]) !== -1) return true;
-    }
-    return false;
-  }
-  // Evening
-  if (slotDef.defaultRole) return roles.indexOf(slotDef.defaultRole) !== -1;
-  const elig = slotDef.eligibleRoles || [];
-  for (let i = 0; i < roles.length; i++) {
-    if (elig.indexOf(roles[i]) !== -1) return true;
-  }
-  return false;
 }
 
 // fixedDays gating: when set, the employee may only work on weekdays
@@ -263,7 +238,7 @@ function buildCandidates(
   // (1) Active + role match.
   const roleOk = all.filter(function (e) {
     if (e.active === false) return false;
-    return roleMatches(e, slotDef);
+    return roleMatchesSlot(e, slotDef);
   });
   if (roleOk.length === 0) return { eligible: [], reason: "no-role-match" };
 
@@ -326,57 +301,26 @@ function buildCandidates(
   return { eligible: restedOk, reason: null };
 }
 
-// ── Regenerate pre-pass (v1.1.0, extended v1.2.0, v1.3.0) ────────────────
-// Walks every existing shift in the week and clears any that no longer
-// satisfy the current constraints. Returns the cleared-id list and a
-// shallow-cloned weekShifts map with the cleared entries removed; the
-// caller passes that working map into the normal fill-empty pass.
+// ── Regenerate wipe-pass (v1.7.0) ────────────────────────────────────────
+// In v1.7.0 Regenerate became wipe-and-refill: every shift in the week is
+// cleared unconditionally, then the fill-empty pass runs against an empty
+// map. Patryk's call — when new requests land mid-week, a fresh global
+// allocation beats localized constraint repairs. The previous
+// per-constraint pre-pass (clearInvalidShifts, v1.1–v1.6.1) is gone.
 //
-// Constraint order (mirrors buildCandidates but applied per-existing-shift):
-//   1. Shift sits on a fully-closed day (manager toggled the day off).
-//   2. v1.3.0: Shift's dayPart was closed on its date (manager opened
-//      day-only or evening-only on a previously full-open day).
-//   3. Shift record is unassigned (employeeId is empty). v0.7+'s manual
-//      flow deletes the record entirely; an orphan unassigned record is
-//      effectively an empty cell and should be eligible for refill.
-//   4. Slot definition no longer exists (template count was lowered).
-//   5. Employee no longer exists, or is archived.
-//   6. Employee no longer holds the required role for the slot.
-//   7. Employee now has a covering day-off / holiday request on this date.
-//   8. v1.2.0: Shift-preference mismatch (slot's dayPart conflicts with
-//      the employee's "day only" / "evening only" request for this date).
-//   9. Employee's fixedDays no longer allows this date.
-//  10. Strict preference mode + employee preference no longer matches.
-//  11. Same-day duplicate (rare; would be a pre-existing data drift).
-//  12. Workplace quota over-cap — clear the LATEST-date surplus shifts.
-//  13. v1.2.0: consecutive-off rule — for each employee not satisfying
-//      "2 consecutive days off", clear their LATEST shift and re-check
-//      until the rule is satisfied or they have no shifts left.
-//
-// Quota and consecutive-off are deferred to later passes because they
-// depend on which shifts survive the earlier per-shift filters.
-function clearInvalidShifts(workingShifts, args, slotsByKey, visibleDateSet) {
-  const employees = args.employees;
-  const requests = args.requests;
-  const strictPreference = args.strictPreference;
-  const weekStart = args.weekStart;
-  const openingDays = args.openingDays;
-  // v1.6.1: { [empId]: count } of visible-week dates blocked by a dayoff/
-  // holiday request. Drives the effective-cap math in step 10.
-  const daysOffByEmp = args.daysOffByEmp || {};
+// Cleared records carry the v1.4.0 snapshot shape (date, employeeId,
+// section, dayPart, slotIndex, slotKey) so GenerateResultsModal can
+// still render each row even after Firebase deletes the record. Every
+// row gets reason "regenerated" — single bucket in the modal.
+function wipeAllShifts(workingShifts) {
   const cleared = [];
-
-  // v1.4.0: capture the pre-clear record fields the result modal needs
-  // (date, employeeId, slot identity). Without this snapshot the modal
-  // would have no way to display "Anna — Tue, Kitchen Day — archived"
-  // for a cleared shift, because once `workingShifts[id]` is deleted and
-  // the deleteShift call fires in GenerateButton, the original record is
-  // gone from React state too.
-  function clear(id, reason) {
+  const ids = Object.keys(workingShifts);
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
     const s = workingShifts[id];
     cleared.push({
       id: id,
-      reason: reason,
+      reason: "regenerated",
       date: s ? s.date : null,
       employeeId: s ? s.employeeId : null,
       section: s ? s.section : null,
@@ -386,141 +330,14 @@ function clearInvalidShifts(workingShifts, args, slotsByKey, visibleDateSet) {
     });
     delete workingShifts[id];
   }
-
-  // Step 1–10: single pass over each existing shift.
-  const ids = Object.keys(workingShifts);
-  for (let i = 0; i < ids.length; i++) {
-    const id = ids[i];
-    const s = workingShifts[id];
-    if (!s) { delete workingShifts[id]; continue; }
-
-    if (!visibleDateSet[s.date])           { clear(id, "closed-day"); continue; }
-    if (!s.employeeId)                     { clear(id, "unassigned"); continue; }
-
-    const slotKey =
-      s.section + "-" + s.dayPart + "-" + (s.slotIndex || 0);
-    const slotDef = slotsByKey[slotKey];
-    if (!slotDef)                          { clear(id, "slot-removed"); continue; }
-
-    // v1.3.0: the slot's dayPart may have been closed on this date even
-    // though the date itself is still open (e.g. manager flipped Mon to
-    // day-only after assigning an evening shift). Drop those records so
-    // the fill-empty pass doesn't see a stale orphan it can't replace.
-    if (openingDays && !isSlotOpenOnDate(parseIsoDate(s.date), slotDef, openingDays)) {
-      clear(id, "closed-day-part"); continue;
-    }
-
-    const emp = employees[s.employeeId];
-    if (!emp)                              { clear(id, "no-employee"); continue; }
-    if (emp.active === false)              { clear(id, "archived"); continue; }
-    if (!roleMatches(emp, slotDef))        { clear(id, "no-role-match"); continue; }
-
-    if (findRequestConflict(requests, s.employeeId, s.date)) {
-      clear(id, "on-request"); continue;
-    }
-    // v1.2.0: shift-preference mismatch.
-    if (findShiftPreferenceMismatch(requests, s.employeeId, s.date, slotDef.dayPart)) {
-      clear(id, "shift-preference"); continue;
-    }
-    if (!fixedDaysAllows(emp, parseIsoDate(s.date))) {
-      clear(id, "fixed-days"); continue;
-    }
-    if (strictPreference && !preferenceMatches(emp, slotDef)) {
-      clear(id, "preference"); continue;
-    }
-  }
-
-  // Step 9: same-employee same-date duplicates. For each (emp, date)
-  // group, keep the earliest slot-key entry; clear the rest.
-  const byEmpDate = {};
-  const remaining = Object.keys(workingShifts);
-  for (let i = 0; i < remaining.length; i++) {
-    const s = workingShifts[remaining[i]];
-    const k = s.employeeId + "|" + s.date;
-    if (!byEmpDate[k]) byEmpDate[k] = [];
-    byEmpDate[k].push(s);
-  }
-  for (const k in byEmpDate) {
-    const group = byEmpDate[k];
-    if (group.length <= 1) continue;
-    group.sort(function (a, b) {
-      const aKey = a.section + "-" + a.dayPart + "-" + (a.slotIndex || 0);
-      const bKey = b.section + "-" + b.dayPart + "-" + (b.slotIndex || 0);
-      if (aKey === bKey) return 0;
-      return aKey < bKey ? -1 : 1;
-    });
-    for (let i = 1; i < group.length; i++) clear(group[i].id, "same-day-dup");
-  }
-
-  // Step 10: workplace-quota over-cap. Distinct-date count per employee
-  // > cap → clear the LATEST-date surplus shifts (deterministic).
-  // v1.6.1: cap is the effective quota (raw − dayoff/holiday days in the
-  // visible week), matching the buildCandidates gate and the UI pill.
-  const byEmployee = {};
-  const stillRemaining = Object.keys(workingShifts);
-  for (let i = 0; i < stillRemaining.length; i++) {
-    const s = workingShifts[stillRemaining[i]];
-    if (!byEmployee[s.employeeId]) byEmployee[s.employeeId] = [];
-    byEmployee[s.employeeId].push(s);
-  }
-  for (const empId in byEmployee) {
-    const emp = employees[empId];
-    if (!emp) continue;
-    const rawCap = workingDaysFor(emp);
-    const off = daysOffByEmp[empId] || 0;
-    const cap = Math.max(0, rawCap - off);
-    const empShifts = byEmployee[empId];
-    const dateSet = {};
-    for (let i = 0; i < empShifts.length; i++) dateSet[empShifts[i].date] = true;
-    const distinct = Object.keys(dateSet);
-    if (distinct.length <= cap) continue;
-    distinct.sort(); // ascending → reverse for latest-first
-    distinct.reverse();
-    const toClear = {};
-    for (let i = 0; i < distinct.length - cap; i++) toClear[distinct[i]] = true;
-    for (let i = 0; i < empShifts.length; i++) {
-      if (toClear[empShifts[i].date]) clear(empShifts[i].id, "over-quota");
-    }
-  }
-
-  // Step 12 (v1.2.0): consecutive-off rule. For each employee, if their
-  // remaining pattern lacks 2 consecutive off days, clear LATEST-date
-  // shifts one at a time and re-check. Stops when satisfied or no shifts
-  // remain. Latest-first because the fill-empty pass will refill cells
-  // greedily and may pick a different schedule shape entirely.
-  if (weekStart) {
-    const restRemainingByEmp = {};
-    const restAllIds = Object.keys(workingShifts);
-    for (let i = 0; i < restAllIds.length; i++) {
-      const s = workingShifts[restAllIds[i]];
-      if (!s || !s.employeeId) continue;
-      if (!restRemainingByEmp[s.employeeId]) restRemainingByEmp[s.employeeId] = [];
-      restRemainingByEmp[s.employeeId].push(s);
-    }
-    for (const empId in restRemainingByEmp) {
-      // Sort each employee's shifts by date ascending; we'll clear from the
-      // tail (latest-first) until the rule is satisfied.
-      const list = restRemainingByEmp[empId].sort(function (a, b) {
-        if (a.date === b.date) return 0;
-        return a.date < b.date ? -1 : 1;
-      });
-      // Iterate latest-first.
-      for (let i = list.length - 1; i >= 0; i--) {
-        if (hasConsecutiveDaysOff(empId, weekStart, workingShifts)) break;
-        const s = list[i];
-        if (workingShifts[s.id]) clear(s.id, "no-2-off");
-      }
-    }
-  }
-
   return cleared;
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────
-// v1.1.0: `mode` is "fill-empty" (default, v1.0.0 behaviour) or
-// "regenerate" (clears stale assignments first, then fills empties).
-// The return shape gains `clearedShiftIds: [...]` for the regenerate
-// caller to loop through `actions.deleteShift`.
+// `mode` is "fill-empty" (default, v1.0.0 behaviour) or "regenerate"
+// (v1.7.0 wipe-and-refill — clears every shift in the week, then fills
+// empties fresh). The return shape carries `clearedShiftIds: [...]` so
+// the GenerateButton caller knows which records to delete from Firebase.
 
 export function generateWeek(args) {
   const mode = args.mode === "regenerate" ? "regenerate" : "fill-empty";
@@ -546,40 +363,22 @@ export function generateWeek(args) {
   }
 
   const slots = slotsForDay(shiftTemplate);
-  const slotsByKey = {};
-  for (let i = 0; i < slots.length; i++) slotsByKey[slots[i].key] = slots[i];
-
   const dates = visibleWeekDates(weekStart, openingDays);
-  const visibleDateSet = {};
-  for (let i = 0; i < dates.length; i++) visibleDateSet[isoDate(dates[i])] = true;
-
   const rarity = buildRoleRarity(employees);
 
   // v1.6.1: per-employee count of visible-week dates blocked by a dayoff/
-  // holiday request. Computed once and threaded through buildCandidates +
-  // clearInvalidShifts so both the quota gate and the over-quota clear
-  // pass respect the same effective cap the UI advertises.
+  // holiday request. Computed once and threaded through buildCandidates
+  // so the quota gate matches the effective cap the UI advertises.
   const daysOffByEmp = daysOffInWeekByEmployee(requests, dates);
 
   // workingShifts starts as a shallow clone so we never mutate caller data.
-  // In regenerate mode, the pre-pass strips invalid entries; in fill-empty
-  // mode, the clone is just a defensive copy.
+  // v1.7.0: in regenerate mode, the wipe-pass empties it entirely; in
+  // fill-empty mode the clone preserves all existing shifts so the
+  // worklist skips already-filled cells.
   const workingShifts = { ...(args.weekShifts || {}) };
   let clearedRecords = [];
   if (mode === "regenerate") {
-    clearedRecords = clearInvalidShifts(
-      workingShifts,
-      {
-        employees: employees,
-        requests: requests,
-        strictPreference: strictPreference,
-        weekStart: weekStart,                  // v1.2.0: consecutive-off pass
-        openingDays: openingDays,              // v1.3.0: closed-day-part clear
-        daysOffByEmp: daysOffByEmp,            // v1.6.1: effective quota cap
-      },
-      slotsByKey,
-      visibleDateSet
-    );
+    clearedRecords = wipeAllShifts(workingShifts);
   }
 
   // Build the worklist: every (date, slot) pair on open days where the

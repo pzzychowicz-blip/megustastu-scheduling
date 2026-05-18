@@ -143,30 +143,45 @@ export default function EmployeesList({ employees, actions, isMobile }) {
           >
             {emp.name || "Unnamed"}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {emp.schedulingPriority === true ? (
-              <TBadge
-                palette={{
-                  bg: "var(--accent-tint-soft)",
-                  text: "var(--accent-on-tint)",
-                  border: "var(--accent-tint-strong)",
-                }}
-              >
-                Priority
-              </TBadge>
-            ) : null}
-            <span style={S.muted}>{preferenceLabel(emp.preference)}</span>
-          </div>
+          <span style={S.muted}>{preferenceLabel(emp.preference)}</span>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {roleChips}
         </div>
-        <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
-          {patternLabel(emp.workingDaysPerWeek)}
+        {/* v1.7.0: Priority badge moved out of the top-right cluster.
+            It now shares the bottom row with the Pattern + fixedDays
+            text — badge anchors to the right (flex-end) so the row
+            grows in height ONLY for the badge size, not for an extra
+            stand-alone row. Hidden entirely when priority is false. */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            gap: 8,
+            marginTop: 6,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ ...S.muted, fontSize: 11 }}>
+              {patternLabel(emp.workingDaysPerWeek)}
+            </div>
+            {fdSummary
+              ? <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>★ {fdSummary}</div>
+              : null}
+          </div>
+          {emp.schedulingPriority === true ? (
+            <TBadge
+              palette={{
+                bg: "var(--accent-tint-soft)",
+                text: "var(--accent-on-tint)",
+                border: "var(--accent-tint-strong)",
+              }}
+            >
+              Priority
+            </TBadge>
+          ) : null}
         </div>
-        {fdSummary
-          ? <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>★ {fdSummary}</div>
-          : null}
       </button>
     );
   }
