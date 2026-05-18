@@ -260,6 +260,23 @@ separate Firebase project, same UI conventions).
   `workingDaysPerWeek` and floors at 0. Quota=0 employees collapse
   to ratio=1 for the under-utilization sort so they don't dominate
   the leftmost slots.
+- **Effective quota in the auto-generator (v1.6.1):** the generator
+  now applies the same effective-cap math the v1.6.0 pill displays.
+  The shared helper `daysOffInWeekByEmployee(requests, dates)` was
+  lifted from `WeeklyShiftSummary.jsx` into `schedule-logic.js` so
+  both surfaces read from a single definition. `generateWeek` builds
+  the `{ [empId]: count }` map once after computing visible dates,
+  then threads it into both `buildCandidates` (the per-candidate
+  quota gate) and `clearInvalidShifts` (the Regenerate over-quota
+  pass). Effect: a 5-day employee with a 2-day holiday in the
+  visible week is now capped at 3 shifts inside the generator
+  (matching the UI pill), instead of the raw 5 — frees those cells
+  for other employees and keeps generator behaviour in lockstep
+  with what the manager sees. Algorithm otherwise unchanged
+  (ordering, ranking, request / consecutive-off / preference
+  filters are byte-identical). Reason code for over-cap clears
+  stays `"over-quota"` — the semantic ("over their cap") is the
+  same; only the cap got tighter.
 - **Session persistence (v1.5.0):** the open tab (AppShell) and
   displayed week (ScheduleGrid) persist across refresh / Vite HMR
   inside the same browser tab. Storage is `sessionStorage` under the
@@ -324,7 +341,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.6.0)
+## File structure (current — v1.6.1)
 
 ```
 megustastu-scheduling/
@@ -347,6 +364,8 @@ megustastu-scheduling/
     │                                 v1.6.0: → 1.6.0, sha
     │                                 "weekly-requests-effective-
     │                                 quota-settings-section".
+    │                                 v1.6.1: → 1.6.1, sha
+    │                                 "generator-effective-quota".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -420,6 +439,13 @@ megustastu-scheduling/
     │   │                           isWeekComplete now go through the
     │   │                           per-day-part path (legacy boolean
     │   │                           openingDays still accepted).
+    │   │                           v1.6.1: + daysOffInWeekByEmployee(
+    │   │                           requestsMap, dates) →
+    │   │                           {[empId]: count}. Lifted from
+    │   │                           WeeklyShiftSummary's local helper so
+    │   │                           the v1.6.0 effective-quota math is
+    │   │                           shared with the auto-generator's
+    │   │                           quota gate.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -493,6 +519,21 @@ megustastu-scheduling/
     │                               role-rarity stays as a stable
     │                               tiebreak. clearInvalidShifts and
     │                               rankCandidates are unchanged.
+    │                               v1.6.1: + daysOffByEmp arg threaded
+    │                               into buildCandidates and
+    │                               clearInvalidShifts. generateWeek
+    │                               builds the per-employee dayoff/
+    │                               holiday count once (via the lifted
+    │                               daysOffInWeekByEmployee helper) and
+    │                               passes it down. Step (5) of
+    │                               buildCandidates and step 10 of
+    │                               clearInvalidShifts now use the
+    │                               effective cap
+    │                               max(0, workingDaysPerWeek - off)
+    │                               — same cap the v1.6.0 UI pill
+    │                               advertises. Reason code stays
+    │                               "over-quota"; algorithm otherwise
+    │                               byte-identical to v1.6.0.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -742,6 +783,11 @@ megustastu-scheduling/
         │                           ByEmployee helper added. Quota=0
         │                           employees get ratio=1 to keep the
         │                           under-utilization sort sane.
+        │                           v1.6.1: buildDaysOffByEmployee
+        │                           lifted to schedule-logic.js as
+        │                           daysOffInWeekByEmployee — shared
+        │                           with the auto-generator's quota
+        │                           gate. Pill behaviour unchanged.
         ├── WeeklyRequestsPreview.jsx v1.6.0: NEW. Footer panel under
         │                           WeeklyShiftSummary on the Schedule
         │                           grid. Lists every request whose date
