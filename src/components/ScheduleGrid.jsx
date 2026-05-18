@@ -385,30 +385,43 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             "120px repeat(" + dates.length + ", minmax(120px, 1fr))",
           gap: 6,
           minWidth: 120 + dates.length * 120,
+          // v1.4.0 fixup: containing block for the absolutely-positioned
+          // tint + column-rule underlays below. Without this, the underlays
+          // would resolve their `gridColumn` against the nearest positioned
+          // ancestor (the page), throwing the layout off.
+          position: "relative",
         }}
       >
-        {/* v1.4.0: today-column tint underlay. Single grid item spanning
-            every row at today's column; painted first in source order so
-            the date pill + slot cells layer on top. pointerEvents off
-            keeps cell click handlers untouched. */}
+        {/* v1.4.0: today-column tint underlay. `position: absolute` keeps
+            it OUT of the grid's auto-flow track allocation — otherwise a
+            `gridRow: 1 / -1` grid item would block placement of every
+            auto-positioned cell in today's column, shoving content into
+            implicit rows. With `top: 0; bottom: 0`, the underlay stretches
+            the full grid height regardless of how many rows the slot
+            template produces. `gridColumn` still resolves to the right
+            column area; `position: absolute` only opts out of cell
+            occupation, not grid-area resolution. */}
         {todayIndex >= 0 ? (
           <div
             aria-hidden="true"
             style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
               gridColumn: (todayIndex + 2) + " / " + (todayIndex + 3),
-              gridRow: "1 / -1",
               background: "var(--accent-tint-soft)",
               borderRadius: 12,
               pointerEvents: "none",
+              zIndex: 0,
             }}
           />
         ) : null}
 
-        {/* v1.4.0: vertical column rules between date columns. One
-            hairline div per inter-column boundary (between dates[i-1]
-            and dates[i]); marginLeft pulls it into the middle of the
-            6px grid gap so the line reads as a column separator rather
-            than a left edge stuck on the next column. */}
+        {/* v1.4.0: vertical column rules between date columns. Same
+            absolute-positioning trick — these would otherwise block all
+            auto-flow cells in cols 3..N. marginLeft pulls the hairline
+            into the middle of the 6px grid gap so the line reads as a
+            column separator. */}
         {dates.map(function (_, i) {
           if (i === 0) return null;
           return (
@@ -416,11 +429,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
               key={"colrule-" + i}
               aria-hidden="true"
               style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
                 gridColumn: (i + 2) + " / " + (i + 3),
-                gridRow: "1 / -1",
                 borderLeft: "1px solid var(--hairline)",
                 marginLeft: -3,
                 pointerEvents: "none",
+                zIndex: 0,
               }}
             />
           );
