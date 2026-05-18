@@ -149,16 +149,29 @@ function buildRoleRarity(employees) {
 }
 
 // Stable worklist ordering:
-//   1. Evening slots (specific role) before Day slots (any role).
-//   2. Within evening: rarest role first (lowest rarity count).
-//   3. Tie-break by date ascending.
-//   4. Then by slot key (deterministic).
+//   1. v1.5.0: Eligible-candidate count ascending — most-constrained
+//      first. A cell with only one qualifying employee gets picked
+//      before a cell with five, so versatile candidates are saved for
+//      the cells that actually need them. Replaces the static
+//      role-rarity heuristic that didn't account for request conflicts,
+//      quotas, or consecutive-off rules narrowing the real pool.
+//      Pre-computed once at worklist-build time; we don't re-rank
+//      after each greedy pick (the problem size is ≤49 cells/week
+//      and pre-sort captures the bulk of the benefit).
+//   2. Evening slots (specific role) before Day slots (any role).
+//   3. Role rarity (static count) — stable tiebreak only.
+//   4. Date ascending.
+//   5. Slot key (deterministic).
 function compareWorklistEntries(a, b, rarity) {
+  // v1.5.0: most-constrained-cell first.
+  const aCount = typeof a.eligibleCount === "number" ? a.eligibleCount : Infinity;
+  const bCount = typeof b.eligibleCount === "number" ? b.eligibleCount : Infinity;
+  if (aCount !== bCount) return aCount - bCount;
   const aEve = !a.slot.isDay ? 0 : 1;
   const bEve = !b.slot.isDay ? 0 : 1;
   if (aEve !== bEve) return aEve - bEve;
   if (aEve === 0) {
-    // Both evening — compare role rarity.
+    // Both evening — compare role rarity as a stable tiebreak.
     const aRole = a.slot.defaultRole || (a.slot.eligibleRoles || [])[0] || "";
     const bRole = b.slot.defaultRole || (b.slot.eligibleRoles || [])[0] || "";
     const ar = rarity[aRole] || 0;
@@ -543,6 +556,14 @@ export function generateWeek(args) {
   //
   // v1.3.0: a slot whose dayPart is closed on that date is skipped
   // entirely — the cell is not part of the rota that day.
+  //
+  // v1.5.0: each entry carries `eligibleCount` — the size of the
+  // candidate pool returned by buildCandidates() against the
+  // post-clearance workingShifts. Used by compareWorklistEntries as
+  // the primary sort key (most-constrained first). We compute the
+  // count against `workingShifts` (not `pendingShifts`) because at
+  // sort time no pending picks exist yet — every cell sees the same
+  // starting state.
   const work = [];
   for (let d = 0; d < dates.length; d++) {
     const date = dates[d];
@@ -552,7 +573,16 @@ export function generateWeek(args) {
       if (!isSlotOpenOnDate(date, slot, openingDays)) continue;
       const existing = findShiftForSlot(workingShifts, dIso, slot);
       if (existing) continue;
-      work.push({ dateIso: dIso, date: date, slot: slot });
+      const built = buildCandidates(
+        slot, dIso, date, weekStart,
+        employees, requests, workingShifts, strictPreference
+      );
+      work.push({
+        dateIso: dIso,
+        date: date,
+        slot: slot,
+        eligibleCount: built.eligible.length,
+      });
     }
   }
   work.sort(function (a, b) { return compareWorklistEntries(a, b, rarity); });

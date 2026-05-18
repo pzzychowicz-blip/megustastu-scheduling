@@ -14,7 +14,7 @@
 //   isMobile  — viewport breakpoint flag from App.jsx
 //   appVersion— __APP_SIGNATURE__.version string (for the header label)
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { S, BTN } from "../lib/constants.js";
 import { usePersistence } from "../hooks/usePersistence.js";
 import { useThemeMode } from "../hooks/useThemeMode.js";
@@ -31,9 +31,36 @@ const TABS = [
   { key: "settings",  label: "Settings"  },
 ];
 
+// v1.5.0: sessionStorage key for the last-open tab. Scoped under
+// "mgt-sched.*" so we don't collide with the sister Bookings app if
+// they're ever served from the same origin. sessionStorage (not
+// localStorage) keeps the persistence intra-tab: refresh / Vite HMR
+// keep your place, but a fresh browser tab defaults to Schedule.
+const TAB_STORAGE_KEY = "mgt-sched.tab";
+
+function readStoredTab() {
+  try {
+    const v = sessionStorage.getItem(TAB_STORAGE_KEY);
+    if (!v) return "schedule";
+    // Defensive: validate against the current TABS list so a stale or
+    // hand-edited value can't drive `tab` into an unrenderable state.
+    for (let i = 0; i < TABS.length; i++) if (TABS[i].key === v) return v;
+    return "schedule";
+  } catch (_e) {
+    return "schedule";
+  }
+}
+
 export default function AppShell({ user, signOut, isMobile, appVersion }) {
   const { data, ready, writeWarning, clearWriteWarning, actions } = usePersistence();
-  const [tab, setTab] = useState("schedule");  // schedule is the primary working surface
+  // v1.5.0: lazy initializer reads the last-open tab from sessionStorage.
+  // First visit / fresh browser tab → "schedule".
+  const [tab, setTab] = useState(readStoredTab);
+
+  // v1.5.0: persist tab changes within this browser tab.
+  useEffect(function () {
+    try { sessionStorage.setItem(TAB_STORAGE_KEY, tab); } catch (_e) { /* private-mode safari */ }
+  }, [tab]);
 
   // v0.11.0: theme resolution. settings.darkMode is true/false when the
   // manager has explicitly chosen; undefined means "follow system pref",

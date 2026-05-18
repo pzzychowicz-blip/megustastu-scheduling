@@ -229,6 +229,30 @@ separate Firebase project, same UI conventions).
   NOT reorder by priority — the manager picks one cell at a time and
   can see priority directly on the employee badge. Legacy employees
   without the field read as `false` (no migration).
+- **Session persistence (v1.5.0):** the open tab (AppShell) and
+  displayed week (ScheduleGrid) persist across refresh / Vite HMR
+  inside the same browser tab. Storage is `sessionStorage` under the
+  `mgt-sched.*` key namespace (`mgt-sched.tab`, `mgt-sched.weekStart`).
+  Closing the tab clears the values, so a fresh browser tab / new
+  sign-in lands on Schedule + current week as before. The stored tab
+  is validated against the live `TABS` array (a stale or hand-edited
+  value falls back to `"schedule"`); the stored week is re-normalized
+  through `startOfWeek` on read so any drift self-heals. All writes
+  are wrapped in try/catch so Safari private mode (where
+  sessionStorage throws on `setItem`) degrades gracefully.
+- **Generator most-constrained-first ordering (v1.5.0):** the
+  worklist's primary sort key is now the size of each cell's eligible
+  candidate pool (`buildCandidates(...).eligible.length`), ascending.
+  Cells with fewer qualifying employees are processed first, so a
+  versatile multi-role employee (e.g. Chef + Bar) is kept available
+  for the cell where they're most needed (the Chef slot) rather than
+  consumed by the first easy cell (Bar) the worklist happens to hit.
+  Existing keys (evening-before-day, role-rarity, date, slot-key)
+  remain as deterministic tiebreakers. Counts are computed once at
+  worklist-build time against the post-clearance `workingShifts`; we
+  do NOT re-rank after each greedy pick (problem size ≤49 cells/week;
+  pre-sort captures the bulk of the benefit). `clearInvalidShifts`
+  and `rankCandidates` are unchanged.
 - **Schedule grid visual polish (v1.4.0):**
   - **Today-column tint.** A single underlay div with
     `gridColumn: <todayIndex + 2>`, `gridRow: "1 / -1"`,
@@ -269,7 +293,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.4.0)
+## File structure (current — v1.5.0)
 
 ```
 megustastu-scheduling/
@@ -285,7 +309,10 @@ megustastu-scheduling/
 │                                   the right theme before React mounts.
 └── src/
     ├── main.jsx                    mounts <App />
-    ├── App.jsx                     orchestration: auth-gate → AppShell
+    ├── App.jsx                     orchestration: auth-gate → AppShell.
+    │                                 v1.5.0: __APP_SIGNATURE__ → 1.5.0,
+    │                                 sha "session-persistence-
+    │                                 most-constrained".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -420,11 +447,33 @@ megustastu-scheduling/
     │                               after the record is gone from
     │                               Firebase. Pure data enrichment;
     │                               algorithm unchanged.
+    │                               v1.5.0: worklist primary sort key
+    │                               switched from static role-rarity to
+    │                               eligible-candidate-count ascending
+    │                               (most-constrained-cell first). Each
+    │                               worklist entry now carries
+    │                               `eligibleCount` from a one-time
+    │                               buildCandidates() call at build
+    │                               time. compareWorklistEntries
+    │                               documents the new ordering;
+    │                               role-rarity stays as a stable
+    │                               tiebreak. clearInvalidShifts and
+    │                               rankCandidates are unchanged.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
         ├── LoginScreen.jsx         email/password sign-in form
-        ├── AppShell.jsx            authenticated shell + tab nav
+        ├── AppShell.jsx            authenticated shell + tab nav.
+        │                           v1.5.0: tab state persists across
+        │                           refresh / Vite HMR within the same
+        │                           browser tab via sessionStorage
+        │                           (key "mgt-sched.tab"). Lazy
+        │                           useState initializer reads + validates
+        │                           against TABS; useEffect writes on
+        │                           change. Closing the tab clears it.
+        │                           try/catch around storage calls so
+        │                           Safari private mode degrades
+        │                           gracefully.
         ├── EmployeesList.jsx       roster list + Add button.
         │                           v0.12.0: each row shows
         │                           "Pattern: N/M" below the role chips
@@ -504,6 +553,17 @@ megustastu-scheduling/
         │                           GenerateResultsModal mount. Banner
         │                           auto-dismiss now holds while the
         │                           details modal is open.
+        │                           v1.5.0: weekStart state persists
+        │                           across refresh / Vite HMR within the
+        │                           same browser tab via sessionStorage
+        │                           (key "mgt-sched.weekStart", stored
+        │                           as ISO Monday date). Lazy useState
+        │                           initializer reads + re-normalizes
+        │                           through startOfWeek so drift
+        │                           self-heals. useEffect writes on
+        │                           change. Closing the tab clears it.
+        │                           parseIsoDate added to the import
+        │                           list.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -857,7 +917,7 @@ NOT secrets — Database Rules are the actual security layer.
 - Pattern: `scheduling_v{X}_preview {N}.jsx` (incremented chronologically,
   never overwrite).
 
-### Local preview server — MANDATORY (locked 2026-05-16)
+### Local preview server — MANDATORY (locked 2026-05-16, sharpened v1.5.0)
 
 **For any session that touches visual code** (styling, layout, UI tokens,
 PDF export, component structure), **start a local dev server at the
@@ -865,13 +925,17 @@ beginning of the session and keep it running throughout.** Patryk reviews
 changes against the running URL after each iteration; without it, every
 tweak has to be re-explained from a code diff instead of seen.
 
+**Absolute rule (locked v1.5.0): Claude Code NEVER runs `npm run preview`.**
+Only `npm run dev`. Patryk opens the localhost URL in his own browser.
+Even prod-build verification is deferred to Patryk — Claude does not
+need to load the production app, ever.
+
 Default flow:
 1. `npm run dev` (in the background) — Vite dev server on
    `http://localhost:5173/` (or 5174 if 5173 is in use). Hot-reloads on
    every save, so Patryk sees changes immediately without rebuilds.
    **Hits the DEV Firebase project** (`megustastu-bookings-dev`) — the
-   safe sandbox. DO NOT default to `npm run preview` (which hits PROD)
-   — writes during inspection would mutate live restaurant data.
+   safe sandbox.
 2. Tell Patryk the URL whenever you start the server. Vite's HMR means
    no manual rebuild after edits — most changes appear in <1s.
 3. If a change doesn't appear, suggest a hard-refresh (⌘⇧R).
@@ -886,11 +950,6 @@ Why DEV, not PROD:
   enabled under Authentication → Sign-in method. If sign-in returns
   `auth/invalid-credential`, fix the DEV project before proceeding —
   do NOT pivot to PROD as a shortcut.
-
-When `npm run preview` is appropriate (rare):
-- Verifying the production build output specifically (chunk splitting,
-  bundle size sanity, prod-only edge cases). Tell Patryk explicitly
-  it's hitting PROD and that he must not click Save / assign / mutate.
 
 When to skip the server entirely:
 - Pure logic / hook changes with no visual surface (e.g., editing
@@ -931,12 +990,24 @@ Standard flow:
 11. Patryk reviews + merges. Vercel auto-deploys from `main`.
 12. Confirm the console boot banner / `window.__MGT_SCHED_BUILD__.version`
     matches the new version on production.
-13. **Sync the local working folder** (locked v0.10.1):
-    `git -C /Users/patrykzychowicz/Desktop/megustastu-scheduling pull --ff-only origin main`.
-    Keeps the local checkout always on `main` so `npm run dev` and any
-    manual file inspection reflect the shipped state without manual
-    hunting. The local folder never rides a feature branch — branches
-    live only in the `.claude/worktrees/` subfolders.
+13. **Sync the local working folder** (locked v0.10.1, extended v1.5.0):
+    ```
+    git -C /Users/patrykzychowicz/Desktop/megustastu-scheduling pull --ff-only origin main
+    cp /Users/patrykzychowicz/Desktop/megustastu-scheduling/CLAUDE.md \
+       "/Users/patrykzychowicz/Desktop/megustastu-scheduling Claude context/CLAUDE.md"
+    cp /Users/patrykzychowicz/Desktop/megustastu-scheduling/REFACTOR_LOG.md \
+       "/Users/patrykzychowicz/Desktop/megustastu-scheduling Claude context/REFACTOR_LOG.md"
+    ```
+    The pull keeps the local checkout always on `main` so `npm run dev`
+    and any manual file inspection reflect the shipped state without
+    manual hunting. The local folder never rides a feature branch —
+    branches live only in the `.claude/worktrees/` subfolders.
+
+    The two `cp` lines (v1.5.0) keep the Claude-context folder copy of
+    `CLAUDE.md` + `REFACTOR_LOG.md` in sync. That folder is what Patryk
+    attaches to fresh chats; if the copy is stale, the next session
+    loads with outdated architectural context (we hit this exact
+    failure mode pre-v1.4.0).
 
 **Why one-per-branch:**
 - Reverts are surgical — a single bad version reverts cleanly without
