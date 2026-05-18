@@ -637,7 +637,16 @@ export default function Settings({
                           left: 0,
                           zIndex: 50,
                           minWidth: 200,
-                          background: "var(--bg-card)",
+                          // v1.4.0 fixup: was var(--bg-card) — that token
+                          // is 0.45 opacity (translucent card aesthetic)
+                          // and let section labels above the pill row
+                          // ("Restaurant open" / "Start" / "Open days")
+                          // bleed through the popover. Match the Overlay
+                          // atom's modal sheet (0.92 light / 0.95 dark)
+                          // so the popover reads as a proper opaque
+                          // surface even when the labels are right under
+                          // it.
+                          background: "var(--bg-overlay-sheet)",
                           border: "1px solid var(--hairline-strong)",
                           borderRadius: 10,
                           boxShadow: "var(--shadow-overlay)",

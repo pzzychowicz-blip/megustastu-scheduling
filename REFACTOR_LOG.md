@@ -5,6 +5,114 @@ an entry. Newest first.
 
 ---
 
+## v1.4.0 — Today tint + Generator result details
+
+**Date:** 2026-05-18
+**Behavioural change:** Two schedule-grid polish items bundled. One is
+purely visual; the other is an information-only modal that surfaces
+data the auto-generator already produced but threw away.
+
+Vertical column rules were prototyped during this session and removed
+before merge — they sliced section banners and didn't earn their
+visual weight once the today-column tint was in place. Section header
+keeps the `position: relative; zIndex: 1` stacking lift from that
+prototype as defensive future-proofing for any later underlay.
+
+1. **Today-column tint.** Today's column gets a soft `--accent-tint-soft`
+   wash via a single underlay div with `gridColumn: <today+2>` and
+   `gridRow: "1 / -1"`. Translucent cell backgrounds let the tint show
+   through. Extends the existing today-pill highlight downward. No
+   mobile counterpart this round.
+3. **Generator result details modal.** Clicking "Details" on the
+   generator result banner opens a modal grouped by reason, listing
+   each unfilled cell and each cleared shift with a human-readable
+   label. Reads from `summary.unfilledCells` and `summary.clearedReasons`
+   (Regenerate only). Banner auto-dismiss is paused while the modal is
+   open so closing the modal restores the banner cleanly.
+
+Version bump to **1.4.0** — new user-visible feature surface (info
+modal); the today-column tint is visual polish but warrants a minor
+bump alongside the modal.
+
+### What landed
+
+1. **`GENERATOR_REASONS` map** in `src/lib/constants.js` — single source
+   of truth for reason-code → human-readable label. Modal looks up the
+   label; generator emits the bare code. Adding a code only touches
+   one file.
+2. **`generator.clearInvalidShifts.clear(id, reason)`** enriched —
+   captures the pre-clear shift's `date`, `employeeId`, `section`,
+   `dayPart`, `slotIndex`, `slotKey` so the result modal can render
+   "Anna — Tue 19, Kitchen Day — archived" rows after the cleared
+   record has been removed from Firebase. No algorithmic change.
+3. **`GenerateResultsModal.jsx`** — NEW. Composes from `Overlay`,
+   `Section`, `TBadge` (no new atoms). Groups entries by reason with
+   stable first-seen insertion order. Cleared rows use a neutral
+   palette; unfilled rows use the cancelled-status palette
+   (informational vs actionable visual hierarchy).
+4. **`ScheduleGrid.jsx`** — `slotsByKey` memo for the modal's slot
+   lookup; `showResultsModal` state; "Details" button on the result
+   banner (only renders when there's something to inspect); banner
+   auto-dismiss effect now respects `showResultsModal`; today-column
+   tint underlay div prepended to the desktop grid; `todayIndex`
+   derived from `dates`. Section header gets `position: relative;
+   zIndex: 1` so the absolutely-positioned tint underlay can never
+   slice through the "Kitchen · Day" / "FoH · Evening" banners.
+5. **`App.jsx`** — `__APP_SIGNATURE__` bumped to v1.4.0, sha
+   `today-tint-result-details`, build `2026-05-18`.
+
+### Files
+
+- `src/App.jsx` — version bump.
+- `src/lib/constants.js` — `+ GENERATOR_REASONS`.
+- `src/lib/generator.js` — enriched `clear()` records.
+- `src/components/GenerateResultsModal.jsx` — NEW (~180 lines).
+- `src/components/ScheduleGrid.jsx` — today-tint underlay, Details
+  button, modal mount, auto-dismiss guard, section header z-index
+  lift.
+- `CLAUDE.md` — locked-decision block for v1.4.0 features;
+  ScheduleGrid + GenerateResultsModal + constants file-structure
+  annotations.
+- `REFACTOR_LOG.md` — this entry.
+
+### Bundle delta
+
+317 modules (+1: GenerateResultsModal). Main bundle:
+**157.95 → 159.60 kB gz** (+1.65 kB). All three features in one bump.
+
+### Verification
+
+- `npm run build` — clean.
+- Local dev server (`npm run dev`) on DEV Firebase — boots cleanly,
+  v1.4.0 banner confirmed in console, login page renders.
+- Visual + behavioural smoke-tests deferred to Vercel preview:
+  today-column tint follows the current weekday, Details button on
+  the banner only appears when reasons exist, modal lists are grouped
+  by reason, modal close resumes banner auto-dismiss, dark mode
+  renders correctly.
+
+### Locked decisions (this session)
+
+- **Vertical column rules dropped.** Initial prototype rendered a
+  hairline between every pair of date columns. Two problems surfaced:
+  (a) absolutely-positioned underlays sliced through the section
+  banners until z-index was lifted (fixed mid-session); (b) once the
+  today-column tint was in place, the rules added visual noise without
+  earning their weight. Removed before merge. The section header's
+  zIndex lift stays as defensive future-proofing for any subsequent
+  underlay work.
+- **Per-cell failure badges rejected** in favour of the on-demand
+  modal. Per-cell badges would require persisting generator-run
+  state per-cell, plus a cleanup story when the manager manually
+  fills cells. Modal-on-demand is simpler and matches the v1
+  "judgment wins" principle.
+- **Cleared records enriched in `clear()`**, not via a parent-side
+  snapshot. Generator owns the records at clear time; denormalizing
+  at the source is cheaper and clearer than passing a snapshot of
+  `weekShifts` through `onResult`.
+
+---
+
 ## v1.3.0 — Per-day-part opening + Employee priority + "Operating time"
 
 **Date:** 2026-05-17

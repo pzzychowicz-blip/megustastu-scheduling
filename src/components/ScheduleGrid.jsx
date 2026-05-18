@@ -42,6 +42,7 @@ import ExportButton from "./ExportButton.jsx";
 import GenerateButton from "./GenerateButton.jsx";
 import ClearButton from "./ClearButton.jsx";
 import WeeklyShiftSummary from "./WeeklyShiftSummary.jsx";
+import GenerateResultsModal from "./GenerateResultsModal.jsx";
 
 // Section row dividers (visual grouping in the desktop grid).
 function isSectionBoundary(prevSlot, slot) {
@@ -73,6 +74,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // Slot definitions for the week (same every day until per-day overrides land).
   const slots = useMemo(function () { return slotsForDay(template); }, [template]);
 
+  // v1.4.0: slot lookup by key for the generator-results modal. Built off
+  // the same `slots` array so it stays in sync if the template changes.
+  const slotsByKey = useMemo(function () {
+    const m = {};
+    for (let i = 0; i < slots.length; i++) m[slots[i].key] = slots[i];
+    return m;
+  }, [slots]);
+
   // ── Week navigation ──────────────────────────────────────────────────
   const [weekStart, setWeekStart] = useState(function () { return startOfWeek(new Date()); });
   const dates = useMemo(
@@ -83,6 +92,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // v0.10.2: cache today's ISO once per render so the date-pill loop
   // doesn't restringify a Date on every column.
   const todayIso = useMemo(function () { return isoDate(new Date()); }, []);
+
+  // v1.4.0: today's index within the displayed week (or -1 if today is
+  // outside the visible range / closed). Consumed by the desktop grid's
+  // today-column tint underlay. Computed once per render via dates.
 
   function goPrev()  { setWeekStart(function (d) { return addDays(d, -7); }); }
   function goNext()  { setWeekStart(function (d) { return addDays(d, 7); }); }
@@ -119,14 +132,29 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // ("fill-empty" | "regenerate"); a clear result has `kind` set
   // ("week" | "day").
   const [resultBanner, setResultBanner] = useState(null);
+  // v1.4.0: the "Details" modal opened from the banner. Holds the same
+  // summary; only the open flag is separate so the banner and modal have
+  // independent lifecycles (modal can outlive the banner's 5s auto-dismiss
+  // — see the effect below — and closing the modal doesn't dismiss the
+  // banner).
+  const [showResultsModal, setShowResultsModal] = useState(false);
   useEffect(function () {
     if (!resultBanner) return undefined;
+    // v1.4.0: hold the auto-dismiss timer while the manager is inspecting
+    // the details modal. Otherwise opening "Details", reading the list,
+    // and closing the modal would find the banner gone — confusing.
+    if (showResultsModal) return undefined;
     const t = setTimeout(function () { setResultBanner(null); }, 5000);
     return function () { clearTimeout(t); };
-  }, [resultBanner]);
+  }, [resultBanner, showResultsModal]);
   function handleGenerateResult(summary) { setResultBanner(summary); }
   function handleClearResult(summary)    { setResultBanner(summary); }
-  function dismissResultBanner()         { setResultBanner(null); }
+  function dismissResultBanner() {
+    setResultBanner(null);
+    // Close the modal too — its summary is gone and rendering against
+    // stale state would be a footgun.
+    setShowResultsModal(false);
+  }
 
   function handleSave(payload) {
     actions.upsertShift(payload);
@@ -278,6 +306,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           color: "var(--text-primary)",
           textAlign: "center",
           boxShadow: "var(--shadow-soft)",
+          // v1.4.0 fixup: lift the section banner above the absolutely-
+          // positioned column-rule + today-tint underlays so the hairline
+          // doesn't slice through the "Kitchen · Day" / "FoH · Evening"
+          // text. Without this, positioned (zIndex 0) underlays paint
+          // above static elements regardless of source order.
+          position: "relative",
+          zIndex: 1,
         }}
       >
         {slot.sectionLabel} · {slot.dayPartLabel}
@@ -342,6 +377,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // v0.12.0: column count derives from `dates.length` (open days), not a
   // hardcoded 7. minWidth shrinks proportionally so a 5-day week doesn't
   // force a horizontal scrollbar where there's no need.
+  //
+  // v1.4.0: index of today within the visible dates array; -1 means today
+  // is outside the displayed week (or that day is closed). The grid below
+  // renders a single full-height tint underlay at that column when set.
+  const todayIndex = dates.findIndex(function (d) { return isoDate(d) === todayIso; });
+
   const desktopGrid = (
     <div style={{ overflowX: "auto" }}>
       <div
@@ -351,8 +392,38 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             "120px repeat(" + dates.length + ", minmax(120px, 1fr))",
           gap: 6,
           minWidth: 120 + dates.length * 120,
+          // v1.4.0 fixup: containing block for the absolutely-positioned
+          // tint + column-rule underlays below. Without this, the underlays
+          // would resolve their `gridColumn` against the nearest positioned
+          // ancestor (the page), throwing the layout off.
+          position: "relative",
         }}
       >
+        {/* v1.4.0: today-column tint underlay. `position: absolute` keeps
+            it OUT of the grid's auto-flow track allocation — otherwise a
+            `gridRow: 1 / -1` grid item would block placement of every
+            auto-positioned cell in today's column, shoving content into
+            implicit rows. With `top: 0; bottom: 0`, the underlay stretches
+            the full grid height regardless of how many rows the slot
+            template produces. `gridColumn` still resolves to the right
+            column area; `position: absolute` only opts out of cell
+            occupation, not grid-area resolution. */}
+        {todayIndex >= 0 ? (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              gridColumn: (todayIndex + 2) + " / " + (todayIndex + 3),
+              background: "var(--accent-tint-soft)",
+              borderRadius: 12,
+              pointerEvents: "none",
+              zIndex: 0,
+            }}
+          />
+        ) : null}
+
         {/* Top-left empty + day pills.
             v0.10.2: each date sits in a soft pill so the column header
             row reads as a real anchor for its day. Today's date gets
@@ -543,6 +614,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           " for " + formatWeekRange(weekStart) + ".";
     }
   }
+  // v1.4.0: a "Details" affordance shows only when there's something
+  // actionable to inspect — unfilled cells or cleared shifts from a
+  // Regenerate run. A clean run (everything filled, nothing cleared) gets
+  // no Details button — there's nothing to show. Clear results don't
+  // carry reason metadata so they skip Details entirely.
+  const bannerHasDetails = resultBanner && (
+    (Array.isArray(resultBanner.unfilledCells) && resultBanner.unfilledCells.length > 0) ||
+    (Array.isArray(resultBanner.clearedReasons) && resultBanner.clearedReasons.length > 0)
+  );
   const generateBanner = resultBanner
     ? (
       <div
@@ -562,21 +642,39 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         }}
       >
         <span>{bannerCopy}</span>
-        <button
-          type="button"
-          onClick={dismissResultBanner}
-          aria-label="Dismiss"
-          style={{
-            ...BTN.base,
-            ...BTN.ghost,
-            padding: "2px 8px",
-            fontSize: 14,
-            lineHeight: 1,
-            boxShadow: "none",
-          }}
-        >
-          ×
-        </button>
+        <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+          {bannerHasDetails ? (
+            <button
+              type="button"
+              onClick={function () { setShowResultsModal(true); }}
+              style={{
+                ...BTN.base,
+                ...BTN.ghost,
+                padding: "2px 10px",
+                fontSize: 12,
+                lineHeight: 1.4,
+                boxShadow: "none",
+              }}
+            >
+              Details
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={dismissResultBanner}
+            aria-label="Dismiss"
+            style={{
+              ...BTN.base,
+              ...BTN.ghost,
+              padding: "2px 8px",
+              fontSize: 14,
+              lineHeight: 1,
+              boxShadow: "none",
+            }}
+          >
+            ×
+          </button>
+        </div>
       </div>
     )
     : null;
@@ -615,6 +713,18 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         onClose={closeModal}
         onSave={handleSave}
         onDelete={handleDelete}
+      />
+
+      {/* v1.4.0: generator-results "Details" modal. Open state is
+          independent of the banner so closing the modal lets the banner
+          resume its auto-dismiss countdown. */}
+      <GenerateResultsModal
+        open={showResultsModal}
+        onClose={function () { setShowResultsModal(false); }}
+        summary={resultBanner}
+        employees={employees}
+        slotsByKey={slotsByKey}
+        isMobile={isMobile}
       />
     </div>
   );
