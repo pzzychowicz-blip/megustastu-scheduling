@@ -9,6 +9,14 @@
 //   employees   ({ [id]: employee }) — for the assignee picker
 //   requests    ({ [id]: request })  — for the conflict filter / banner
 //   weekShifts  ({ [id]: shift })    — full week (v0.8.0); same-day filter
+//   priorWeekShifts ({ [id]: shift })— v1.8.0 cross-week 2-off check. Used
+//                                       only by hasConsecutiveDaysOff to
+//                                       resolve prior Sunday's worked state.
+//                                       Optional — missing degrades to the
+//                                       pre-v1.8.0 Mon..Sun-only scan.
+//   nextWeekShifts  ({ [id]: shift })— v1.8.0 cross-week 2-off check.
+//                                       Used to resolve next Monday's
+//                                       worked state. Optional.
 //   isMobile    (bool)
 //   onClose     (fn)
 //   onSave      (fn)            — receives the shift payload
@@ -81,7 +89,8 @@ function initialForm(slotDef, shift) {
 }
 
 export default function ShiftFormModal({
-  open, dateIso, slotDef, shift, employees, requests, weekShifts, isMobile,
+  open, dateIso, slotDef, shift, employees, requests, weekShifts,
+  priorWeekShifts, nextWeekShifts, isMobile,
   onClose, onSave, onDelete, onStartSwap,
 }) {
   const [form, setForm] = useState(function () { return initialForm(slotDef || {}, shift); });
@@ -352,6 +361,9 @@ export default function ShiftFormModal({
   // state, then injects a synthetic "proposed" record reflecting the
   // current form's pick. weekStart is derived from the cell's date —
   // ShiftFormModal isn't told the current week-anchor explicitly.
+  //
+  // v1.8.0 threads priorWeekShifts + nextWeekShifts into the helper so a
+  // Sun-off + next-Mon-off straddle counts as 2 consecutive off days.
   let restWarning = false;
   if (form.employeeId) {
     const weekStart = startOfWeek(parseIsoDate(dateIso));
@@ -362,7 +374,10 @@ export default function ShiftFormModal({
       employeeId: form.employeeId,
       date: dateIso,
     };
-    restWarning = !hasConsecutiveDaysOff(form.employeeId, weekStart, sim);
+    restWarning = !hasConsecutiveDaysOff(form.employeeId, weekStart, sim, undefined, {
+      priorWeekShifts: priorWeekShifts,
+      nextWeekShifts: nextWeekShifts,
+    });
   }
 
   const warningBoxStyle = {

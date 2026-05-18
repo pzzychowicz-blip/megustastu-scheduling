@@ -230,7 +230,7 @@ function rankCandidates(candidates, currentShifts, priorShifts) {
 function buildCandidates(
   slotDef, dateIso, date, weekStart,
   employees, requests, currentShifts, strictPreference,
-  daysOffByEmp
+  daysOffByEmp, crossWeekShifts
 ) {
   const all = Object.values(employees || {});
   if (all.length === 0) return { eligible: [], reason: "no-role-match" };
@@ -278,16 +278,17 @@ function buildCandidates(
   if (quotaOk.length === 0) return { eligible: [], reason: "all-at-quota" };
 
   // (6) v1.2.0: consecutive 2 days off — HARD block. Simulate adding this
-  // shift and check the candidate would still have 2 consecutive off days
-  // this calendar week. We use a synthetic key so the simulated shift
-  // participates in `hasConsecutiveDaysOff`'s map walk.
+  // shift and check the candidate would still have 2 consecutive off days.
+  // v1.8.0 threads `crossWeekShifts` into the helper so the rule sees the
+  // prior Sunday and next Monday — a Sun-off + next-Mon-off pattern
+  // counts as 2-off even though it straddles the week boundary.
   const restedOk = quotaOk.filter(function (e) {
     const simKey = "__sim_" + e.id;
     const sim = {
       ...currentShifts,
       [simKey]: { employeeId: e.id, date: dateIso, id: simKey },
     };
-    return hasConsecutiveDaysOff(e.id, weekStart, sim);
+    return hasConsecutiveDaysOff(e.id, weekStart, sim, undefined, crossWeekShifts);
   });
   if (restedOk.length === 0) return { eligible: [], reason: "no-2-off" };
 
@@ -351,6 +352,13 @@ export function generateWeek(args) {
   // caller doesn't supply one (first week, or tests). `countAssignedDates`
   // returns 0 for empty maps, so the ranking degrades cleanly.
   const priorWeekShifts = args.priorWeekShifts || {};
+  // v1.8.0: next 7-day window shifts, used by hasConsecutiveDaysOff to
+  // detect a 2-off run that straddles Sun ↔ next-Mon. Optional — when
+  // omitted, the helper defaults the next-Mon boundary day to "worked"
+  // and behaves like the pre-v1.8.0 Mon..Sun-only scan at the trailing
+  // boundary.
+  const nextWeekShifts = args.nextWeekShifts || {};
+  const crossWeekShifts = { priorWeekShifts: priorWeekShifts, nextWeekShifts: nextWeekShifts };
 
   // No template → nothing meaningful to do. Caller should ensure this is
   // populated (AppShell waits for `ready`), but stay defensive.
@@ -408,7 +416,8 @@ export function generateWeek(args) {
       if (existing) continue;
       const built = buildCandidates(
         slot, dIso, date, weekStart,
-        employees, requests, workingShifts, strictPreference, daysOffByEmp
+        employees, requests, workingShifts, strictPreference, daysOffByEmp,
+        crossWeekShifts
       );
       work.push({
         dateIso: dIso,
@@ -432,7 +441,8 @@ export function generateWeek(args) {
     const slot = entry.slot;
     const built = buildCandidates(
       slot, entry.dateIso, entry.date, weekStart,
-      employees, requests, pendingShifts, strictPreference, daysOffByEmp
+      employees, requests, pendingShifts, strictPreference, daysOffByEmp,
+      crossWeekShifts
     );
     if (built.eligible.length === 0) {
       unfilledCells.push({

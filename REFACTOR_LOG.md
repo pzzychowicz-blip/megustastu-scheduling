@@ -5,6 +5,114 @@ an entry. Newest first.
 
 ---
 
+## v1.8.0 — Cross-week consecutive-off
+
+**Date:** 2026-05-18
+**Behavioural change:** The "at least 2 consecutive days off" wellness
+rule (v1.2.0) gains cross-week awareness. A Sun-off employee with the
+next Mon also off now correctly counts as having 2 consecutive off days.
+Symmetrically, prior-Sun off + Mon off counts too. Generator (HARD) and
+manual picker (SOFT yellow warning) both pick up the extension; Swap
+mechanic still skips the rule per the v1.7.0 decision.
+
+First entry in a planned three-version generator-polish batch:
+v1.8.0 cross-week → v1.8.1 preserve overrides on Regenerate →
+v1.8.2 recurring shift-preference patterns. Each ships on its own
+branch per the one-version-per-branch rule.
+
+### What landed
+
+1. **`src/lib/schedule-logic.js`** — `hasConsecutiveDaysOff` extended
+   from a 7-cell `[Mon..Sun]` array to a 9-cell `[priorSun, Mon..Sun,
+   nextMon]` window. New optional 5th parameter `options` accepts
+   `{priorWeekShifts, nextWeekShifts}` — when present, the boundary
+   cells are resolved from those maps (working iff a matching shift
+   exists). When absent, boundaries default to "worked", which
+   degrades the helper to its pre-v1.8.0 Mon..Sun-only behaviour for
+   callers that haven't adopted the new option bag. Runs of off cells
+   count only when they overlap indices 1..7 (the focus week) — a
+   prior-Sat–Sun-off pattern with the focus week fully worked is
+   correctly dropped (that rest happened last week).
+2. **`src/lib/generator.js`** — `generateWeek` accepts a new
+   `nextWeekShifts` arg parallel to `priorWeekShifts`. Both are
+   bundled into a single `crossWeekShifts` object threaded through
+   `buildCandidates` (additional positional arg at the tail). The
+   step-6 consecutive-off filter forwards `crossWeekShifts` into
+   `hasConsecutiveDaysOff`. Algorithm otherwise byte-identical —
+   ordering, ranking, quota, request and preference filters
+   unchanged.
+3. **`src/components/ScheduleGrid.jsx`** — added a `nextWeekShifts`
+   memo via `shiftsForWeek(shifts, addDays(weekStart, 7))`, sitting
+   next to the existing `priorWeekShifts` memo. Threaded into
+   `<GenerateButton>` and `<ShiftFormModal>`.
+4. **`src/components/GenerateButton.jsx`** — accepts the new
+   `nextWeekShifts` prop and forwards it into the `generateWeek({…,
+   nextWeekShifts})` call.
+5. **`src/components/ShiftFormModal.jsx`** — accepts
+   `priorWeekShifts` and `nextWeekShifts` as new optional props,
+   passes them into `hasConsecutiveDaysOff` via the v1.8.0 options
+   bag. The yellow rest-warning banner now fires/clears on cross-week
+   2-off straddles. No UI change.
+6. **`src/App.jsx`** — `__APP_SIGNATURE__` bumped to `1.8.0`,
+   sha `"cross-week-consecutive-off"`.
+7. **`CLAUDE.md`** — locked-decision entry under the v1.2.0
+   consecutive-off rule extended with the v1.8.0 cross-week note +
+   file-structure annotations for the six modified files.
+8. **`REFACTOR_LOG.md`** — this entry.
+
+### Line delta (approx)
+
+| File | Delta |
+|---|---|
+| `src/lib/schedule-logic.js` | +50 / −15 (helper rewrite) |
+| `src/lib/generator.js` | +12 / −3 |
+| `src/components/ScheduleGrid.jsx` | +9 / 0 |
+| `src/components/GenerateButton.jsx` | +6 / −1 |
+| `src/components/ShiftFormModal.jsx` | +14 / −2 |
+| `src/App.jsx` | +2 / −2 |
+| `CLAUDE.md` | +60 / −6 |
+
+### Build size impact
+
+- Pre v1.8.0: main bundle 161.32 kB gz, 319 modules.
+- v1.8.0: main bundle **161.61 kB gz** (+0.29 kB), 319 modules
+  (unchanged — no new files).
+
+### Verification (intended; Patryk runs in DEV)
+
+- Manual picker: open a Sun cell on a week where the employee already
+  works Mon–Sat and is off next Mon → yellow warning should NOT fire
+  (Sun-off + next-Mon-off straddle satisfies the rule). Assign Anna to
+  next Mon as well, retry → warning fires.
+- Generator Fill-empty: with the same setup, ensure the generator
+  doesn't pick the over-loaded employee for the Sun cell when their
+  cross-week 2-off would be broken.
+- Regression: in-week 2-off (e.g. Tue + Wed off) still satisfies the
+  rule. Fragmented off-days (no 2-off run anywhere in focus +
+  boundaries) still fire the warning.
+
+### Key design decisions
+
+- **Default boundary days to "worked".** Without authoritative
+  cross-week data, the helper falls back to the pre-v1.8.0
+  Mon..Sun-only result rather than artificially extending boundary
+  runs. Safer toward false-negatives on the wellness check — a
+  silently-extended run could mask a real rest gap if the boundary
+  day was actually worked.
+- **Runs must touch the focus week.** A 2-off run entirely in the
+  prior or next week shouldn't count toward "rested *this* week".
+  Implementation: track `runStart`; only accept a run if
+  `runStart <= 7 && runEnd >= 1` (intersects indices 1..7).
+- **Pass cross-week shifts as a bag.** `buildCandidates` gains one
+  positional arg (`crossWeekShifts`) rather than two (`priorWeekShifts,
+  nextWeekShifts`). Future cross-week-aware filters can reuse the bag
+  without further signature churn.
+- **Swap mechanic untouched.** Per v1.7.0, swap doesn't enforce the
+  consecutive-off rule (manager judgment wins). Cross-week extension
+  doesn't change that — consistent.
+
+---
+
 ## v1.7.0 — Swap UX, pill-click highlight, Regenerate wipe-and-refill, Priority badge re-pin
 
 **Date:** 2026-05-18

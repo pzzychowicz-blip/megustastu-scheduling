@@ -469,49 +469,102 @@ export function daysOffInWeekByEmployee(requestsMap, dates) {
   return counts;
 }
 
-// ── Consecutive days off check (v1.2.0) ──────────────────────────────────
+// ── Consecutive days off check (v1.2.0, cross-week v1.8.0) ───────────────
 // Labour wellness rule: every employee needs at least N consecutive days
 // off per calendar week (Mon..Sun). v1.2.0 ships with N=2.
 //
-// Algorithm:
-//   - Build a 7-element array indexed by day-of-week (Mon=0..Sun=6).
-//     Each cell = true if the employee is "off" that day, false if
-//     they're working (have a shift in `shiftsMap` on that date).
-//   - Closed days count as off (the employee can't work them).
-//   - Scan for any run of `minConsecutive` consecutive `true` cells.
+// Algorithm (v1.8.0 extended window):
+//   - Build a 9-element array: [priorSun, Mon..Sun, nextMon]. Each cell =
+//     true if the employee is working that day, false if off.
+//   - The focus week is indices 1..7. Index 0 = the Sunday before
+//     `weekStart`, index 8 = the Monday after.
+//   - Closed days count as off (no shift assigned → false).
+//   - Scan for any run of >= min consecutive off cells. A run COUNTS only
+//     if it overlaps the focus week (at least one cell at index 1..7).
+//     This drops the "prior Sat-Sun off, focus all worked" case from
+//     counting — that rest happened LAST week, not this one.
 //
-// The week boundary is Mon..Sun starting at `weekStart`. NO cross-week
-// wrapping: Sun ↔ next-Mon doesn't count as consecutive. Keeps the rule
-// evaluable per-week independently.
+// `options.priorWeekShifts` and `options.nextWeekShifts` are optional
+// shiftsMaps for the adjacent weeks. When provided, prior Sun and next
+// Mon are resolved from those maps (working iff a matching shift exists);
+// when missing, the boundary days default to WORKING. The default is
+// conservative — without authoritative cross-week data, we don't
+// extend boundary runs and the helper degrades to ~Mon..Sun-only
+// behaviour, matching the pre-v1.8.0 result for callers that haven't
+// adopted the new option bag.
 //
 // `shiftsMap` may include the proposed shift (caller simulates the
 // assignment) so the generator can test "would adding this break the
 // rule?" without mutating state.
-export function hasConsecutiveDaysOff(employeeId, weekStart, shiftsMap, minConsecutive) {
+export function hasConsecutiveDaysOff(employeeId, weekStart, shiftsMap, minConsecutive, options) {
   if (!employeeId || !weekStart) return true;
   const min = minConsecutive || 2;
+  const opts = options || {};
 
-  // Build working/off booleans for each day Mon..Sun.
-  const isWorking = [false, false, false, false, false, false, false];
+  // Build working booleans for the 9-day window:
+  //   index 0     = prior Sunday  (weekStart - 1)
+  //   index 1..7  = Mon..Sun      (weekStart .. weekStart + 6)
+  //   index 8     = next Monday   (weekStart + 7)
+  // Defaults to true (working) so that missing cross-week data does NOT
+  // artificially extend boundary off-runs.
+  const isWorking = [true, false, false, false, false, false, false, false, true];
+
   const dates = weekDates(weekStart);
-  const dateToIndex = {};
-  for (let i = 0; i < 7; i++) dateToIndex[isoDate(dates[i])] = i;
+  const focusIsoToIndex = {};
+  for (let i = 0; i < 7; i++) focusIsoToIndex[isoDate(dates[i])] = i + 1;
+  const priorSunIso = isoDate(addDays(weekStart, -1));
+  const nextMonIso = isoDate(addDays(weekStart, 7));
 
-  const all = Object.values(shiftsMap || {});
-  for (let i = 0; i < all.length; i++) {
-    const s = all[i];
+  // Focus-week shifts populate indices 1..7 (initial false = off).
+  const focusShifts = Object.values(shiftsMap || {});
+  for (let i = 0; i < focusShifts.length; i++) {
+    const s = focusShifts[i];
     if (!s || s.employeeId !== employeeId) continue;
-    const idx = dateToIndex[s.date];
-    if (idx === undefined) continue; // shift outside the week
+    const idx = focusIsoToIndex[s.date];
+    if (idx === undefined) continue;
     isWorking[idx] = true;
   }
 
-  // Scan for a run of `min` consecutive off (= !working) cells.
+  // Resolve prior Sunday from priorWeekShifts when available; otherwise
+  // keep the default true (worked) → no artificial run extension.
+  if (opts.priorWeekShifts) {
+    const priorShifts = Object.values(opts.priorWeekShifts);
+    let found = false;
+    for (let i = 0; i < priorShifts.length; i++) {
+      const s = priorShifts[i];
+      if (!s || s.employeeId !== employeeId) continue;
+      if (s.date === priorSunIso) { found = true; break; }
+    }
+    isWorking[0] = found;
+  }
+
+  // Resolve next Monday from nextWeekShifts when available.
+  if (opts.nextWeekShifts) {
+    const nextShifts = Object.values(opts.nextWeekShifts);
+    let found = false;
+    for (let i = 0; i < nextShifts.length; i++) {
+      const s = nextShifts[i];
+      if (!s || s.employeeId !== employeeId) continue;
+      if (s.date === nextMonIso) { found = true; break; }
+    }
+    isWorking[8] = found;
+  }
+
+  // Scan for a run of `min` consecutive off cells. Track the current
+  // run's start index so we can verify it overlaps the focus week
+  // (any index in 1..7) before accepting.
   let run = 0;
-  for (let i = 0; i < 7; i++) {
+  let runStart = -1;
+  for (let i = 0; i < 9; i++) {
     if (!isWorking[i]) {
+      if (run === 0) runStart = i;
       run++;
-      if (run >= min) return true;
+      if (run >= min) {
+        const runEnd = i;
+        // Run overlaps focus week iff its span [runStart..runEnd]
+        // intersects [1..7].
+        if (runStart <= 7 && runEnd >= 1) return true;
+      }
     } else {
       run = 0;
     }
