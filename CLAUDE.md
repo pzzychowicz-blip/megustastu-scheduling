@@ -229,6 +229,38 @@ separate Firebase project, same UI conventions).
   NOT reorder by priority — the manager picks one cell at a time and
   can see priority directly on the employee badge. Legacy employees
   without the field read as `false` (no migration).
+- **Schedule grid visual polish (v1.4.0):**
+  - **Vertical column rules.** Desktop grid renders a hairline between
+    every pair of date columns. Implementation: one grid-spanning
+    underlay div per inter-column boundary
+    (`gridColumn: <i+2>`, `gridRow: "1 / -1"`, `borderLeft: 1px solid
+    var(--hairline)`, `marginLeft: -3` to centre the line in the 6px
+    grid gap). Underlay divs are `pointerEvents: none` and painted
+    first in source order so cells layer above. Section header rows
+    span `gridColumn: "1 / -1"` and so are unaffected. No column
+    rules on mobile.
+  - **Today-column tint.** A single underlay div with
+    `gridColumn: <todayIndex + 2>`, `gridRow: "1 / -1"`,
+    `background: var(--accent-tint-soft)`. Translucent cell
+    backgrounds let the tint show through. `todayIndex < 0` (today
+    outside week / closed) → no underlay. No mobile counterpart this
+    round (day-cards stay independent).
+- **Generator result details (v1.4.0):** the result banner gains a
+  "Details" button (only visible when `summary.unfilledCells` or
+  `summary.clearedReasons` is non-empty). Click opens
+  `GenerateResultsModal` listing each unfilled cell and (for
+  Regenerate) each cleared shift grouped by reason. Human-readable
+  labels live in `GENERATOR_REASONS` in `constants.js` — single
+  source of truth keyed by the reason codes the generator emits.
+  The banner's 5-second auto-dismiss is held while the modal is open
+  so the manager can read at leisure; closing the modal resumes the
+  countdown. Dismissing the banner (via ×) also closes the modal as
+  a safety against stale-state rendering. Clear-button results never
+  show "Details" — they carry no reason metadata. Generator's
+  `clearInvalidShifts.clear()` was enriched to capture each cleared
+  shift's date/employeeId/section/dayPart/slotIndex/slotKey at clear
+  time, so the modal can display "Anna — Tue 19, Kitchen Day —
+  archived" rows even after the record has been deleted from Firebase.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -246,7 +278,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.3.0)
+## File structure (current — v1.4.0)
 
 ```
 megustastu-scheduling/
@@ -310,6 +342,10 @@ megustastu-scheduling/
     │   │                           `{mon: {day: bool, evening: bool}, …}`.
     │   │                           Legacy boolean docs auto-migrate via
     │   │                           normalizeOpeningDays in schedule-logic.
+    │   │                           v1.4.0: + GENERATOR_REASONS map —
+    │   │                           reason-code → human-readable label
+    │   │                           lookup consumed by the new
+    │   │                           GenerateResultsModal.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -382,6 +418,17 @@ megustastu-scheduling/
     │                               isSlotOpenOnDate). clearInvalidShifts
     │                               gains a closed-day-part pass
     │                               (reason "closed-day-part").
+    │                               v1.4.0: clearInvalidShifts.clear(id,
+    │                               reason) enriched — each cleared
+    │                               record now captures date, employeeId,
+    │                               section, dayPart, slotIndex, slotKey
+    │                               from the pre-clear shift. Consumed
+    │                               by the new GenerateResultsModal so
+    │                               cleared rows can display the
+    │                               employee name and date/slot even
+    │                               after the record is gone from
+    │                               Firebase. Pure data enrichment;
+    │                               algorithm unchanged.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -455,6 +502,21 @@ megustastu-scheduling/
         │                           day-card slot list. Empty-state
         │                           pointer updated to "Settings →
         │                           Operating time".
+        │                           v1.4.0: + vertical column-rule
+        │                           underlays between date columns
+        │                           (one grid item per inter-column
+        │                           boundary; marginLeft: -3 centres the
+        │                           hairline in the 6px gap). + today-
+        │                           column tint underlay (single grid
+        │                           item at todayIndex+2, accent-tint-
+        │                           soft, gridRow 1 / -1). Both
+        │                           pointerEvents: none and painted
+        │                           first so cells layer above.
+        │                           + slotsByKey memo + showResultsModal
+        │                           state + "Details" button on the
+        │                           result banner + GenerateResultsModal
+        │                           mount. Banner auto-dismiss now holds
+        │                           while the details modal is open.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -566,13 +628,27 @@ megustastu-scheduling/
         │                           labelled "Clear N shifts" once a
         │                           scope is picked. Closed days are
         │                           not offered as scope options.
-        └── WeeklyShiftSummary.jsx  v1.2.0: NEW. Footer panel under the
-                                    Schedule grid. One "Name · N / quota"
-                                    pill per active employee (plus any
-                                    archived employee still on the
-                                    week). Sort: under-utilization ratio
-                                    asc, then name. Visual tints for
-                                    zero / under / at-quota.
+        ├── WeeklyShiftSummary.jsx  v1.2.0: NEW. Footer panel under the
+        │                           Schedule grid. One "Name · N / quota"
+        │                           pill per active employee (plus any
+        │                           archived employee still on the
+        │                           week). Sort: under-utilization ratio
+        │                           asc, then name. Visual tints for
+        │                           zero / under / at-quota.
+        └── GenerateResultsModal.jsx v1.4.0: NEW. "Details" modal opened
+                                    from the generator result banner.
+                                    Lists `summary.unfilledCells` and
+                                    (for Regenerate) `summary.clearedReasons`
+                                    grouped by reason with human-readable
+                                    labels from constants.GENERATOR_REASONS.
+                                    Uses Overlay + Section + TBadge —
+                                    no new blur surfaces (Overlay holds
+                                    the only blur). Cleared rows show
+                                    employee + date + slot; unfilled
+                                    rows show date + slot. Closes via
+                                    Close button or backdrop click;
+                                    closing resumes the banner's auto-
+                                    dismiss countdown.
 ```
 
 ### File structure (target — added in later sessions)

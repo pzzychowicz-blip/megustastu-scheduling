@@ -330,8 +330,24 @@ function clearInvalidShifts(workingShifts, args, slotsByKey, visibleDateSet) {
   const openingDays = args.openingDays;
   const cleared = [];
 
+  // v1.4.0: capture the pre-clear record fields the result modal needs
+  // (date, employeeId, slot identity). Without this snapshot the modal
+  // would have no way to display "Anna — Tue, Kitchen Day — archived"
+  // for a cleared shift, because once `workingShifts[id]` is deleted and
+  // the deleteShift call fires in GenerateButton, the original record is
+  // gone from React state too.
   function clear(id, reason) {
-    cleared.push({ id: id, reason: reason });
+    const s = workingShifts[id];
+    cleared.push({
+      id: id,
+      reason: reason,
+      date: s ? s.date : null,
+      employeeId: s ? s.employeeId : null,
+      section: s ? s.section : null,
+      dayPart: s ? s.dayPart : null,
+      slotIndex: s ? (s.slotIndex || 0) : 0,
+      slotKey: s ? (s.section + "-" + s.dayPart + "-" + (s.slotIndex || 0)) : null,
+    });
     delete workingShifts[id];
   }
 

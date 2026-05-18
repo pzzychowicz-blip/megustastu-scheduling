@@ -286,6 +286,41 @@ export const DAY_PARTS = Object.freeze({
   evening: { label: "Evening", short: "E" },
 });
 
+// ── Generator reason labels (v1.4.0) ─────────────────────────────────────
+// Human-readable labels for the reason codes that generator.js attaches to
+// `summary.unfilledCells[].reason` and `summary.clearedReasons[].reason`.
+// Surfaced by the "Details" modal opened from the generator result banner —
+// the manager sees grouped-by-reason lists instead of a bare count.
+//
+// Two sets share this map: codes only emitted by the eligibility filter
+// in generateWeek (`no-eligible`, `all-on-request`, etc.) and codes only
+// emitted by `clearInvalidShifts` (`closed-day`, `slot-removed`, etc.).
+// `no-role-match` and `preference` are emitted by both surfaces and share
+// the same label — keep it that way; the modal groups by code, not surface.
+export const GENERATOR_REASONS = Object.freeze({
+  // Unfilled (eligibility filter, in order from generator.js buildCandidates)
+  "no-role-match": "No employee holds the required role",
+  "no-eligible": "No eligible employee for this cell",
+  "all-on-request": "All eligible staff are on a day off or holiday",
+  "all-shift-pref": "All eligible staff are blocked by a shift-preference request",
+  "all-conflicted": "All eligible staff are already on another shift that day",
+  "all-at-quota": "All eligible staff have reached their working-days quota",
+  "no-2-off": "Would break the 2-consecutive-days-off rule for every candidate",
+  "preference": "No staff with matching shift preference (Hard mode)",
+  // Cleared (Regenerate pre-pass, from clearInvalidShifts)
+  "closed-day": "Day was closed in Operating time",
+  "closed-day-part": "Day-part (day or evening) was closed",
+  "unassigned": "Record was already unassigned",
+  "slot-removed": "Slot no longer exists in the shift template",
+  "no-employee": "Employee no longer exists",
+  "archived": "Employee was archived",
+  "on-request": "Employee has a covering day off or holiday",
+  "shift-preference": "Employee's shift-preference no longer matches",
+  "fixed-days": "Employee's fixed days no longer allow this date",
+  "same-day-dup": "Same employee was double-booked on the date",
+  "over-quota": "Employee was over their working-days quota",
+});
+
 // ── Weekday helpers ──────────────────────────────────────────────────────
 // Week starts Monday — matches EU / restaurant rota convention.
 export const WEEKDAYS = Object.freeze([
