@@ -5,6 +5,79 @@ an entry. Newest first.
 
 ---
 
+## v1.6.0 — Weekly requests preview + effective quota + Settings section persistence
+
+**Date:** 2026-05-18
+**Behavioural change:** Three Schedule-grid UX improvements bundled with
+v1.5.0 in the same PR (scope grew mid-review; PR title amended). All
+additive — no data-model or generator-algorithm changes.
+
+1. **Weekly requests preview.** New `<WeeklyRequestsPreview>` component
+   renders below `<WeeklyShiftSummary>` on the Schedule grid. Lists
+   every request whose date range overlaps the displayed week
+   (chronological, name + type pill + range). Manager can see who's
+   off / on holiday / preference-constrained without leaving the
+   Schedule tab.
+2. **Effective quota on Shifts-assigned pills.** Pill format becomes
+   "Name · count / effective" where effective =
+   max(0, workingDaysPerWeek − distinct visible-week dates covered by
+   day-off / holiday requests). Shift-preference requests do not
+   subtract. The pill shows just the reduced number; the "why" is
+   answered by the requests preview right below it.
+3. **Settings accordion persistence.** `openSection` in `Settings.jsx`
+   now persists across refresh / Vite HMR within the same browser tab
+   via sessionStorage (`mgt-sched.settingsSection`). Mirrors the
+   v1.5.0 tab and week persistence patterns.
+
+Version bump to **1.6.0** — three new visible surfaces. The scope grew
+past v1.5.0's "session persistence + workflow rules + generator
+ordering" description, so a minor bump rather than a patch.
+
+### What landed
+
+1. **`Settings.jsx`** — lazy useState initializer + write effect for
+   `openSection` against `sessionStorage["mgt-sched.settingsSection"]`.
+   Read validates against the known section keys (hours, display,
+   generator, foh, kitchen) + the literal "null" sentinel for the
+   all-collapsed state. Anything else falls back to `"hours"`.
+2. **`WeeklyShiftSummary.jsx`** — `requests` + `dates` props added.
+   New `buildDaysOffByEmployee(requests, dates)` helper counts the
+   visible-week dates each employee has covered by a dayoff/holiday
+   request. The displayed quota = max(0, raw − offCount). Quota=0
+   employees collapse to ratio=1 in the under-utilization sort.
+3. **`WeeklyRequestsPreview.jsx`** — NEW. Composes only from `S`
+   tokens + `REQUEST_TYPES` palette. No `Overlay` involved (no new
+   blur surface). Renders nothing when no requests overlap the
+   displayed week so the grid footer stays tidy on empty weeks.
+4. **`ScheduleGrid.jsx`** — both new components mounted directly below
+   the existing helper caption (WeeklyShiftSummary first, then
+   WeeklyRequestsPreview). Same `dates` array threaded into both;
+   `requests` already in scope.
+5. **`App.jsx`** — `__APP_SIGNATURE__` → version 1.6.0, build
+   `2026-05-18`, sha `weekly-requests-effective-quota-settings-section`.
+6. **`CLAUDE.md`** — three new locked-decision entries (Settings
+   accordion persistence; weekly requests preview; effective quota
+   semantics). File-structure annotations updated for `App.jsx`,
+   `Settings.jsx`, `WeeklyShiftSummary.jsx`, `ScheduleGrid.jsx`, and
+   the new `WeeklyRequestsPreview.jsx`.
+
+### Verification
+
+- `npm run dev` — Vite ran clean. Settings: opened Kitchen accordion
+  → refresh → still on Kitchen. Sign-out + sign-in → back to default
+  Operating time (sessionStorage scoped to the tab, not the auth
+  session). Empty-week schedule: requests panel renders nothing
+  (no chrome). Mixed-request week: panel lists each request once
+  with the correct type pill colour.
+- Effective quota: created a 5-day-week employee with a 2-day holiday
+  inside the displayed week → pill reads "Name · 0 / 3" (raw 5 minus
+  2 dayoff dates). Removing the holiday restores "Name · 0 / 5".
+  Shift-preference requests left the pill unchanged (correct).
+- Cross-feature regression: generator + clear + Details modal,
+  manual picker, PDF export, dark mode — all behave as in v1.5.0.
+
+---
+
 ## v1.5.0 — Session persistence + generator most-constrained-first ordering
 
 **Date:** 2026-05-18

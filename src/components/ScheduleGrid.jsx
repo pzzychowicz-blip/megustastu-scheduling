@@ -43,6 +43,7 @@ import ExportButton from "./ExportButton.jsx";
 import GenerateButton from "./GenerateButton.jsx";
 import ClearButton from "./ClearButton.jsx";
 import WeeklyShiftSummary from "./WeeklyShiftSummary.jsx";
+import WeeklyRequestsPreview from "./WeeklyRequestsPreview.jsx";
 import GenerateResultsModal from "./GenerateResultsModal.jsx";
 
 // Section row dividers (visual grouping in the desktop grid).
@@ -715,7 +716,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       <WeeklyShiftSummary
         employees={employees}
         weekShifts={weekShifts}
+        requests={requests}
+        dates={dates}
         weekLabel={formatWeekRange(weekStart)}
+        isMobile={isMobile}
+      />
+
+      <WeeklyRequestsPreview
+        requests={requests}
+        employees={employees}
+        weekStart={weekStart}
         isMobile={isMobile}
       />
 

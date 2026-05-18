@@ -229,6 +229,37 @@ separate Firebase project, same UI conventions).
   NOT reorder by priority — the manager picks one cell at a time and
   can see priority directly on the employee badge. Legacy employees
   without the field read as `false` (no migration).
+- **Settings accordion persistence (v1.6.0):** the open Settings
+  accordion section (`openSection` in `Settings.jsx`) persists across
+  refresh / Vite HMR inside the same browser tab via sessionStorage
+  under `mgt-sched.settingsSection`. Valid stored values are the
+  section keys (`hours`, `display`, `generator`, `foh`, `kitchen`)
+  plus the literal string `"null"` for the all-collapsed state.
+  Defensive read validates against the known set; anything else falls
+  back to `"hours"` (the default). Mirrors the v1.5.0 tab and week
+  persistence patterns.
+- **Weekly requests preview (v1.6.0):** new `<WeeklyRequestsPreview>`
+  component renders below `<WeeklyShiftSummary>` on the Schedule grid.
+  Lists every request whose date range overlaps the displayed week,
+  sorted by `dateFrom` ascending. Row format: name + colored type
+  pill (uses `REQUEST_TYPES[].palette`) + formatted date range.
+  Notes are intentionally omitted — manager opens the Requests tab
+  for full context. Empty week → component returns null (no chrome).
+  Single source for in-grid "who's off / on holiday / preference-
+  constrained" context; complements the effective-quota change below.
+- **Effective quota on Shifts-assigned pills (v1.6.0):**
+  `<WeeklyShiftSummary>` pill format becomes "Name · count /
+  effective" where **effective = max(0, workingDaysPerWeek − distinct
+  visible-week dates covered by day-off / holiday requests for that
+  employee)**. Shift-preference requests do NOT subtract (they
+  constrain dayPart, not whether the person works). Closed weekdays
+  never count (they're already filtered out of the `dates` array
+  passed to the component). The pill shows just the reduced number —
+  the "why" lives in `<WeeklyRequestsPreview>` so a glance across
+  both panels tells the full story. Effective never exceeds raw
+  `workingDaysPerWeek` and floors at 0. Quota=0 employees collapse
+  to ratio=1 for the under-utilization sort so they don't dominate
+  the leftmost slots.
 - **Session persistence (v1.5.0):** the open tab (AppShell) and
   displayed week (ScheduleGrid) persist across refresh / Vite HMR
   inside the same browser tab. Storage is `sessionStorage` under the
@@ -293,7 +324,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.5.0)
+## File structure (current — v1.6.0)
 
 ```
 megustastu-scheduling/
@@ -313,6 +344,9 @@ megustastu-scheduling/
     │                                 v1.5.0: __APP_SIGNATURE__ → 1.5.0,
     │                                 sha "session-persistence-
     │                                 most-constrained".
+    │                                 v1.6.0: → 1.6.0, sha
+    │                                 "weekly-requests-effective-
+    │                                 quota-settings-section".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -564,6 +598,13 @@ megustastu-scheduling/
         │                           change. Closing the tab clears it.
         │                           parseIsoDate added to the import
         │                           list.
+        │                           v1.6.0: + WeeklyRequestsPreview
+        │                           mounted directly below
+        │                           WeeklyShiftSummary, both fed from
+        │                           the displayed-week `dates` array.
+        │                           WeeklyShiftSummary now also receives
+        │                           `requests` for the effective-quota
+        │                           computation.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -632,6 +673,14 @@ megustastu-scheduling/
         │                           requires ≥1 day part open across the
         │                           week. Legacy boolean docs auto-migrate
         │                           through normalizeOpeningDays.
+        │                           v1.6.0: openSection state persists
+        │                           across refresh / Vite HMR within the
+        │                           same browser tab via sessionStorage
+        │                           ("mgt-sched.settingsSection"). Stores
+        │                           the section key or the literal "null"
+        │                           for all-collapsed. Defensive read
+        │                           validates against the known section
+        │                           set; falls back to "hours".
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
@@ -682,6 +731,32 @@ megustastu-scheduling/
         │                           week). Sort: under-utilization ratio
         │                           asc, then name. Visual tints for
         │                           zero / under / at-quota.
+        │                           v1.6.0: + `requests` + `dates` props.
+        │                           Quota displayed is now effective =
+        │                           max(0, workingDaysPerWeek − distinct
+        │                           visible-week dates covered by
+        │                           day-off/holiday requests). Shift-
+        │                           preference requests do not subtract.
+        │                           Closed days never count (already
+        │                           excluded from `dates`). buildDaysOff-
+        │                           ByEmployee helper added. Quota=0
+        │                           employees get ratio=1 to keep the
+        │                           under-utilization sort sane.
+        ├── WeeklyRequestsPreview.jsx v1.6.0: NEW. Footer panel under
+        │                           WeeklyShiftSummary on the Schedule
+        │                           grid. Lists every request whose date
+        │                           range overlaps the displayed week
+        │                           (`dateFrom..dateTo` ∩ Mon..Sun ≠ ∅).
+        │                           Row: name + colored type pill +
+        │                           formatted range. Sort: dateFrom asc.
+        │                           Notes are intentionally omitted —
+        │                           manager opens Requests tab for the
+        │                           full record. Returns null when no
+        │                           requests overlap (no empty chrome).
+        │                           formatRange duplicated from
+        │                           RequestsList.jsx (small enough; lift
+        │                           to schedule-logic if a third caller
+        │                           appears).
         └── GenerateResultsModal.jsx v1.4.0: NEW. "Details" modal opened
                                     from the generator result banner.
                                     Lists `summary.unfilledCells` and
