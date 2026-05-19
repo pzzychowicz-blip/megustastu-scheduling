@@ -137,6 +137,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     return shiftsForWeek(shifts, addDays(weekStart, -7));
   }, [shifts, weekStart]);
 
+  // v1.8.0 cross-week consecutive-off: narrow the NEXT 7 days too. The
+  // generator and the manual picker pass this into hasConsecutiveDaysOff
+  // so a Sun-off + next-Mon-off straddle counts as 2 consecutive days off.
+  const nextWeekShifts = useMemo(function () {
+    return shiftsForWeek(shifts, addDays(weekStart, 7));
+  }, [shifts, weekStart]);
+
   // ── Modal state ──────────────────────────────────────────────────────
   const [modalCell, setModalCell] = useState(null);  // { dateIso, slotDef, shift } or null
 
@@ -642,6 +649,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           weekStart={weekStart}
           weekShifts={weekShifts}
           priorWeekShifts={priorWeekShifts}
+          nextWeekShifts={nextWeekShifts}
           employees={employees}
           requests={requests}
           shiftTemplate={shiftTemplate}
@@ -1100,6 +1108,8 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         employees={employees}
         requests={requests}
         weekShifts={weekShifts}
+        priorWeekShifts={priorWeekShifts}
+        nextWeekShifts={nextWeekShifts}
         isMobile={isMobile}
         onClose={closeModal}
         onSave={handleSave}

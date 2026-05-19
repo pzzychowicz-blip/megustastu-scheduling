@@ -9,6 +9,14 @@
 //   employees   ({ [id]: employee }) — for the assignee picker
 //   requests    ({ [id]: request })  — for the conflict filter / banner
 //   weekShifts  ({ [id]: shift })    — full week (v0.8.0); same-day filter
+//   priorWeekShifts ({ [id]: shift })— v1.8.0 cross-week 2-off check. Used
+//                                       only by hasConsecutiveDaysOff to
+//                                       resolve prior Sunday's worked state.
+//                                       Optional — missing degrades to the
+//                                       pre-v1.8.0 Mon..Sun-only scan.
+//   nextWeekShifts  ({ [id]: shift })— v1.8.0 cross-week 2-off check.
+//                                       Used to resolve next Monday's
+//                                       worked state. Optional.
 //   isMobile    (bool)
 //   onClose     (fn)
 //   onSave      (fn)            — receives the shift payload
@@ -53,6 +61,7 @@ import {
   findSameDayShift,
   findShiftPreferenceMismatch,
   hasConsecutiveDaysOff,
+  withinMaxConsecutiveWorkingDays,
 } from "../lib/schedule-logic.js";
 
 // Lookup once per render — REQUEST_TYPES is small.
@@ -81,7 +90,8 @@ function initialForm(slotDef, shift) {
 }
 
 export default function ShiftFormModal({
-  open, dateIso, slotDef, shift, employees, requests, weekShifts, isMobile,
+  open, dateIso, slotDef, shift, employees, requests, weekShifts,
+  priorWeekShifts, nextWeekShifts, isMobile,
   onClose, onSave, onDelete, onStartSwap,
 }) {
   const [form, setForm] = useState(function () { return initialForm(slotDef || {}, shift); });
@@ -352,7 +362,11 @@ export default function ShiftFormModal({
   // state, then injects a synthetic "proposed" record reflecting the
   // current form's pick. weekStart is derived from the cell's date —
   // ShiftFormModal isn't told the current week-anchor explicitly.
+  //
+  // v1.8.0 threads priorWeekShifts + nextWeekShifts into the helper so a
+  // Sun-off + next-Mon-off straddle counts as 2 consecutive off days.
   let restWarning = false;
+  let maxConsecutiveWarning = false;
   if (form.employeeId) {
     const weekStart = startOfWeek(parseIsoDate(dateIso));
     const sim = { ...weekShifts };
@@ -362,7 +376,16 @@ export default function ShiftFormModal({
       employeeId: form.employeeId,
       date: dateIso,
     };
-    restWarning = !hasConsecutiveDaysOff(form.employeeId, weekStart, sim);
+    const opts = {
+      priorWeekShifts: priorWeekShifts,
+      nextWeekShifts: nextWeekShifts,
+    };
+    restWarning = !hasConsecutiveDaysOff(form.employeeId, weekStart, sim, undefined, opts);
+    // v1.8.0 amendment: companion wellness check — max 5 consecutive
+    // working days across the 21-day [prior, focus, next] window.
+    maxConsecutiveWarning = !withinMaxConsecutiveWorkingDays(
+      form.employeeId, weekStart, sim, undefined, opts
+    );
   }
 
   const warningBoxStyle = {
@@ -403,6 +426,15 @@ export default function ShiftFormModal({
         ⚠ Saving this would leave this employee without 2 consecutive
         days off this calendar week. You can still save; this is just a
         warning.
+      </div>
+    )
+    : null;
+
+  const maxConsecutiveBanner = maxConsecutiveWarning
+    ? (
+      <div style={warningBoxStyle}>
+        ⚠ Saving this would put this employee at more than 5 consecutive
+        working days. You can still save; this is just a warning.
       </div>
     )
     : null;
@@ -481,6 +513,7 @@ export default function ShiftFormModal({
         {conflictBanner}
         {prefMismatchBanner}
         {restWarningBanner}
+        {maxConsecutiveBanner}
         {saveErrorBanner}
       </Fld>
 

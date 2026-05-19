@@ -126,18 +126,49 @@ separate Firebase project, same UI conventions).
   picker (yellow warning banner, manager judgment wins). The form
   modal renders a Day / Evening segmented control conditionally
   when type === `shift-preference`.
-- **At least 2 consecutive days off (v1.2.0):** labor wellness rule.
-  `hasConsecutiveDaysOff(employeeId, weekStart, shiftsMap, n=2)` in
-  `schedule-logic.js` returns true iff the employee's working
-  pattern for the Mon–Sun week has a run of ≥ n consecutive off
-  days (closed days count as off). **HARD** in the generator —
-  candidate rejected if simulating the assignment would break the
-  rule, reason `"no-2-off"`. **HARD** in `clearInvalidShifts` —
-  for each employee whose remaining shifts violate, clear
-  latest-date shifts until satisfied. **SOFT** in the manual picker
-  — yellow warning banner if the chosen employee + this cell would
-  break the rule; save still works. No cross-week wrapping
-  (Sun ↔ next-Mon doesn't count).
+- **At least 2 consecutive days off (v1.2.0, cross-week v1.8.0):** labor
+  wellness rule.
+  `hasConsecutiveDaysOff(employeeId, weekStart, shiftsMap, n=2, options)`
+  in `schedule-logic.js` returns true iff the employee's working pattern
+  has a run of ≥ n consecutive off days that *touches* the Mon–Sun focus
+  week (closed days count as off). **HARD** in the generator — candidate
+  rejected if simulating the assignment would break the rule, reason
+  `"no-2-off"`. **SOFT** in the manual picker — yellow warning banner
+  if the chosen employee + this cell would break the rule; save still
+  works. Swap mechanic skips the check (v1.7.0 decision).
+  **v1.8.0 cross-week extension:** the helper now scans a 9-day window
+  `[priorSun, Mon..Sun, nextMon]` when callers pass
+  `options.priorWeekShifts` + `options.nextWeekShifts`. A run counts only
+  if it overlaps indices 1..7 (the focus week) — prior Sat–Sun off with
+  the focus week fully worked is correctly dropped (that rest happened
+  last week). Missing cross-week maps default the boundary days to
+  "worked", which degrades to the pre-v1.8.0 Mon..Sun-only behaviour.
+  `ScheduleGrid` memoises `nextWeekShifts` next to the existing
+  `priorWeekShifts`; both flow through `<GenerateButton>` (→
+  `generateWeek` → `buildCandidates`) and `<ShiftFormModal>` directly.
+  Note: v1.7.0 deleted `clearInvalidShifts`, so the previous
+  consecutive-off enforcement there no longer exists — Regenerate now
+  wipes the week and refills under the new cross-week rule from
+  scratch.
+- **Max consecutive working days = 5 (v1.8.0 companion rule):** the
+  per-calendar-week 2-off rule above can be satisfied by rest at the
+  *edges* of two adjacent weeks (e.g. week 1 Mon–Tue off + Wed–Sun
+  work, then week 2 Mon–Fri work + Sat–Sun off → 10 days straight,
+  each week independently passes). The companion helper
+  `withinMaxConsecutiveWorkingDays(empId, weekStart, shiftsMap, max=5,
+  options)` in `schedule-logic.js` plugs this gap. It scans a 21-day
+  window `[prior week, focus week, next week]`, finds runs of
+  consecutive working days, and rejects any run > max that overlaps
+  the focus week (indices 7..13). Pre-existing long runs entirely
+  outside the focus week aren't this proposal's problem — manager
+  state from earlier decisions stays intact. **HARD** in the
+  generator (`buildCandidates` step 6.5, reason `"max-consecutive"`).
+  **SOFT** in the manual picker — yellow warning banner stacked
+  after the 2-off banner. Swap mechanic skips this rule, matching
+  the 2-off rule's swap behaviour. Missing prior/next week maps
+  default boundary cells to *off* (false) — conservative direction
+  here is the OPPOSITE of `hasConsecutiveDaysOff` (avoid
+  over-reporting long runs when we lack data).
 - **Conflict semantics (revised v0.8.0):**
   - **Same-date double-booking is a HARD block.** A single employee
     cannot hold two shifts on the same date (covers day + evening on
@@ -425,6 +456,8 @@ megustastu-scheduling/
     │                                 "generator-effective-quota".
     │                                 v1.7.0: → 1.7.0, sha
     │                                 "swap-highlight-regen-priority".
+    │                                 v1.8.0: → 1.8.0, sha
+    │                                 "cross-week-consec-and-max-cap".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -485,6 +518,11 @@ megustastu-scheduling/
     │   │                           fixed-days, same-day-dup, over-quota)
     │   │                           were removed. + "regenerated" entry
     │   │                           labelled "Cleared for regeneration".
+    │   │                           v1.8.0: + "max-consecutive" entry
+    │   │                           emitted when every candidate would
+    │   │                           exceed the 5-day cap of the new
+    │   │                           withinMaxConsecutiveWorkingDays
+    │   │                           filter at buildCandidates step 6.5.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -522,6 +560,29 @@ megustastu-scheduling/
     │   │                           generator's eligibility filter and
     │   │                           the v1.7.0 Swap mechanic in
     │   │                           ScheduleGrid.
+    │   │                           v1.8.0: hasConsecutiveDaysOff gains
+    │   │                           a 5th `options` argument
+    │   │                           {priorWeekShifts, nextWeekShifts}.
+    │   │                           Internal window grows from 7 cells
+    │   │                           (Mon..Sun) to 9 cells
+    │   │                           ([priorSun, Mon..Sun, nextMon]);
+    │   │                           runs only count if they overlap
+    │   │                           indices 1..7 (the focus week).
+    │   │                           Missing options default the
+    │   │                           boundary days to "worked" — safe
+    │   │                           fallback that degrades to the
+    │   │                           pre-v1.8.0 Mon..Sun-only scan.
+    │   │                           v1.8.0 (companion):
+    │   │                           + withinMaxConsecutiveWorkingDays(
+    │   │                           empId, weekStart, shiftsMap, max=5,
+    │   │                           options). Scans a 21-day window
+    │   │                           [prior, focus, next]; rejects when
+    │   │                           any run of working days > max
+    │   │                           overlaps the focus week. Missing
+    │   │                           prior/next maps default to OFF
+    │   │                           (false) — opposite conservative
+    │   │                           direction from
+    │   │                           hasConsecutiveDaysOff.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -624,6 +685,29 @@ megustastu-scheduling/
     │                               Imports of parseIsoDate and the
     │                               now-unused slotsByKey /
     │                               visibleDateSet locals were pruned.
+    │                               v1.8.0: + nextWeekShifts arg on
+    │                               generateWeek (parallel to
+    │                               priorWeekShifts). Both are bundled
+    │                               into a `crossWeekShifts` bag
+    │                               threaded into buildCandidates and
+    │                               forwarded to hasConsecutiveDaysOff
+    │                               at step (6). The consecutive-off
+    │                               filter now sees prior Sun + next
+    │                               Mon so Sun ↔ next-Mon straddles
+    │                               count as 2-off. Algorithm
+    │                               otherwise byte-identical;
+    │                               buildCandidates gains one positional
+    │                               arg at the tail.
+    │                               v1.8.0 (companion): + new step 6.5
+    │                               filter calling
+    │                               withinMaxConsecutiveWorkingDays
+    │                               with the same crossWeekShifts bag.
+    │                               Reason code "max-consecutive" for
+    │                               cells where every candidate would
+    │                               exceed the 5-day cap. Step 7's
+    │                               preference filter now reads from
+    │                               cappedOk (the new gate's output)
+    │                               instead of restedOk.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -758,6 +842,15 @@ megustastu-scheduling/
         │                           pill. enterSwapTargetFromModal
         │                           forwarded to ShiftFormModal as
         │                           onStartSwap.
+        │                           v1.8.0: + nextWeekShifts memo via
+        │                           shiftsForWeek(shifts, addDays(
+        │                           weekStart, 7)), mirroring the
+        │                           existing priorWeekShifts memo.
+        │                           Both flow into <GenerateButton>
+        │                           (→ generateWeek's cross-week
+        │                           consecutive-off filter) and into
+        │                           <ShiftFormModal> (→ the manual
+        │                           picker's yellow rest-warning).
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -789,6 +882,19 @@ megustastu-scheduling/
         │                           new onStartSwap prop with the source
         │                           shape; ScheduleGrid closes the modal
         │                           and enters swap-target-select mode.
+        │                           v1.8.0: + priorWeekShifts +
+        │                           nextWeekShifts props (optional).
+        │                           Passed into hasConsecutiveDaysOff
+        │                           via the v1.8.0 options bag so the
+        │                           yellow rest-warning fires/clears on
+        │                           cross-week 2-off straddles
+        │                           (Sun ↔ next-Mon). + companion
+        │                           maxConsecutiveBanner — yellow
+        │                           warning stacked after the 2-off
+        │                           banner when the proposed assignment
+        │                           would create > 5 consecutive
+        │                           working days (across the 21-day
+        │                           [prior, focus, next] window).
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
@@ -857,6 +963,11 @@ megustastu-scheduling/
         │                           Regenerate mode also runs a
         │                           deleteShift loop for clearedShiftIds
         │                           before upserting new shifts.
+        │                           v1.8.0: + nextWeekShifts prop,
+        │                           forwarded into generateWeek
+        │                           alongside priorWeekShifts. Drives
+        │                           the cross-week consecutive-off
+        │                           filter inside buildCandidates.
         ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
         │                           Overlay. Shows the bullet list of
         │                           what the generator will do +

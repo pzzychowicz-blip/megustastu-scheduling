@@ -10,6 +10,11 @@
 //                                          v1.1.0 fairness: combined-load
 //                                          ranking factors in prior usage.
 //                                          Empty / missing falls back to no-op.
+//   nextWeekShifts   ({ [id]: shift })  — shifts in the 7 days AFTER weekStart.
+//                                          v1.8.0 cross-week consecutive-off:
+//                                          hasConsecutiveDaysOff uses next Mon
+//                                          to detect Sun ↔ next-Mon 2-off
+//                                          straddles.
 //   employees        ({ [id]: employee })
 //   requests         ({ [id]: request })
 //   shiftTemplate    (object | null)
@@ -30,8 +35,8 @@ import { generateWeek } from "../lib/generator.js";
 import GenerateConfirmModal from "./GenerateConfirmModal.jsx";
 
 export default function GenerateButton({
-  weekStart, weekShifts, priorWeekShifts, employees, requests, shiftTemplate,
-  openingDays, strictPreference, isMobile, actions, onResult,
+  weekStart, weekShifts, priorWeekShifts, nextWeekShifts, employees, requests,
+  shiftTemplate, openingDays, strictPreference, isMobile, actions, onResult,
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -68,6 +73,7 @@ export default function GenerateButton({
         weekStart: weekStart,
         weekShifts: weekShifts,
         priorWeekShifts: priorWeekShifts,           // v1.1.0 fairness
+        nextWeekShifts: nextWeekShifts,             // v1.8.0 cross-week 2-off
         employees: employees,
         requests: requests,
         shiftTemplate: shiftTemplate,
