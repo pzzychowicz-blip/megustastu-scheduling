@@ -16,10 +16,25 @@ The GenerateConfirmModal exposes two checkboxes (both default ON):
 - **Preserve existing assignments** — cells with an assigned employee
   stay as-is.
 
-OR-logic: a cell survives the wipe if it matches EITHER preserve
-criterion. Both ON (the default) makes Regenerate behave like
-Fill-empty (only truly empty cells get filled). Both OFF reproduces
-v1.7.0's full-wipe semantic. Mixed states cover the in-between cases.
+The two axes act **independently** per cell. A cell can have its
+assignment preserved while its custom times are reset (preserveTimes
+OFF, preserveAssignments ON → cell keeps its employee but
+start/end/role revert to template defaults). Or its custom times
+preserved while the assignment is cleared (preserveTimes ON,
+preserveAssignments OFF → cell becomes worklist-fillable and the
+new shift the generator picks for it inherits the saved times).
+Both ON (the default) leaves all non-empty cells fully intact —
+Regenerate behaves like Fill-empty. Both OFF reproduces v1.7.0's
+full-wipe semantic.
+
+*First implementation pass shipped with OR-logic that kept the whole
+record on either preserve match — Patryk's DEV smoke test surfaced
+that this produced incorrect behaviour in the asymmetric cases
+(employee preserved but times not reset; times preserved but
+employee not cleared). The fix lands in the same commit as the
+docs: the wipe-pass now computes per-axis target state and emits
+three lists — cleared / modified / pendingOverrides — so each axis
+applies independently.*
 
 Second entry in the three-version generator-polish batch:
 v1.8.0 cross-week + max-cap → v1.8.1 preserve overrides → v1.8.2
@@ -29,15 +44,28 @@ before this branch was opened.
 
 ### What landed
 
-1. **`src/lib/generator.js`** — `wipeAllShifts` renamed to
-   `wipeShiftsWithPolicy(workingShifts, slotsByKey, policy)`. New
-   local helper `hasTimeOrRoleOverride(shift, slot)` compares
-   start/end/role against the slot's template defaults. A record is
-   kept iff `(policy.preserveTimes && hasTimeOrRoleOverride)` OR
-   `(policy.preserveAssignments && shift.employeeId)`. `generateWeek`
-   builds a `slotsByKey` map up-front so the wipe can look up each
-   shift's defaults. Two new args on `generateWeek`: `preserveTimes`
-   and `preserveAssignments`, both defaulting to true.
+1. **`src/lib/generator.js`** — `wipeAllShifts` replaced with
+   `wipeShiftsWithPolicy(workingShifts, slotsByKey, policy)`. Local
+   helpers: `hasTimeOrRoleOverride(shift, slot)` compares
+   start/end/role against slot template defaults; `buildClearedRecord`
+   factors out the snapshot shape. Per-axis logic computes target
+   state for each cell:
+   - `keepTimes = preserveTimes && hasOverride`
+   - `keepEmployee = preserveAssignments && hasEmployee`
+   - `nextStart/nextEnd/nextRole = keepTimes ? s.x : slot.defaultX`
+   - `nextEmpId = keepEmployee ? s.employeeId : null`
+   Three outcomes per record:
+   - **modified** (nextEmpId present, fields changed) → record updated
+     in place in `workingShifts`; persistence upserts later.
+   - **pendingOverrides + cleared** (nextEmpId null, keepTimes true)
+     → record deleted, time/role saved in `pendingOverrides` keyed
+     by `dateIso|slotKey`. Fill-empty's payload construction reads
+     the map and applies overrides to the new record.
+   - **cleared** (nextEmpId null, no override saved) → straight wipe.
+   `generateWeek` builds `slotsByKey` up-front, threads
+   `pendingOverrides` into the fill-empty payload, accepts
+   `preserveTimes` + `preserveAssignments` args (both default true),
+   and returns `{newShifts, clearedShiftIds, modifiedShifts, summary}`.
 2. **`src/components/GenerateConfirmModal.jsx`** — two Toggle atoms in
    a third surfaceSoft card under the Fill-empty/Regenerate explainer.
    Both default ON and reset to ON on every open via a useEffect on
@@ -49,8 +77,11 @@ before this branch was opened.
    a second arg with the policy bag; Fill-empty path unchanged.
 3. **`src/components/GenerateButton.jsx`** — `handleConfirm(mode,
    policy)` accepts the new policy and forwards `preserveTimes` +
-   `preserveAssignments` into `generateWeek({...})`. Defaults to
-   both-true if `policy` is undefined (Fill-empty path).
+   `preserveAssignments` into `generateWeek({...})`. Persistence
+   loop now iterates `result.modifiedShifts` (records with
+   pre-existing ids) and upserts each. Order: delete cleared →
+   upsert modified → upsert newShifts. Defaults to both-true if
+   `policy` is undefined (Fill-empty path).
 4. **`src/App.jsx`** — `__APP_SIGNATURE__` bumped to `1.8.1`,
    sha `"preserve-overrides-on-regenerate"`.
 5. **`CLAUDE.md`** — Regenerate locked-decision entry extended with
@@ -61,7 +92,10 @@ before this branch was opened.
 ### Build size impact
 
 - v1.8.0 production: 161.92 kB gz, 319 modules.
-- v1.8.1: **162.40 kB gz** (+0.48 kB), 319 modules (no new files).
+- v1.8.1 first commit (whole-record OR-logic, later corrected):
+  162.40 kB gz (+0.48 kB).
+- v1.8.1 final (per-axis): **162.67 kB gz** (+0.75 kB from v1.8.0),
+  319 modules (no new files).
 
 ### Verification (intended; Patryk runs in DEV)
 

@@ -334,22 +334,33 @@ separate Firebase project, same UI conventions).
   is gone (≈190 lines of per-constraint repair logic deleted along
   with its tests-shaped reason codes from `GENERATOR_REASONS`).
   Cleared records all carry the single reason `"regenerated"`.
-  **v1.8.1 policy:** the wipe is no longer unconditional. The
-  GenerateConfirmModal exposes two checkboxes (both default ON):
-  `preserveTimes` (keep cells where start/end/role differs from the
-  slot template defaults) and `preserveAssignments` (keep cells with
-  any employeeId). `wipeShiftsWithPolicy` skips a record if it
-  matches EITHER preserve criterion (OR-logic). When both flags are
-  ON, Regenerate degenerates into Fill-empty (only truly empty
-  cells get filled) — and the Regenerate button switches from
-  `danger` (red) to `primary` (blue) to flag that the run is
-  non-destructive. The explainer copy adapts in lockstep — four
-  text variants: both ON / time-only / assignments-only / both OFF.
-  Rationale: v1.7.0's unconditional wipe was too eager — managers
-  who'd hand-tuned start/end times kept losing them on Regenerate
-  runs triggered by unrelated requests. The policy carves out the
-  common "keep my edits" case without removing the full-wipe
-  affordance.
+  **v1.8.1 policy (per-axis):** the wipe is no longer unconditional.
+  The GenerateConfirmModal exposes two checkboxes (both default ON):
+  `preserveTimes` (keep custom start/end/role) and
+  `preserveAssignments` (keep employee). Each axis acts
+  **independently** per cell — a cell can have its assignment kept
+  while its custom times are reset, or vice versa. The wipe pass
+  emits three outputs:
+  1. **cleared** — records deleted (cell becomes worklist-fillable);
+  2. **modified** — records updated in place (employee kept but times
+     reset, or similar partial change). Persistence layer upserts
+     them with their existing id;
+  3. **pendingOverrides** — when a record is deleted but a time/role
+     override was preserved (preserveTimes ON + preserveAssignments
+     OFF on an override+employee cell), the saved start/end/role is
+     stashed under `${dateIso}|${slotKey}`. Fill-empty's payload
+     construction reads this map and applies the override to the new
+     record it creates for that cell.
+  When both flags are ON, Regenerate degenerates into Fill-empty
+  (only truly empty cells get filled) — and the Regenerate button
+  switches from `danger` (red) to `primary` (blue) to flag that the
+  run is non-destructive. The explainer copy adapts in lockstep —
+  four text variants: both ON / time-only / assignments-only / both
+  OFF. Rationale: v1.7.0's unconditional wipe was too eager —
+  managers who'd hand-tuned start/end times kept losing them on
+  Regenerate runs triggered by unrelated requests. The policy
+  carves out the common "keep my edits" case without removing the
+  full-wipe affordance.
 - **Priority badge re-pin (v1.7.0):** the "Priority" `<TBadge>` in
   EmployeesList moved out of the top-right cluster. It now shares the
   bottom row with the Pattern + fixed-days text — the badge anchors
@@ -724,18 +735,22 @@ megustastu-scheduling/
     │                               with wipeShiftsWithPolicy(working,
     │                               slotsByKey, policy). Policy ={
     │                               preserveTimes, preserveAssignments}.
-    │                               OR-logic: a record is kept if it
-    │                               has a time/role override AND
-    │                               preserveTimes, or has any
-    │                               employeeId AND preserveAssignments.
-    │                               + local helper
-    │                               hasTimeOrRoleOverride(shift, slot).
-    │                               generateWeek now accepts
-    │                               preserveTimes + preserveAssignments
-    │                               (both default true) and builds a
-    │                               slotsByKey map up-front so the
-    │                               wipe can look up each shift's
-    │                               template defaults.
+    │                               Per-axis: a cell's assignment can
+    │                               stay while its times reset, or
+    │                               vice versa. Returns {cleared,
+    │                               modified, pendingOverrides}.
+    │                               + helpers hasTimeOrRoleOverride
+    │                               and buildClearedRecord.
+    │                               generateWeek accepts preserveTimes
+    │                               + preserveAssignments (both
+    │                               default true), builds slotsByKey
+    │                               up-front, threads pendingOverrides
+    │                               into the fill-empty payload (so
+    │                               re-filled cells inherit any
+    │                               preserved time/role override), and
+    │                               returns modifiedShifts in the
+    │                               result for GenerateButton to
+    │                               upsert.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -1001,11 +1016,15 @@ megustastu-scheduling/
         │                           ({preserveTimes, preserveAssignments}).
         │                           Forwarded into generateWeek({
         │                           preserveTimes, preserveAssignments}).
-        │                           Fill-empty mode ignores the policy
-        │                           (only Regenerate consults it); the
-        │                           wiring threads through unchanged so
-        │                           Fill-empty still works with the
-        │                           policy defaults.
+        │                           Persistence loop expanded — now
+        │                           also iterates result.modifiedShifts
+        │                           and upserts each (records that the
+        │                           wipe-pass partially updated, e.g.
+        │                           employee kept while times reset).
+        │                           Order: delete cleared → upsert
+        │                           modified → upsert newShifts. Fill-
+        │                           empty mode ignores the policy
+        │                           (only Regenerate consults it).
         ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
         │                           Overlay. Shows the bullet list of
         │                           what the generator will do +

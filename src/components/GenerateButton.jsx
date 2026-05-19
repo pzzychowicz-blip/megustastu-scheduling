@@ -94,6 +94,16 @@ export default function GenerateButton({
           actions.deleteShift(result.clearedShiftIds[i]);
         }
       }
+      // v1.8.1: regenerate mode may also return modifiedShifts — records
+      // that the wipe-pass partially updated (e.g. employee kept but
+      // times reset to defaults under a "preserve assignments only"
+      // policy). Each carries its existing id, so upsertShift updates
+      // the record in place.
+      if (result.modifiedShifts && result.modifiedShifts.length > 0) {
+        for (let i = 0; i < result.modifiedShifts.length; i++) {
+          actions.upsertShift(result.modifiedShifts[i]);
+        }
+      }
       for (let i = 0; i < result.newShifts.length; i++) {
         actions.upsertShift(result.newShifts[i]);
       }

@@ -331,13 +331,23 @@ function buildCandidates(
 //                           the slot template defaults.
 //   - preserveAssignments:  keep cells where employeeId is set (someone
 //                           is assigned).
-// A cell that matches EITHER preserve criterion is kept intact (whole
-// record, all fields). Cells that match NEITHER get wiped + listed in
-// cleared records with reason "regenerated".
 //
-// Note: a cell can be "edited" along one axis (time override) without
-// being assigned, and vice versa. Both shapes deserve preservation —
-// the manager spent attention on them. OR-logic, not AND.
+// Each axis acts independently — a cell can have its assignment kept
+// while its custom times are reset, or vice versa. The wipe pass
+// produces three outputs:
+//   - cleared:          records to DELETE from Firebase (cell becomes
+//                       truly empty after policy applied, OR neither
+//                       axis preserved it). Worklist re-fills these.
+//   - modified:         records to UPSERT to Firebase with partially
+//                       updated fields (employee kept but times reset,
+//                       for instance). Already updated in-place in
+//                       workingShifts so the worklist skips them.
+//   - pendingOverrides: map keyed by `${dateIso}|${slotKey}`. When a
+//                       cell's record is deleted but its time/role
+//                       override is preserved (preserveTimes ON +
+//                       preserveAssignments OFF on an override+
+//                       employee cell), fill-empty must apply those
+//                       saved values to the new shift it creates.
 //
 // Cleared records carry the v1.4.0 snapshot shape so GenerateResultsModal
 // can still render each row after Firebase deletes the record.
@@ -350,38 +360,93 @@ function hasTimeOrRoleOverride(shift, slot) {
   return false;
 }
 
+function buildClearedRecord(id, shift, slotKey) {
+  return {
+    id: id,
+    reason: "regenerated",
+    date: shift.date || null,
+    employeeId: shift.employeeId || null,
+    section: shift.section || null,
+    dayPart: shift.dayPart || null,
+    slotIndex: shift.slotIndex || 0,
+    slotKey: slotKey,
+  };
+}
+
 function wipeShiftsWithPolicy(workingShifts, slotsByKey, policy) {
-  const preserveTimes = policy ? Boolean(policy.preserveTimes) : false;
-  const preserveAssignments = policy ? Boolean(policy.preserveAssignments) : false;
+  const preserveTimes = Boolean(policy && policy.preserveTimes);
+  const preserveAssignments = Boolean(policy && policy.preserveAssignments);
 
   const cleared = [];
+  const modified = [];
+  const pendingOverrides = {};
+
   const ids = Object.keys(workingShifts);
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
     const s = workingShifts[id];
-    if (!s) {
+    if (!s) { delete workingShifts[id]; continue; }
+    const slotKey = s.section + "-" + s.dayPart + "-" + (s.slotIndex || 0);
+    const slot = slotsByKey ? slotsByKey[slotKey] : null;
+    if (!slot) {
+      // Stale record — template changed since this was written. Wipe.
+      cleared.push(buildClearedRecord(id, s, slotKey));
       delete workingShifts[id];
       continue;
     }
-    const slotKey = s.section + "-" + s.dayPart + "-" + (s.slotIndex || 0);
-    const slot = slotsByKey ? slotsByKey[slotKey] : null;
-    const keepForOverride = preserveTimes && hasTimeOrRoleOverride(s, slot);
-    const keepForAssignment = preserveAssignments && Boolean(s.employeeId);
-    if (keepForOverride || keepForAssignment) continue;
 
-    cleared.push({
-      id: id,
-      reason: "regenerated",
-      date: s.date || null,
-      employeeId: s.employeeId || null,
-      section: s.section || null,
-      dayPart: s.dayPart || null,
-      slotIndex: s.slotIndex || 0,
-      slotKey: slotKey,
-    });
+    const defaultRole = slot.isDay ? null : (slot.defaultRole || null);
+    const hasOverride = hasTimeOrRoleOverride(s, slot);
+    const hasEmployee = Boolean(s.employeeId);
+
+    // Resolve target fields under policy, per axis.
+    const keepTimes = preserveTimes && hasOverride;
+    const keepEmployee = preserveAssignments && hasEmployee;
+    const nextStart = keepTimes ? s.start : slot.defaultStart;
+    const nextEnd = keepTimes ? s.end : slot.defaultEnd;
+    const nextRole = keepTimes ? s.role : defaultRole;
+    const nextEmpId = keepEmployee ? s.employeeId : null;
+
+    if (nextEmpId) {
+      // Cell remains assigned. Apply any field modifications in place.
+      const fieldsChanged = nextStart !== s.start
+        || nextEnd !== s.end
+        || nextRole !== s.role
+        || nextEmpId !== s.employeeId;
+      if (fieldsChanged) {
+        workingShifts[id] = {
+          ...s,
+          start: nextStart,
+          end: nextEnd,
+          role: nextRole,
+          employeeId: nextEmpId,
+        };
+        modified.push(workingShifts[id]);
+      }
+      // (Worklist will skip this cell because workingShifts still has a
+      //  record with employeeId set — exactly what we want.)
+      continue;
+    }
+
+    // Post-policy state has no employee. Either:
+    //   (a) preserveTimes preserved a time/role override — record the
+    //       override under pendingOverrides so fill-empty applies it to
+    //       the new record it creates for this cell.
+    //   (b) no overrides preserved — vanilla wipe.
+    // Either way the existing record is deleted so the cell becomes
+    // worklist-fillable.
+    if (keepTimes) {
+      pendingOverrides[s.date + "|" + slotKey] = {
+        start: nextStart,
+        end: nextEnd,
+        role: nextRole,
+      };
+    }
+    cleared.push(buildClearedRecord(id, s, slotKey));
     delete workingShifts[id];
   }
-  return cleared;
+
+  return { cleared: cleared, modified: modified, pendingOverrides: pendingOverrides };
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────
@@ -446,8 +511,13 @@ export function generateWeek(args) {
   // worklist skips already-filled cells.
   const workingShifts = { ...(args.weekShifts || {}) };
   let clearedRecords = [];
+  let modifiedRecords = [];
+  let pendingOverrides = {};
   if (mode === "regenerate") {
-    clearedRecords = wipeShiftsWithPolicy(workingShifts, slotsByKey, policy);
+    const wipeResult = wipeShiftsWithPolicy(workingShifts, slotsByKey, policy);
+    clearedRecords = wipeResult.cleared;
+    modifiedRecords = wipeResult.modified;
+    pendingOverrides = wipeResult.pendingOverrides;
   }
 
   // Build the worklist: every (date, slot) pair on open days where the
@@ -516,15 +586,24 @@ export function generateWeek(args) {
     const ranked = rankCandidates(built.eligible, pendingShifts, priorWeekShifts);
     const winner = ranked[0];
 
-    const role = slot.isDay ? null : (resolveEveningRole(winner, slot) || null);
+    // v1.8.1: if the wipe-pass preserved a time/role override for this
+    // cell (preserveTimes ON, preserveAssignments OFF on an
+    // override+employee cell), apply the saved values to the new
+    // record. Falls through to template defaults when no override
+    // was saved.
+    const overrideKey = entry.dateIso + "|" + slot.key;
+    const override = pendingOverrides[overrideKey];
+    const role = override
+      ? override.role
+      : (slot.isDay ? null : (resolveEveningRole(winner, slot) || null));
     const payload = {
       date: entry.dateIso,
       section: slot.section,
       dayPart: slot.dayPart,
       slotIndex: slot.slotIndex,
       role: role,
-      start: slot.defaultStart,
-      end: slot.defaultEnd,
+      start: override ? override.start : slot.defaultStart,
+      end: override ? override.end : slot.defaultEnd,
       employeeId: winner.id,
     };
     newShifts.push(payload);
@@ -537,11 +616,13 @@ export function generateWeek(args) {
   return {
     newShifts: newShifts,
     clearedShiftIds: clearedRecords.map(function (c) { return c.id; }),
+    modifiedShifts: modifiedRecords,
     summary: {
       filled: filled,
       unfilled: unfilledCells.length,
       total: work.length,
       cleared: clearedRecords.length,
+      modified: modifiedRecords.length,
       unfilledCells: unfilledCells,
       clearedReasons: clearedRecords,
     },
