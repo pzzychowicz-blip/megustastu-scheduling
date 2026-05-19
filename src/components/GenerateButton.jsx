@@ -67,53 +67,63 @@ export default function GenerateButton({
     // deleteShift calls. Each persistence call is fire-and-forget against
     // Firebase (returns immediately; the network round-trip resolves
     // later, but the local React state updates via onValue).
+    //
+    // try/finally so the modal recovers from any unexpected exception
+    // (otherwise busy=true sticks and both buttons read "Working…"
+    // forever, even though the writes may already have landed —
+    // observed in v1.8.1 DEV testing on the preserve-time-only case).
     Promise.resolve().then(function () {
-      const result = generateWeek({
-        mode: mode,                                 // "fill-empty" | "regenerate"
-        weekStart: weekStart,
-        weekShifts: weekShifts,
-        priorWeekShifts: priorWeekShifts,           // v1.1.0 fairness
-        nextWeekShifts: nextWeekShifts,             // v1.8.0 cross-week 2-off
-        employees: employees,
-        requests: requests,
-        shiftTemplate: shiftTemplate,
-        openingDays: openingDays,
-        strictPreference: strictPreference,
-        // v1.8.1: preserve-on-regenerate policy. Ignored when mode is
-        // "fill-empty". Both default to true on the modal — wiring
-        // through unchanged forwards that default.
-        preserveTimes: policy ? policy.preserveTimes : true,
-        preserveAssignments: policy ? policy.preserveAssignments : true,
-      });
-      // v1.1.0: regenerate mode returns clearedShiftIds — delete first so
-      // the subsequent upserts see clean cells (the local fill-empty pass
-      // already worked against a filtered map, but the Firebase store
-      // needs the deletes to actually fire).
-      if (result.clearedShiftIds && result.clearedShiftIds.length > 0) {
-        for (let i = 0; i < result.clearedShiftIds.length; i++) {
-          actions.deleteShift(result.clearedShiftIds[i]);
+      try {
+        const result = generateWeek({
+          mode: mode,                                 // "fill-empty" | "regenerate"
+          weekStart: weekStart,
+          weekShifts: weekShifts,
+          priorWeekShifts: priorWeekShifts,           // v1.1.0 fairness
+          nextWeekShifts: nextWeekShifts,             // v1.8.0 cross-week 2-off
+          employees: employees,
+          requests: requests,
+          shiftTemplate: shiftTemplate,
+          openingDays: openingDays,
+          strictPreference: strictPreference,
+          // v1.8.1: preserve-on-regenerate policy. Ignored when mode is
+          // "fill-empty". Both default to true on the modal — wiring
+          // through unchanged forwards that default.
+          preserveTimes: policy ? policy.preserveTimes : true,
+          preserveAssignments: policy ? policy.preserveAssignments : true,
+        });
+        // v1.1.0: regenerate mode returns clearedShiftIds — delete first so
+        // the subsequent upserts see clean cells (the local fill-empty pass
+        // already worked against a filtered map, but the Firebase store
+        // needs the deletes to actually fire).
+        if (result.clearedShiftIds && result.clearedShiftIds.length > 0) {
+          for (let i = 0; i < result.clearedShiftIds.length; i++) {
+            actions.deleteShift(result.clearedShiftIds[i]);
+          }
         }
-      }
-      // v1.8.1: regenerate mode may also return modifiedShifts — records
-      // that the wipe-pass partially updated (e.g. employee kept but
-      // times reset to defaults under a "preserve assignments only"
-      // policy). Each carries its existing id, so upsertShift updates
-      // the record in place.
-      if (result.modifiedShifts && result.modifiedShifts.length > 0) {
-        for (let i = 0; i < result.modifiedShifts.length; i++) {
-          actions.upsertShift(result.modifiedShifts[i]);
+        // v1.8.1: regenerate mode may also return modifiedShifts — records
+        // that the wipe-pass partially updated (e.g. employee kept but
+        // times reset to defaults under a "preserve assignments only"
+        // policy). Each carries its existing id, so upsertShift updates
+        // the record in place.
+        if (result.modifiedShifts && result.modifiedShifts.length > 0) {
+          for (let i = 0; i < result.modifiedShifts.length; i++) {
+            actions.upsertShift(result.modifiedShifts[i]);
+          }
         }
+        for (let i = 0; i < result.newShifts.length; i++) {
+          actions.upsertShift(result.newShifts[i]);
+        }
+        if (onResult) {
+          // Hand the mode through to the banner so it can phrase the copy
+          // appropriately (regenerate runs include a "Cleared N" prefix).
+          onResult({ ...result.summary, mode: mode });
+        }
+      } catch (err) {
+        console.error("[GenerateButton] generator run failed", err);
+      } finally {
+        setBusy(false);
+        setOpen(false);
       }
-      for (let i = 0; i < result.newShifts.length; i++) {
-        actions.upsertShift(result.newShifts[i]);
-      }
-      if (onResult) {
-        // Hand the mode through to the banner so it can phrase the copy
-        // appropriately (regenerate runs include a "Cleared N" prefix).
-        onResult({ ...result.summary, mode: mode });
-      }
-      setBusy(false);
-      setOpen(false);
     });
   }
 
