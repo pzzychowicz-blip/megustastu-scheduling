@@ -326,20 +326,30 @@ separate Firebase project, same UI conventions).
   yellow surfaces elsewhere on the grid. The selected pill paints in
   the same green so the pill ↔ cells tie is unmistakable. Both
   desktop grid and mobile day-cards participate (shared `renderCell`).
-- **Regenerate is wipe-and-refill (v1.7.0):** what was
-  "clear-invalid-then-fill" became "wipe-all-then-fill-empty-fresh".
-  `generateWeek({mode: "regenerate"})` empties `workingShifts`
-  unconditionally via `wipeAllShifts`, then proceeds through the
+- **Regenerate is wipe-and-refill (v1.7.0, policy-aware v1.8.1):** what
+  was "clear-invalid-then-fill" became "wipe-all-then-fill-empty-fresh"
+  in v1.7.0. `generateWeek({mode: "regenerate"})` empties
+  `workingShifts` via the wipe helper, then proceeds through the
   normal fill-empty loop. The previous `clearInvalidShifts` pre-pass
   is gone (≈190 lines of per-constraint repair logic deleted along
   with its tests-shaped reason codes from `GENERATOR_REASONS`).
-  Cleared records all carry the single reason `"regenerated"`. UI
-  consequences: GenerateConfirmModal's Regenerate explainer leads
-  with "clears every shift in this week"; the Regenerate button
-  variant is now `danger` (red) to flag the destructive nature; the
-  GenerateResultsModal's cleared-group bucket collapses to one row.
-  Rationale: when new requests land mid-week, the manager wants a
-  fresh global allocation, not localized constraint repairs.
+  Cleared records all carry the single reason `"regenerated"`.
+  **v1.8.1 policy:** the wipe is no longer unconditional. The
+  GenerateConfirmModal exposes two checkboxes (both default ON):
+  `preserveTimes` (keep cells where start/end/role differs from the
+  slot template defaults) and `preserveAssignments` (keep cells with
+  any employeeId). `wipeShiftsWithPolicy` skips a record if it
+  matches EITHER preserve criterion (OR-logic). When both flags are
+  ON, Regenerate degenerates into Fill-empty (only truly empty
+  cells get filled) — and the Regenerate button switches from
+  `danger` (red) to `primary` (blue) to flag that the run is
+  non-destructive. The explainer copy adapts in lockstep — four
+  text variants: both ON / time-only / assignments-only / both OFF.
+  Rationale: v1.7.0's unconditional wipe was too eager — managers
+  who'd hand-tuned start/end times kept losing them on Regenerate
+  runs triggered by unrelated requests. The policy carves out the
+  common "keep my edits" case without removing the full-wipe
+  affordance.
 - **Priority badge re-pin (v1.7.0):** the "Priority" `<TBadge>` in
   EmployeesList moved out of the top-right cluster. It now shares the
   bottom row with the Pattern + fixed-days text — the badge anchors
@@ -458,6 +468,8 @@ megustastu-scheduling/
     │                                 "swap-highlight-regen-priority".
     │                                 v1.8.0: → 1.8.0, sha
     │                                 "cross-week-consec-and-max-cap".
+    │                                 v1.8.1: → 1.8.1, sha
+    │                                 "preserve-overrides-on-regenerate".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -708,6 +720,22 @@ megustastu-scheduling/
     │                               preference filter now reads from
     │                               cappedOk (the new gate's output)
     │                               instead of restedOk.
+    │                               v1.8.1: wipeAllShifts replaced
+    │                               with wipeShiftsWithPolicy(working,
+    │                               slotsByKey, policy). Policy ={
+    │                               preserveTimes, preserveAssignments}.
+    │                               OR-logic: a record is kept if it
+    │                               has a time/role override AND
+    │                               preserveTimes, or has any
+    │                               employeeId AND preserveAssignments.
+    │                               + local helper
+    │                               hasTimeOrRoleOverride(shift, slot).
+    │                               generateWeek now accepts
+    │                               preserveTimes + preserveAssignments
+    │                               (both default true) and builds a
+    │                               slotsByKey map up-front so the
+    │                               wipe can look up each shift's
+    │                               template defaults.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -968,6 +996,16 @@ megustastu-scheduling/
         │                           alongside priorWeekShifts. Drives
         │                           the cross-week consecutive-off
         │                           filter inside buildCandidates.
+        │                           v1.8.1: handleConfirm signature
+        │                           grows a second `policy` arg
+        │                           ({preserveTimes, preserveAssignments}).
+        │                           Forwarded into generateWeek({
+        │                           preserveTimes, preserveAssignments}).
+        │                           Fill-empty mode ignores the policy
+        │                           (only Regenerate consults it); the
+        │                           wiring threads through unchanged so
+        │                           Fill-empty still works with the
+        │                           policy defaults.
         ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
         │                           Overlay. Shows the bullet list of
         │                           what the generator will do +
@@ -987,6 +1025,21 @@ megustastu-scheduling/
         │                           in this week" + bolded red label so
         │                           the manager can't miss the
         │                           destructive nature.
+        │                           v1.8.1: + two Toggle atoms inside
+        │                           a third surfaceSoft card —
+        │                           "Preserve manual time/role edits"
+        │                           + "Preserve existing assignments",
+        │                           both default ON. Resets to defaults
+        │                           on every open() (useEffect on the
+        │                           open prop). Regenerate button's
+        │                           variant + explainer copy adapt
+        │                           live: `danger` (red) when either
+        │                           preserve flag is OFF, `primary`
+        │                           (blue) when both ON. onConfirm
+        │                           signature gains a 2nd arg for the
+        │                           Regenerate path: ("regenerate",
+        │                           {preserveTimes, preserveAssignments}).
+        │                           Fill-empty path unchanged.
         ├── SwapButton.jsx          v1.7.0: NEW. Schedule nav-bar
         │                           toggle between Generate and Clear.
         │                           Owns no swap state — reads `active`

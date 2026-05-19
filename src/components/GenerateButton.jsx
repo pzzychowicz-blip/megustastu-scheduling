@@ -59,7 +59,7 @@ export default function GenerateButton({
     setOpen(false);
   }
 
-  function handleConfirm(mode) {
+  function handleConfirm(mode, policy) {
     if (busy) return;
     setBusy(true);
     // Wrap the synchronous algorithm + writes in a microtask so the
@@ -79,6 +79,11 @@ export default function GenerateButton({
         shiftTemplate: shiftTemplate,
         openingDays: openingDays,
         strictPreference: strictPreference,
+        // v1.8.1: preserve-on-regenerate policy. Ignored when mode is
+        // "fill-empty". Both default to true on the modal — wiring
+        // through unchanged forwards that default.
+        preserveTimes: policy ? policy.preserveTimes : true,
+        preserveAssignments: policy ? policy.preserveAssignments : true,
       });
       // v1.1.0: regenerate mode returns clearedShiftIds — delete first so
       // the subsequent upserts see clean cells (the local fill-empty pass

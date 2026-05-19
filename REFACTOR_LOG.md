@@ -5,6 +5,108 @@ an entry. Newest first.
 
 ---
 
+## v1.8.1 — Preserve overrides on Regenerate
+
+**Date:** 2026-05-19
+**Behavioural change:** Regenerate is no longer an unconditional wipe.
+The GenerateConfirmModal exposes two checkboxes (both default ON):
+
+- **Preserve manual time/role edits** — cells where start/end/role
+  differ from the slot template defaults stay as-is.
+- **Preserve existing assignments** — cells with an assigned employee
+  stay as-is.
+
+OR-logic: a cell survives the wipe if it matches EITHER preserve
+criterion. Both ON (the default) makes Regenerate behave like
+Fill-empty (only truly empty cells get filled). Both OFF reproduces
+v1.7.0's full-wipe semantic. Mixed states cover the in-between cases.
+
+Second entry in the three-version generator-polish batch:
+v1.8.0 cross-week + max-cap → v1.8.1 preserve overrides → v1.8.2
+recurring shift-preference. Patryk merged v1.8.0 to production on
+2026-05-19 and reported the bug case (10-in-a-row) was resolved
+before this branch was opened.
+
+### What landed
+
+1. **`src/lib/generator.js`** — `wipeAllShifts` renamed to
+   `wipeShiftsWithPolicy(workingShifts, slotsByKey, policy)`. New
+   local helper `hasTimeOrRoleOverride(shift, slot)` compares
+   start/end/role against the slot's template defaults. A record is
+   kept iff `(policy.preserveTimes && hasTimeOrRoleOverride)` OR
+   `(policy.preserveAssignments && shift.employeeId)`. `generateWeek`
+   builds a `slotsByKey` map up-front so the wipe can look up each
+   shift's defaults. Two new args on `generateWeek`: `preserveTimes`
+   and `preserveAssignments`, both defaulting to true.
+2. **`src/components/GenerateConfirmModal.jsx`** — two Toggle atoms in
+   a third surfaceSoft card under the Fill-empty/Regenerate explainer.
+   Both default ON and reset to ON on every open via a useEffect on
+   the open prop. The Regenerate explainer copy adapts in lockstep:
+   four text variants (both ON / time-only / assignments-only / both
+   OFF). The Regenerate button's variant switches from `danger` (red)
+   to `primary` (blue) when both toggles are ON — visually signals
+   that the run is non-destructive. `onConfirm` for Regenerate gains
+   a second arg with the policy bag; Fill-empty path unchanged.
+3. **`src/components/GenerateButton.jsx`** — `handleConfirm(mode,
+   policy)` accepts the new policy and forwards `preserveTimes` +
+   `preserveAssignments` into `generateWeek({...})`. Defaults to
+   both-true if `policy` is undefined (Fill-empty path).
+4. **`src/App.jsx`** — `__APP_SIGNATURE__` bumped to `1.8.1`,
+   sha `"preserve-overrides-on-regenerate"`.
+5. **`CLAUDE.md`** — Regenerate locked-decision entry extended with
+   the v1.8.1 policy section + file-structure annotations for
+   App.jsx, generator.js, GenerateButton.jsx, GenerateConfirmModal.jsx.
+6. **`REFACTOR_LOG.md`** — this entry.
+
+### Build size impact
+
+- v1.8.0 production: 161.92 kB gz, 319 modules.
+- v1.8.1: **162.40 kB gz** (+0.48 kB), 319 modules (no new files).
+
+### Verification (intended; Patryk runs in DEV)
+
+- **Default behaviour (both ON):** customise Tuesday Kitchen Day's
+  start time to 10:30. Open Generate → click Regenerate. The
+  Tuesday cell should keep `10:30–16:00`; the GenerateResultsModal
+  Details should NOT list Tuesday Kitchen Day as cleared.
+- **Only time/role preserved:** Mary assigned to Tuesday Kitchen
+  Day (default times). Uncheck "Preserve existing assignments",
+  leave "Preserve manual time/role edits" on. Run Regenerate.
+  Tuesday gets reassigned (Mary or someone else, per generator
+  fairness) but the times stay at template defaults. No surprise
+  custom times preserved because there weren't any.
+- **Only assignments preserved:** Mary assigned 10:30–16:00 to
+  Tuesday. Uncheck "Preserve manual time/role edits". Run
+  Regenerate. Mary stays on Tuesday but the times reset to
+  template defaults (11:00–16:00).
+- **Both OFF:** matches the v1.7.0 wipe-and-refill behaviour. Red
+  Regenerate button; explainer reads "Clears every shift in this
+  week and re-allocates the whole rota fresh."
+- **Button colour live-updates:** flip toggles back and forth.
+  Both ON → button is blue. Either OFF → button is red. Explainer
+  text changes in lockstep.
+
+### Key design decisions
+
+- **OR-logic across the two preserve criteria.** A cell with a custom
+  time but no employee qualifies for "preserve times". A cell with an
+  employee but default times qualifies for "preserve assignments".
+  Both → kept twice (no-op). Neither → wiped. Matches manager intent:
+  "if I spent attention on this cell along either axis, don't wipe it."
+- **Reset on every open.** Sticky-across-opens would be a power-user
+  request. Default-ON-every-time keeps the safe behaviour in front
+  of the manager.
+- **Regenerate vs Fill-empty when both ON.** They become functionally
+  equivalent. We keep both buttons as explicit affordances — manager
+  can hit Regenerate intentionally and just see that nothing changes
+  unexpectedly. Cleaner than hiding Regenerate.
+- **Reason code unchanged.** Cleared records still carry `"regenerated"`.
+  Adding `"preserved"` or similar would only matter for cells that
+  STAY — those aren't reported in `clearedRecords` at all, so no
+  reason code is needed.
+
+---
+
 ## v1.8.0 — Cross-week consecutive-off + max-consecutive-working-days cap
 
 **Date:** 2026-05-19

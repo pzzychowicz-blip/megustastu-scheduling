@@ -6,9 +6,13 @@
 //   onConfirm(mode).
 // v1.7.0 — Regenerate became destructive: clears every shift in the
 //   week and re-allocates fresh. Explainer copy + button language
-//   updated to make the destructive nature explicit. Mechanic stays
-//   the same (onConfirm("regenerate")) — only generator.js + the copy
-//   here changed.
+//   updated to make the destructive nature explicit.
+// v1.8.1 — Two checkboxes on Regenerate: "Preserve manual time/role
+//   edits" + "Preserve existing assignments", both default ON. Wires
+//   into onConfirm("regenerate", {preserveTimes, preserveAssignments}).
+//   The explainer copy + button variant adapt live based on the
+//   toggles' state — manager sees danger (red) styling only when at
+//   least one preserve flag is OFF.
 //
 // Reuses Overlay (the single source of backdrop blur per the
 // ≤4-blur-instances rule). The actual algorithm runs in the parent's
@@ -21,19 +25,49 @@
 //   busy          (bool)    — disables both action buttons during a run
 //   isMobile      (bool)
 //   onClose       (fn)
-//   onConfirm     (fn)      — called with "fill-empty" | "regenerate"
+//   onConfirm     (fn)      — fill-empty: onConfirm("fill-empty")
+//                              regenerate: onConfirm("regenerate",
+//                                {preserveTimes, preserveAssignments})
 
-import { S, BTN } from "../lib/constants.js";
-import { Overlay, mkBtn } from "./atoms.jsx";
+import { useEffect, useState } from "react";
+import { S } from "../lib/constants.js";
+import { Overlay, Toggle, mkBtn } from "./atoms.jsx";
 
 export default function GenerateConfirmModal({
   open, weekLabel, strictPref, busy, isMobile, onClose, onConfirm,
 }) {
+  // v1.8.1: per-run policy state. Resets to both-ON each time the modal
+  // opens — sticky-across-opens would be a power-user request, default
+  // resets keep the safe default in front of the manager every run.
+  const [preserveTimes, setPreserveTimes] = useState(true);
+  const [preserveAssignments, setPreserveAssignments] = useState(true);
+  useEffect(function () {
+    if (open) {
+      setPreserveTimes(true);
+      setPreserveAssignments(true);
+    }
+  }, [open]);
+
   if (!open) return null;
 
   const prefHint = strictPref
     ? "Hard — only preference-matching employees considered. Cells may be left empty if no preferred candidate fits."
     : "Soft — preferred employees tried first; falls back to anyone eligible if none match.";
+
+  // v1.8.1: regenerate is "destructive" when either preserve flag is OFF.
+  // Drives the button variant (red vs blue) and the explainer copy.
+  const destructive = !preserveTimes || !preserveAssignments;
+
+  let regenExplainer;
+  if (preserveTimes && preserveAssignments) {
+    regenExplainer = "Re-fills only the truly empty cells. Existing shifts stay as-is.";
+  } else if (preserveTimes && !preserveAssignments) {
+    regenExplainer = "Reassigns staff but keeps your custom start/end times and evening roles.";
+  } else if (!preserveTimes && preserveAssignments) {
+    regenExplainer = "Keeps existing employees on each cell but resets start/end times and roles to template defaults.";
+  } else {
+    regenExplainer = "Clears every shift in this week and re-allocates the whole rota fresh.";
+  }
 
   return (
     <Overlay
@@ -76,8 +110,10 @@ export default function GenerateConfirmModal({
         </div>
       </div>
 
-      {/* v1.1.0: explainer for Fill empty vs Regenerate.
-          v1.7.0: Regenerate copy made destructive-explicit. */}
+      {/* v1.1.0: Fill-empty vs Regenerate explainer.
+          v1.7.0: Regenerate explicit destructive-by-default copy.
+          v1.8.1: explainer + Regenerate label colour adapt to the
+                  preserve toggles' state. */}
       <div
         style={{
           ...S.surfaceSoft,
@@ -93,11 +129,52 @@ export default function GenerateConfirmModal({
           </span>
         </div>
         <div>
-          <span style={{ fontWeight: 600, color: "var(--text-danger)" }}>Regenerate</span>
+          <span
+            style={{
+              fontWeight: 600,
+              color: destructive ? "var(--text-danger)" : "var(--text-primary)",
+            }}
+          >
+            Regenerate
+          </span>
           <span style={{ color: "var(--text-secondary)" }}>
-            {" — "}<strong>clears every shift in this week</strong>{" and re-allocates the whole rota fresh. Use when new requests have landed and you want the generator to plan from scratch."}
+            {" — "}
+            {destructive
+              ? (
+                <strong>{regenExplainer}</strong>
+              )
+              : regenExplainer}
           </span>
         </div>
+      </div>
+
+      {/* v1.8.1: preserve-overrides toggles. Both default ON each open;
+          control the policy passed into onConfirm("regenerate", ...). */}
+      <div
+        style={{
+          ...S.surfaceSoft,
+          padding: "8px 10px",
+          marginBottom: 12,
+        }}
+      >
+        <div style={{ ...S.muted, fontSize: 11, marginBottom: 6 }}>
+          On Regenerate:
+        </div>
+        <Toggle
+          label="Preserve manual time/role edits"
+          helper="Cells where you've changed start/end times or the evening role stay as-is."
+          checked={preserveTimes}
+          onChange={setPreserveTimes}
+          disabled={busy}
+        />
+        <div style={{ height: 6 }} />
+        <Toggle
+          label="Preserve existing assignments"
+          helper="Cells with an assigned employee stay as-is."
+          checked={preserveAssignments}
+          onChange={setPreserveAssignments}
+          disabled={busy}
+        />
       </div>
 
       <div
@@ -118,8 +195,13 @@ export default function GenerateConfirmModal({
         })}
         {mkBtn({
           type: "button",
-          variant: "danger",
-          onClick: function () { onConfirm("regenerate"); },
+          variant: destructive ? "danger" : "primary",
+          onClick: function () {
+            onConfirm("regenerate", {
+              preserveTimes: preserveTimes,
+              preserveAssignments: preserveAssignments,
+            });
+          },
           disabled: busy,
           style: busy ? { opacity: 0.6, cursor: "wait" } : undefined,
           children: busy ? "Working…" : "Regenerate",

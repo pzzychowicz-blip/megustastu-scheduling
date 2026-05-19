@@ -320,32 +320,64 @@ function buildCandidates(
   return { eligible: cappedOk, reason: null };
 }
 
-// ── Regenerate wipe-pass (v1.7.0) ────────────────────────────────────────
+// ── Regenerate wipe-pass (v1.7.0, policy-aware v1.8.1) ───────────────────
 // In v1.7.0 Regenerate became wipe-and-refill: every shift in the week is
 // cleared unconditionally, then the fill-empty pass runs against an empty
-// map. Patryk's call — when new requests land mid-week, a fresh global
-// allocation beats localized constraint repairs. The previous
-// per-constraint pre-pass (clearInvalidShifts, v1.1–v1.6.1) is gone.
+// map.
 //
-// Cleared records carry the v1.4.0 snapshot shape (date, employeeId,
-// section, dayPart, slotIndex, slotKey) so GenerateResultsModal can
-// still render each row even after Firebase deletes the record. Every
-// row gets reason "regenerated" — single bucket in the modal.
-function wipeAllShifts(workingShifts) {
+// v1.8.1 makes the wipe policy-driven. Two independent flags on the
+// confirm modal (default both ON):
+//   - preserveTimes:        keep cells where start/end/role differs from
+//                           the slot template defaults.
+//   - preserveAssignments:  keep cells where employeeId is set (someone
+//                           is assigned).
+// A cell that matches EITHER preserve criterion is kept intact (whole
+// record, all fields). Cells that match NEITHER get wiped + listed in
+// cleared records with reason "regenerated".
+//
+// Note: a cell can be "edited" along one axis (time override) without
+// being assigned, and vice versa. Both shapes deserve preservation —
+// the manager spent attention on them. OR-logic, not AND.
+//
+// Cleared records carry the v1.4.0 snapshot shape so GenerateResultsModal
+// can still render each row after Firebase deletes the record.
+function hasTimeOrRoleOverride(shift, slot) {
+  if (!shift || !slot) return false;
+  if (shift.start && shift.start !== slot.defaultStart) return true;
+  if (shift.end && shift.end !== slot.defaultEnd) return true;
+  // Day shifts always have role=null per design — no override possible.
+  if (!slot.isDay && shift.role && shift.role !== slot.defaultRole) return true;
+  return false;
+}
+
+function wipeShiftsWithPolicy(workingShifts, slotsByKey, policy) {
+  const preserveTimes = policy ? Boolean(policy.preserveTimes) : false;
+  const preserveAssignments = policy ? Boolean(policy.preserveAssignments) : false;
+
   const cleared = [];
   const ids = Object.keys(workingShifts);
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
     const s = workingShifts[id];
+    if (!s) {
+      delete workingShifts[id];
+      continue;
+    }
+    const slotKey = s.section + "-" + s.dayPart + "-" + (s.slotIndex || 0);
+    const slot = slotsByKey ? slotsByKey[slotKey] : null;
+    const keepForOverride = preserveTimes && hasTimeOrRoleOverride(s, slot);
+    const keepForAssignment = preserveAssignments && Boolean(s.employeeId);
+    if (keepForOverride || keepForAssignment) continue;
+
     cleared.push({
       id: id,
       reason: "regenerated",
-      date: s ? s.date : null,
-      employeeId: s ? s.employeeId : null,
-      section: s ? s.section : null,
-      dayPart: s ? s.dayPart : null,
-      slotIndex: s ? (s.slotIndex || 0) : 0,
-      slotKey: s ? (s.section + "-" + s.dayPart + "-" + (s.slotIndex || 0)) : null,
+      date: s.date || null,
+      employeeId: s.employeeId || null,
+      section: s.section || null,
+      dayPart: s.dayPart || null,
+      slotIndex: s.slotIndex || 0,
+      slotKey: slotKey,
     });
     delete workingShifts[id];
   }
@@ -378,6 +410,15 @@ export function generateWeek(args) {
   const nextWeekShifts = args.nextWeekShifts || {};
   const crossWeekShifts = { priorWeekShifts: priorWeekShifts, nextWeekShifts: nextWeekShifts };
 
+  // v1.8.1: preserve-on-regenerate policy. Both flags default ON so the
+  // common case is "don't lose my edits." When both are true, Regenerate
+  // degenerates into Fill-empty (only truly empty cells get filled).
+  // The caller (GenerateConfirmModal) provides explicit values.
+  const policy = {
+    preserveTimes: args.preserveTimes !== false,
+    preserveAssignments: args.preserveAssignments !== false,
+  };
+
   // No template → nothing meaningful to do. Caller should ensure this is
   // populated (AppShell waits for `ready`), but stay defensive.
   if (!shiftTemplate) {
@@ -389,6 +430,8 @@ export function generateWeek(args) {
   }
 
   const slots = slotsForDay(shiftTemplate);
+  const slotsByKey = {};
+  for (let i = 0; i < slots.length; i++) slotsByKey[slots[i].key] = slots[i];
   const dates = visibleWeekDates(weekStart, openingDays);
   const rarity = buildRoleRarity(employees);
 
@@ -404,7 +447,7 @@ export function generateWeek(args) {
   const workingShifts = { ...(args.weekShifts || {}) };
   let clearedRecords = [];
   if (mode === "regenerate") {
-    clearedRecords = wipeAllShifts(workingShifts);
+    clearedRecords = wipeShiftsWithPolicy(workingShifts, slotsByKey, policy);
   }
 
   // Build the worklist: every (date, slot) pair on open days where the
