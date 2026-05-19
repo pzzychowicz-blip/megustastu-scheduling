@@ -158,10 +158,27 @@ export function usePersistence() {
   // deleteX(id, isSilent=false):
   //   - Removes /path/{id}. No-op if the record doesn't exist.
 
+  // Strip undefined values from an object — Firebase's set() throws
+  // synchronously when it encounters undefined ("Function set() called
+  // with invalid data. Could not parse object: undefined"), which during
+  // v1.8.1 generator runs would skip the GenerateButton's
+  // setBusy(false) / setOpen(false) reset and leave the confirm modal
+  // stuck on "Working…". null is preserved (Firebase reads it as
+  // "remove this field" on the receiving end, which is the intended
+  // semantic for clearing fields like employeeId or role).
+  function stripUndefined(obj) {
+    if (!obj || typeof obj !== "object") return obj;
+    const out = {};
+    for (const k in obj) {
+      if (obj[k] !== undefined) out[k] = obj[k];
+    }
+    return out;
+  }
+
   function upsertCollection(path, record, isSilent) {
     if (!refuseUnlessLoaded(path, isSilent)) return null;
     const id = (record && record.id) ? record.id : push(ref(db, path)).key;
-    const next = { ...record, id };
+    const next = stripUndefined({ ...record, id });
     set(ref(db, path + "/" + id), next).catch(function (err) {
       console.warn("[persistence] write failed", path, id, err && err.code);
     });
