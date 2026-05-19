@@ -13,7 +13,7 @@
 //   isMobile   (bool)
 
 import { useMemo, useState } from "react";
-import { S, BTN, REQUEST_TYPES } from "../lib/constants.js";
+import { S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { mkBtn, TBadge } from "./atoms.jsx";
 import { isoDate, parseIsoDate } from "../lib/schedule-logic.js";
 import RequestFormModal from "./RequestFormModal.jsx";
@@ -150,6 +150,12 @@ export default function RequestsList({ requests, employees, actions, isMobile })
           ? (
             <div style={{ ...S.muted, marginTop: 4, fontSize: 12 }}>
               {req.preferredDayPart === "day" ? "Day shifts only" : "Evening shifts only"}
+              {Array.isArray(req.recurringDaysOfWeek) && req.recurringDaysOfWeek.length > 0
+                ? " · " + WEEKDAYS
+                    .filter(function (w) { return req.recurringDaysOfWeek.indexOf(w.key) !== -1; })
+                    .map(function (w) { return w.label; })
+                    .join(", ")
+                : null}
             </div>
           )
           : null}

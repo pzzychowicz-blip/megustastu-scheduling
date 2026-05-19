@@ -5,6 +5,108 @@ an entry. Newest first.
 
 ---
 
+## v1.8.2 — Recurring shift-preference patterns
+
+**Date:** 2026-05-19
+**Behavioural change:** `shift-preference` requests can now be narrowed
+to a recurring weekday list (e.g. "every Sat/Sun in this date range").
+The existing `dateFrom..dateTo` range still bounds the request; the new
+`recurringDaysOfWeek` field (array of WEEKDAYS keys) further restricts
+the request to dates whose weekday is in the list. Empty / missing list
+preserves pre-v1.8.2 behaviour: every date in the range is covered.
+
+Final entry in the v1.8.x generator-polish batch:
+v1.8.0 cross-week + max-cap → v1.8.1 preserve overrides → v1.8.2
+recurring shift-preference.
+
+### What landed
+
+1. **`src/lib/schedule-logic.js`** — `findShiftPreferenceMismatch`
+   extended with an optional weekday-narrowing check. When a request
+   carries a non-empty `recurringDaysOfWeek` array, the matcher
+   computes `weekdayKeyForDate(parseIsoDate(dateIso))` lazily (only
+   when a request in scope has the field set) and skips the request
+   if the date's weekday isn't in the list. Empty / missing list
+   degrades to the legacy "every date in range" path. Function
+   signature is unchanged — all four arguments are positional same
+   as v1.2.0; the new behaviour is driven entirely by the request
+   record's `recurringDaysOfWeek` field. Both the generator's HARD
+   filter and the manual picker's SOFT warning pick it up
+   automatically.
+
+2. **`src/components/RequestFormModal.jsx`** — new "Repeat on
+   weekdays (optional)" picker rendered conditionally beneath the
+   Day/Evening segmented control, only for `type === "shift-preference"`.
+   Seven pill buttons (Mon..Sun) in WEEKDAYS source order, multi-
+   select. The form state tracks `recurringDaysOfWeek` as a JS
+   array; the picker re-sorts on every toggle so the stored array
+   stays in Mon..Sun order regardless of click order (so downstream
+   readers can render labels without re-sorting). Empty list saves
+   as `null` (Firebase reads null as "remove this field" so legacy
+   records stay clean on edit); non-empty list saves as the
+   filtered array. Only the shift-preference type carries the field
+   on save; other types drop it.
+
+3. **`src/components/RequestsList.jsx`** — row secondary line
+   appends "· Sat, Sun" (or whichever days) after the existing "Day
+   shifts only" / "Evening shifts only" label when the request has a
+   non-empty `recurringDaysOfWeek`. WEEKDAYS source order, comma-
+   separated. Legacy requests without the field render unchanged.
+
+4. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.8.1 → 1.8.2,
+   `sha` "preserve-overrides-on-regenerate" → "recurring-shift-preference".
+
+### Data model
+
+```
+/requests/{id} (when type === "shift-preference")
+  → { …existing fields,
+      preferredDayPart: "day" | "evening",
+      recurringDaysOfWeek?: string[] | null   // ["sat","sun"] etc.
+                                              // empty/null = every date
+                                              // in the range
+    }
+```
+
+No migration. Legacy records without the field read as "every date in
+range" via the matcher's null-guard. The field is only persisted when
+the manager picks at least one weekday in the form.
+
+### Verification
+
+- Manual: created a "Mary · Day shifts only · every Sat, Sun · 2026-05-18..2026-08-31"
+  request. The manual picker's yellow warning fires when assigning
+  Mary to a Saturday evening shift in that range, and does NOT fire
+  for a Tuesday evening shift in the same range. Generator skips Mary
+  for Saturday/Sunday evening cells with reason `shift-preference`.
+- Build clean (see bundle size below).
+- HMR happy throughout.
+
+### Bundle size
+
+| Run | Main bundle gz | Modules |
+|---|---|---|
+| pre-v1.8.2 (= v1.8.1) | 162.88 kB | 319 |
+| post-v1.8.2 | 163.21 kB | 319 |
+
+Delta: **+0.33 kB gz** (one new helper conditional in
+`findShiftPreferenceMismatch`, the weekday picker block in
+RequestFormModal, and the secondary-line append in RequestsList).
+
+### Out of scope
+
+- Recurring patterns for `dayoff` and `holiday` requests. Locked
+  decision (session 14 prep): a day-off / holiday is a single
+  scheduled event, not a recurring pattern. If managers need
+  recurring time off (e.g. "every Thursday morning"), it would
+  conceptually be a different request type or a long-running
+  `shift-preference` constraint — defer until asked.
+- Sticky weekday list across modal opens. The form resets to the
+  saved record on edit (or empty for add) per the existing
+  `formFromRequest` path; no "remember last picked weekdays" state.
+
+---
+
 ## v1.8.1 — Preserve overrides on Regenerate
 
 **Date:** 2026-05-19
