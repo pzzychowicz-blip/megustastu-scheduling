@@ -185,7 +185,16 @@ function compareWorklistEntries(a, b, rarity) {
 // week. Two-week totals tend to even out. priorShifts may be `{}` or
 // undefined for the first week or when no history is provided —
 // `countAssignedDates` returns 0 cleanly in both cases.
-function rankCandidates(candidates, currentShifts, priorShifts) {
+//
+// v1.8.1 soft de-prioritization: `prevAssigneeId` (optional) is the
+// employee who held this cell BEFORE the Regenerate wipe cleared it
+// (Preserve assignments OFF). When everything else is tied, that
+// employee sorts AFTER everyone else for THIS cell — so when the
+// manager asks the generator to reshuffle, the deterministic
+// tiebreaker doesn't quietly hand the cell back to the same person.
+// Inserted right above the name tiebreaker so specialists / load /
+// priority decisions still win normally.
+function rankCandidates(candidates, currentShifts, priorShifts, prevAssigneeId) {
   const currentCounts = {};
   const priorCounts = {};
   return candidates.slice().sort(function (a, b) {
@@ -202,6 +211,11 @@ function rankCandidates(candidates, currentShifts, priorShifts) {
     const aCombined = currentCounts[a.id] + priorCounts[a.id];
     const bCombined = currentCounts[b.id] + priorCounts[b.id];
     if (aCombined !== bCombined) return aCombined - bCombined;
+    if (prevAssigneeId) {
+      const aPrev = a.id === prevAssigneeId ? 1 : 0;
+      const bPrev = b.id === prevAssigneeId ? 1 : 0;
+      if (aPrev !== bPrev) return aPrev - bPrev;
+    }
     return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
   });
 }
@@ -380,6 +394,13 @@ function wipeShiftsWithPolicy(workingShifts, slotsByKey, policy) {
   const cleared = [];
   const modified = [];
   const pendingOverrides = {};
+  // v1.8.1 soft de-prioritization: remember which employee held each
+  // cell BEFORE we clear its assignment, keyed by `${dateIso}|${slotKey}`.
+  // Fill-empty's rankCandidates uses this as a final-tier tiebreaker so
+  // the wiped employee sorts to the back of the candidate list for
+  // their own cell. Prevents the deterministic tiebreaker from quietly
+  // handing the cell back to the same person on a "rebalance" run.
+  const previousAssignees = {};
 
   const ids = Object.keys(workingShifts);
   for (let i = 0; i < ids.length; i++) {
@@ -442,11 +463,23 @@ function wipeShiftsWithPolicy(workingShifts, slotsByKey, policy) {
         role: nextRole,
       };
     }
+    // v1.8.1: track who we just unseated so fill-empty can de-prioritize
+    // them. We do this unconditionally (whether or not a time override
+    // was preserved) — the manager's "Preserve assignments OFF" gesture
+    // means they wanted change.
+    if (hasEmployee) {
+      previousAssignees[s.date + "|" + slotKey] = s.employeeId;
+    }
     cleared.push(buildClearedRecord(id, s, slotKey));
     delete workingShifts[id];
   }
 
-  return { cleared: cleared, modified: modified, pendingOverrides: pendingOverrides };
+  return {
+    cleared: cleared,
+    modified: modified,
+    pendingOverrides: pendingOverrides,
+    previousAssignees: previousAssignees,
+  };
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────
@@ -513,11 +546,13 @@ export function generateWeek(args) {
   let clearedRecords = [];
   let modifiedRecords = [];
   let pendingOverrides = {};
+  let previousAssignees = {};
   if (mode === "regenerate") {
     const wipeResult = wipeShiftsWithPolicy(workingShifts, slotsByKey, policy);
     clearedRecords = wipeResult.cleared;
     modifiedRecords = wipeResult.modified;
     pendingOverrides = wipeResult.pendingOverrides;
+    previousAssignees = wipeResult.previousAssignees;
   }
 
   // Build the worklist: every (date, slot) pair on open days where the
@@ -583,7 +618,8 @@ export function generateWeek(args) {
       });
       continue;
     }
-    const ranked = rankCandidates(built.eligible, pendingShifts, priorWeekShifts);
+    const prevAssigneeId = previousAssignees[entry.dateIso + "|" + slot.key];
+    const ranked = rankCandidates(built.eligible, pendingShifts, priorWeekShifts, prevAssigneeId);
     const winner = ranked[0];
 
     // v1.8.1: if the wipe-pass preserved a time/role override for this
