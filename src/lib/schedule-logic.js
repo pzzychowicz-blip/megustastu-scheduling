@@ -407,12 +407,19 @@ export function findRequestConflict(requestsMap, employeeId, dateIso) {
 // it's a mismatch — HARD block in the generator, SOFT warning in the
 // manual picker.
 //
+// v1.8.2: optional `recurringDaysOfWeek` array narrows the range to
+// specific weekdays. Empty / missing list → every date in the range
+// (legacy behaviour preserved). Non-empty list → only dates whose
+// weekday key is in the list count; other dates in the range are NOT
+// covered by the request.
+//
 // Returns the FIRST mismatching request, or null. A matching preference
 // request (preferredDayPart === dayPart) returns null too — the request
 // is satisfied, no conflict.
 export function findShiftPreferenceMismatch(requestsMap, employeeId, dateIso, dayPart) {
   if (!employeeId || !dateIso || !dayPart) return null;
   const all = Object.values(requestsMap || {});
+  let weekdayKey = null; // computed lazily — most calls don't reach the recurring branch
   for (let i = 0; i < all.length; i++) {
     const r = all[i];
     if (r.employeeId !== employeeId) continue;
@@ -420,6 +427,13 @@ export function findShiftPreferenceMismatch(requestsMap, employeeId, dateIso, da
     if (!r.preferredDayPart) continue; // defensive: malformed request → skip
     if (!r.dateFrom || !r.dateTo) continue;
     if (r.dateFrom <= dateIso && dateIso <= r.dateTo) {
+      // v1.8.2: weekday narrowing. Skip if the request specifies a
+      // recurring weekday list and this date's weekday isn't in it.
+      const recurring = Array.isArray(r.recurringDaysOfWeek) ? r.recurringDaysOfWeek : null;
+      if (recurring && recurring.length > 0) {
+        if (weekdayKey === null) weekdayKey = weekdayKeyForDate(parseIsoDate(dateIso));
+        if (recurring.indexOf(weekdayKey) === -1) continue;
+      }
       if (r.preferredDayPart !== dayPart) return r;
     }
   }

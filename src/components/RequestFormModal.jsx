@@ -25,13 +25,17 @@
 //   AND dateTo >= dateFrom (lexicographic compare on "YYYY-MM-DD" works).
 
 import { useEffect, useState } from "react";
-import { S, BTN, REQUEST_TYPES } from "../lib/constants.js";
+import { S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn } from "./atoms.jsx";
 
 // ── Defaults ─────────────────────────────────────────────────────────────
 // v1.2.0: `preferredDayPart` ("day" | "evening" | "") only meaningful when
 // type === "shift-preference". For other types the field is dropped on
 // save and ignored on read.
+// v1.8.2: `recurringDaysOfWeek` (array of WEEKDAYS keys) also only
+// meaningful for shift-preference. Empty list = every date in the range
+// (legacy behaviour). Non-empty list = only those weekdays inside the
+// range are covered.
 function emptyForm() {
   return {
     employeeId: "",
@@ -39,6 +43,7 @@ function emptyForm() {
     dateFrom: "",
     dateTo: "",
     preferredDayPart: "day",
+    recurringDaysOfWeek: [],
     notes: "",
   };
 }
@@ -51,6 +56,9 @@ function formFromRequest(req) {
     dateFrom: req.dateFrom || "",
     dateTo: req.dateTo || "",
     preferredDayPart: req.preferredDayPart || "day",
+    recurringDaysOfWeek: Array.isArray(req.recurringDaysOfWeek)
+      ? req.recurringDaysOfWeek.slice()
+      : [],
     notes: req.notes || "",
   };
 }
@@ -92,6 +100,25 @@ export default function RequestFormModal({
     });
   }
 
+  // v1.8.2: weekday pill toggle for the recurring shift-preference picker.
+  // Preserves WEEKDAYS source order in the stored array so the row renders
+  // Mon..Sun consistently regardless of click order.
+  function toggleRecurringDay(key) {
+    setForm(function (prev) {
+      const current = prev.recurringDaysOfWeek || [];
+      const idx = current.indexOf(key);
+      let next;
+      if (idx === -1) {
+        next = WEEKDAYS
+          .map(function (w) { return w.key; })
+          .filter(function (k) { return current.indexOf(k) !== -1 || k === key; });
+      } else {
+        next = current.filter(function (k) { return k !== key; });
+      }
+      return { ...prev, recurringDaysOfWeek: next };
+    });
+  }
+
   // ── Validation ───────────────────────────────────────────────────────
   // v1.2.0: shift-preference requires a preferredDayPart (Day or Evening).
   // Default is "day" so the field is always populated; the explicit check
@@ -117,8 +144,17 @@ export default function RequestFormModal({
       notes: notesTrimmed || null,
     };
     // v1.2.0: only attach preferredDayPart for the shift-preference type.
+    // v1.8.2: same for recurringDaysOfWeek — only stored when the type
+    // supports it AND the manager actually picked weekdays. Empty list
+    // is saved as null (Firebase reads null as "remove this field") so
+    // legacy records without the field stay backwards-compatible on
+    // read and the matcher's "no weekdays = every date" path kicks in.
     if (form.type === "shift-preference") {
       payload.preferredDayPart = form.preferredDayPart;
+      const recurring = (form.recurringDaysOfWeek || []).filter(function (k) {
+        return WEEKDAYS.some(function (w) { return w.key === k; });
+      });
+      payload.recurringDaysOfWeek = recurring.length > 0 ? recurring : null;
     }
     onSave(payload);
   }
@@ -223,6 +259,44 @@ export default function RequestFormModal({
     )
     : null;
 
+  // v1.8.2: recurring weekday narrowing. Empty selection (default) means
+  // "every date in the range" — matches pre-v1.8.2 behaviour. Picking
+  // weekdays narrows the request to those days only (e.g. "every Sat/Sun
+  // in this range").
+  const recurringDaysPicker = form.type === "shift-preference"
+    ? (
+      <Fld label="Repeat on weekdays (optional)">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {WEEKDAYS.map(function (w) {
+            const on = (form.recurringDaysOfWeek || []).indexOf(w.key) !== -1;
+            return (
+              <button
+                key={w.key}
+                type="button"
+                onClick={function () { toggleRecurringDay(w.key); }}
+                style={{
+                  ...BTN.base,
+                  padding: "6px 12px",
+                  fontSize: 13,
+                  borderRadius: 8,
+                  background: on ? "var(--accent)" : "var(--bg-segment-strong)",
+                  color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+                  border: "1px solid transparent",
+                }}
+              >
+                {w.label}
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
+          Leave empty to cover every date in the range. Pick weekdays to
+          restrict the preference to those days only (e.g. "every Sat/Sun").
+        </p>
+      </Fld>
+    )
+    : null;
+
   const dateError = (form.dateFrom && form.dateTo && form.dateTo < form.dateFrom)
     ? (
       <p style={{ ...S.muted, color: "var(--text-danger)", fontSize: 12, marginTop: -4 }}>
@@ -258,6 +332,8 @@ export default function RequestFormModal({
       </Fld>
 
       {dayPartSegments}
+
+      {recurringDaysPicker}
 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>

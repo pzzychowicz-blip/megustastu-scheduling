@@ -114,10 +114,10 @@ separate Firebase project, same UI conventions).
   Visual cues: zero count → muted; under quota → soft accent tint;
   at/over → neutral. Reads from `employees` + `weekShifts` — no new
   state.
-- **Shift-preference request type (v1.2.0):** new entry in
-  `REQUEST_TYPES` (`key: "shift-preference"`). Constrains an
-  employee to ONE dayPart (Day or Evening) on the given dates via a
-  new `preferredDayPart: "day" | "evening"` field on the request
+- **Shift-preference request type (v1.2.0, recurring v1.8.2):** new
+  entry in `REQUEST_TYPES` (`key: "shift-preference"`). Constrains
+  an employee to ONE dayPart (Day or Evening) on the given dates via
+  a new `preferredDayPart: "day" | "evening"` field on the request
   record. `findRequestConflict` is now type-guarded to dayoff /
   holiday only; the new `findShiftPreferenceMismatch` handles the
   dayPart-scoped check. Enforcement: **HARD** in the generator
@@ -126,6 +126,20 @@ separate Firebase project, same UI conventions).
   picker (yellow warning banner, manager judgment wins). The form
   modal renders a Day / Evening segmented control conditionally
   when type === `shift-preference`.
+  **v1.8.2 recurring extension:** optional `recurringDaysOfWeek`
+  array (WEEKDAYS keys, e.g. `["sat","sun"]`) on the request record
+  narrows the date range to specific weekdays. Empty / missing list
+  preserves pre-v1.8.2 behaviour (every date in range). Non-empty
+  list = only dates whose weekday is in the list count — other
+  dates in the range are NOT covered by the request. RequestFormModal
+  renders a 7-pill multi-select beneath the Day/Evening segmented
+  control, only when type === `shift-preference`; the form re-sorts
+  the array on every toggle so the stored value stays in Mon..Sun
+  order. RequestsList appends the picked weekdays (Mon..Sun order,
+  comma-separated) after the existing "Day shifts only" / "Evening
+  shifts only" label on each row. Only `shift-preference` requests
+  carry the field — `dayoff` / `holiday` remain pure date ranges
+  (locked session 14: those are single events, not patterns).
 - **At least 2 consecutive days off (v1.2.0, cross-week v1.8.0):** labor
   wellness rule.
   `hasConsecutiveDaysOff(employeeId, weekStart, shiftsMap, n=2, options)`
@@ -481,6 +495,8 @@ megustastu-scheduling/
     │                                 "cross-week-consec-and-max-cap".
     │                                 v1.8.1: → 1.8.1, sha
     │                                 "preserve-overrides-on-regenerate".
+    │                                 v1.8.2: → 1.8.2, sha
+    │                                 "recurring-shift-preference".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -606,6 +622,18 @@ megustastu-scheduling/
     │   │                           (false) — opposite conservative
     │   │                           direction from
     │   │                           hasConsecutiveDaysOff.
+    │   │                           v1.8.2: findShiftPreferenceMismatch
+    │   │                           reads request.recurringDaysOfWeek
+    │   │                           when present. Non-empty array
+    │   │                           narrows the date range to specific
+    │   │                           weekdays (weekdayKeyForDate +
+    │   │                           parseIsoDate, lazy lookup). Empty /
+    │   │                           missing list keeps pre-v1.8.2
+    │   │                           "every date in range" behaviour.
+    │   │                           Signature unchanged. Both the
+    │   │                           generator HARD filter and the
+    │   │                           picker SOFT warning inherit the
+    │   │                           new check automatically.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -794,6 +822,13 @@ megustastu-scheduling/
         │                           v1.2.0: row renders a secondary line
         │                           "Day shifts only" / "Evening shifts
         │                           only" for shift-preference requests.
+        │                           v1.8.2: when a shift-preference row
+        │                           has a non-empty recurringDaysOfWeek,
+        │                           the secondary line appends "· Sat,
+        │                           Sun" (or whichever days, in WEEKDAYS
+        │                           source order, comma-separated).
+        │                           Legacy rows without the field render
+        │                           unchanged.
         ├── RequestFormModal.jsx    add/edit day-off / holiday modal.
         │                           v1.2.0: + Day/Evening segmented
         │                           sub-choice (preferredDayPart) when
@@ -801,6 +836,20 @@ megustastu-scheduling/
         │                           Validation requires a dayPart for
         │                           the new type. Other types ignore
         │                           the field on save.
+        │                           v1.8.2: + "Repeat on weekdays
+        │                           (optional)" 7-pill multi-select
+        │                           rendered conditionally beneath the
+        │                           Day/Evening control, only for
+        │                           type === "shift-preference". State
+        │                           tracks recurringDaysOfWeek as an
+        │                           array; toggle handler re-sorts to
+        │                           WEEKDAYS source order on every flip
+        │                           so the stored value is canonical
+        │                           Mon..Sun. Save: empty list → field
+        │                           saved as null (Firebase removes it);
+        │                           non-empty → filtered array. Only
+        │                           shift-preference carries the field
+        │                           on save; other types drop it.
         ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile).
         │                           v0.10.2: date pill row (today
         │                           highlighted), centred banded section
@@ -1188,6 +1237,11 @@ src/
       dateFrom, dateTo,
       preferredDayPart?: "day"|"evening",  // v1.2.0 — only for
                                             // shift-preference type
+      recurringDaysOfWeek?: string[] | null, // v1.8.2 — only for
+                                              // shift-preference. WEEKDAYS
+                                              // keys, e.g. ["sat","sun"].
+                                              // Empty / null = every date
+                                              // in [dateFrom..dateTo].
       notes? }
 
 /settings
