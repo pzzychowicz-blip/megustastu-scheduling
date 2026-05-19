@@ -5,15 +5,30 @@ an entry. Newest first.
 
 ---
 
-## v1.8.0 — Cross-week consecutive-off
+## v1.8.0 — Cross-week consecutive-off + max-consecutive-working-days cap
 
-**Date:** 2026-05-18
-**Behavioural change:** The "at least 2 consecutive days off" wellness
-rule (v1.2.0) gains cross-week awareness. A Sun-off employee with the
-next Mon also off now correctly counts as having 2 consecutive off days.
-Symmetrically, prior-Sun off + Mon off counts too. Generator (HARD) and
-manual picker (SOFT yellow warning) both pick up the extension; Swap
-mechanic still skips the rule per the v1.7.0 decision.
+**Date:** 2026-05-19
+**Behavioural change (two coordinated rules):**
+
+1. The "at least 2 consecutive days off" wellness rule (v1.2.0) gains
+   cross-week awareness. A Sun-off employee with the next Mon also off
+   now correctly counts as having 2 consecutive off days. Symmetrically,
+   prior-Sun off + Mon off counts too. Generator (HARD) and manual
+   picker (SOFT yellow warning) both pick up the extension; Swap
+   mechanic still skips the rule per the v1.7.0 decision.
+2. A companion **max 5 consecutive working days** rule. The 2-off rule
+   alone is per-calendar-week and can be satisfied by rest at the
+   *edges* of two adjacent weeks — e.g. week 1 Mon–Tue off + Wed–Sun
+   work, then week 2 Mon–Fri work + Sat–Sun off → 10 consecutive
+   working days, each week independently passing the 2-off rule. This
+   came up in Patryk's first DEV smoke test of the original v1.8.0
+   work; the bug was the rule's per-week framing, not the v1.8.0
+   cross-week extension itself. Companion helper
+   `withinMaxConsecutiveWorkingDays(empId, weekStart, shiftsMap,
+   max=5, options)` scans a 21-day window [prior, focus, next] and
+   rejects any run > max that overlaps the focus week. HARD in the
+   generator (`buildCandidates` step 6.5, reason `"max-consecutive"`),
+   SOFT yellow warning in the picker (stacked after the 2-off banner).
 
 First entry in a planned three-version generator-polish batch:
 v1.8.0 cross-week → v1.8.1 preserve overrides on Regenerate →
@@ -33,14 +48,24 @@ branch per the one-version-per-branch rule.
    count only when they overlap indices 1..7 (the focus week) — a
    prior-Sat–Sun-off pattern with the focus week fully worked is
    correctly dropped (that rest happened last week).
+   Companion export: `withinMaxConsecutiveWorkingDays(empId,
+   weekStart, shiftsMap, max=5, options)`. Computes a 21-cell working
+   pattern across [prior week, focus week, next week]; rejects when
+   any run > max overlaps the focus week (indices 7..13). Missing
+   adjacent-week maps default cells to OFF — opposite conservative
+   direction from `hasConsecutiveDaysOff` (here we avoid
+   over-reporting long runs).
 2. **`src/lib/generator.js`** — `generateWeek` accepts a new
    `nextWeekShifts` arg parallel to `priorWeekShifts`. Both are
    bundled into a single `crossWeekShifts` object threaded through
    `buildCandidates` (additional positional arg at the tail). The
    step-6 consecutive-off filter forwards `crossWeekShifts` into
-   `hasConsecutiveDaysOff`. Algorithm otherwise byte-identical —
-   ordering, ranking, quota, request and preference filters
-   unchanged.
+   `hasConsecutiveDaysOff`. New step 6.5 filter calls
+   `withinMaxConsecutiveWorkingDays` with the same bag and reason
+   code `"max-consecutive"`. Step 7's preference filter now reads
+   from `cappedOk` (the new gate's output) instead of `restedOk`.
+   Algorithm otherwise byte-identical — ordering, ranking, quota,
+   request and preference filters unchanged.
 3. **`src/components/ScheduleGrid.jsx`** — added a `nextWeekShifts`
    memo via `shiftsForWeek(shifts, addDays(weekStart, 7))`, sitting
    next to the existing `priorWeekShifts` memo. Threaded into
@@ -52,64 +77,91 @@ branch per the one-version-per-branch rule.
    `priorWeekShifts` and `nextWeekShifts` as new optional props,
    passes them into `hasConsecutiveDaysOff` via the v1.8.0 options
    bag. The yellow rest-warning banner now fires/clears on cross-week
-   2-off straddles. No UI change.
-6. **`src/App.jsx`** — `__APP_SIGNATURE__` bumped to `1.8.0`,
-   sha `"cross-week-consecutive-off"`.
-7. **`CLAUDE.md`** — locked-decision entry under the v1.2.0
-   consecutive-off rule extended with the v1.8.0 cross-week note +
-   file-structure annotations for the six modified files.
-8. **`REFACTOR_LOG.md`** — this entry.
+   2-off straddles. Companion `maxConsecutiveBanner` — second yellow
+   warning (same palette/style) stacked after the 2-off banner; fires
+   when the proposed assignment would create > 5 consecutive working
+   days across [prior, focus, next].
+6. **`src/lib/constants.js`** — `GENERATOR_REASONS` gains
+   `"max-consecutive"` → "Would exceed the max consecutive
+   working-days cap for every candidate". Shown in
+   `GenerateResultsModal` for cells the new gate left unfilled.
+7. **`src/App.jsx`** — `__APP_SIGNATURE__` bumped to `1.8.0`,
+   sha `"cross-week-consec-and-max-cap"`.
+8. **`CLAUDE.md`** — locked-decision entries for both rules +
+   file-structure annotations for the seven modified files.
+9. **`REFACTOR_LOG.md`** — this entry.
 
-### Line delta (approx)
+### Line delta (approx, both rules combined)
 
 | File | Delta |
 |---|---|
-| `src/lib/schedule-logic.js` | +50 / −15 (helper rewrite) |
-| `src/lib/generator.js` | +12 / −3 |
+| `src/lib/schedule-logic.js` | +120 / −15 (new helper + extended one) |
+| `src/lib/generator.js` | +30 / −5 |
+| `src/lib/constants.js` | +1 / 0 |
 | `src/components/ScheduleGrid.jsx` | +9 / 0 |
 | `src/components/GenerateButton.jsx` | +6 / −1 |
-| `src/components/ShiftFormModal.jsx` | +14 / −2 |
+| `src/components/ShiftFormModal.jsx` | +30 / −2 |
 | `src/App.jsx` | +2 / −2 |
-| `CLAUDE.md` | +60 / −6 |
+| `CLAUDE.md` | +110 / −7 |
 
 ### Build size impact
 
-- Pre v1.8.0: main bundle 161.32 kB gz, 319 modules.
-- v1.8.0: main bundle **161.61 kB gz** (+0.29 kB), 319 modules
-  (unchanged — no new files).
+- Pre v1.8.0 (production v1.7.0): main bundle 161.32 kB gz, 319 modules.
+- v1.8.0 first commit (cross-week only): 161.61 kB gz (+0.29 kB).
+- v1.8.0 final (both rules): **161.92 kB gz** (+0.60 kB total), 319
+  modules (unchanged — no new files; helpers added to existing
+  schedule-logic.js).
 
 ### Verification (intended; Patryk runs in DEV)
 
-- Manual picker: open a Sun cell on a week where the employee already
-  works Mon–Sat and is off next Mon → yellow warning should NOT fire
-  (Sun-off + next-Mon-off straddle satisfies the rule). Assign Anna to
-  next Mon as well, retry → warning fires.
-- Generator Fill-empty: with the same setup, ensure the generator
-  doesn't pick the over-loaded employee for the Sun cell when their
-  cross-week 2-off would be broken.
-- Regression: in-week 2-off (e.g. Tue + Wed off) still satisfies the
-  rule. Fragmented off-days (no 2-off run anywhere in focus +
-  boundaries) still fire the warning.
+- **Cross-week 2-off rule:** Manual picker, employee assigned Mon–Sat
+  this week and no shift next Mon → open Sun cell, pick them →
+  rest-warning should NOT fire (Sun + next Mon straddle satisfies).
+  Assign them to next Mon too, retry → warning fires.
+- **Max-consecutive-working-days rule:** Manual picker, employee
+  assigned Wed–Sun of prior week → open Mon of focus week, pick them
+  → max-consecutive warning fires (would be day 6 in a row).
+  Generator with the same prior-week state → won't auto-pick this
+  employee for Mon (or any subsequent day that pushes them past 5
+  consecutive). With prior-week empty, generator stops auto-picking
+  this employee after they've worked 5 consecutive days in focus
+  week.
+- **Regression:** Employee with isolated 1-day offs or a clean 5-on /
+  2-off pattern in a single week → both rules satisfied, no warnings,
+  generator picks normally.
+- **Regenerate end-to-end:** Run Regenerate on a 2-week stretch where
+  the previous attempt produced 10-in-a-row. Confirm the new run
+  redistributes shifts so no employee exceeds 5 consecutive.
 
 ### Key design decisions
 
-- **Default boundary days to "worked".** Without authoritative
-  cross-week data, the helper falls back to the pre-v1.8.0
-  Mon..Sun-only result rather than artificially extending boundary
-  runs. Safer toward false-negatives on the wellness check — a
-  silently-extended run could mask a real rest gap if the boundary
-  day was actually worked.
-- **Runs must touch the focus week.** A 2-off run entirely in the
-  prior or next week shouldn't count toward "rested *this* week".
-  Implementation: track `runStart`; only accept a run if
-  `runStart <= 7 && runEnd >= 1` (intersects indices 1..7).
+- **Default boundary days to "worked" for the 2-off rule.** Without
+  authoritative cross-week data, `hasConsecutiveDaysOff` falls back to
+  the pre-v1.8.0 Mon..Sun-only result rather than artificially
+  extending boundary runs. Safer toward false-negatives on the
+  wellness check — a silently-extended run could mask a real rest gap
+  if the boundary day was actually worked.
+- **Default boundary days to "off" for the max-cap rule.** Opposite
+  conservative direction: without authoritative data we don't want to
+  over-report long working runs. The two helpers' fallbacks point in
+  opposite directions because their failure modes do.
+- **Runs must touch the focus week.** A run entirely in the prior or
+  next week shouldn't count — that's manager state from earlier
+  decisions, not what this proposal is creating. Both helpers
+  implement the same "must overlap focus week indices" check.
 - **Pass cross-week shifts as a bag.** `buildCandidates` gains one
   positional arg (`crossWeekShifts`) rather than two (`priorWeekShifts,
-  nextWeekShifts`). Future cross-week-aware filters can reuse the bag
-  without further signature churn.
+  nextWeekShifts`). The same bag drives both step-6 (2-off) and
+  step-6.5 (max-cap) filters. Future cross-week-aware filters reuse
+  it without further signature churn.
 - **Swap mechanic untouched.** Per v1.7.0, swap doesn't enforce the
-  consecutive-off rule (manager judgment wins). Cross-week extension
-  doesn't change that — consistent.
+  consecutive-off rule (manager judgment wins). Same applies to the
+  new max-cap rule. Consistent across both wellness checks.
+- **Cap value (5) hard-coded for now.** Could become a Settings
+  toggle later. v1 default matches "≥1 rest day in every 6-day
+  stretch" interpretation of typical labour-law guidance for
+  restaurant work; combined with the 2-off rule, gives a strong
+  wellness floor.
 
 ---
 

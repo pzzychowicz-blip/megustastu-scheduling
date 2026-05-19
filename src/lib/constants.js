@@ -308,6 +308,7 @@ export const GENERATOR_REASONS = Object.freeze({
   "all-conflicted": "All eligible staff are already on another shift that day",
   "all-at-quota": "All eligible staff have reached their working-days quota",
   "no-2-off": "Would break the 2-consecutive-days-off rule for every candidate",
+  "max-consecutive": "Would exceed the max consecutive working-days cap for every candidate",
   "preference": "No staff with matching shift preference (Hard mode)",
   // Cleared (v1.7.0 Regenerate wipe — every record gets this one reason)
   "regenerated": "Cleared for regeneration",

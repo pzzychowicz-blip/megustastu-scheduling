@@ -48,6 +48,7 @@ import {
   findRequestConflict,
   findShiftPreferenceMismatch,
   hasConsecutiveDaysOff,
+  withinMaxConsecutiveWorkingDays,
   isSlotOpenOnDate,
   daysOffInWeekByEmployee,
   roleMatchesSlot,
@@ -292,14 +293,31 @@ function buildCandidates(
   });
   if (restedOk.length === 0) return { eligible: [], reason: "no-2-off" };
 
+  // (6.5) v1.8.0: max consecutive working days — HARD block. The 2-off rule
+  // above is per-calendar-week and can be satisfied by rest at the EDGES
+  // of two adjacent weeks (e.g. week 1 Mon-Tue off + Wed-Sun work, then
+  // week 2 Mon-Fri work + Sat-Sun off → 10 days straight, each week
+  // independently passes). This filter caps the maximum stretch at 5
+  // working days across the 21-day window [prior, focus, next], so an
+  // employee gets a rest day at least every 6 days.
+  const cappedOk = restedOk.filter(function (e) {
+    const simKey = "__sim_" + e.id;
+    const sim = {
+      ...currentShifts,
+      [simKey]: { employeeId: e.id, date: dateIso, id: simKey },
+    };
+    return withinMaxConsecutiveWorkingDays(e.id, weekStart, sim, undefined, crossWeekShifts);
+  });
+  if (cappedOk.length === 0) return { eligible: [], reason: "max-consecutive" };
+
   // (7) Preference. Hard mode = filter and stop; Soft mode = filter, but
-  // fall back to `restedOk` if the preferred set is empty.
-  const prefOk = restedOk.filter(function (e) {
+  // fall back to `cappedOk` if the preferred set is empty.
+  const prefOk = cappedOk.filter(function (e) {
     return preferenceMatches(e, slotDef);
   });
   if (prefOk.length > 0) return { eligible: prefOk, reason: null };
   if (strictPreference) return { eligible: [], reason: "preference" };
-  return { eligible: restedOk, reason: null };
+  return { eligible: cappedOk, reason: null };
 }
 
 // ── Regenerate wipe-pass (v1.7.0) ────────────────────────────────────────

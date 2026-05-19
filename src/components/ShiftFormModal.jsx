@@ -61,6 +61,7 @@ import {
   findSameDayShift,
   findShiftPreferenceMismatch,
   hasConsecutiveDaysOff,
+  withinMaxConsecutiveWorkingDays,
 } from "../lib/schedule-logic.js";
 
 // Lookup once per render — REQUEST_TYPES is small.
@@ -365,6 +366,7 @@ export default function ShiftFormModal({
   // v1.8.0 threads priorWeekShifts + nextWeekShifts into the helper so a
   // Sun-off + next-Mon-off straddle counts as 2 consecutive off days.
   let restWarning = false;
+  let maxConsecutiveWarning = false;
   if (form.employeeId) {
     const weekStart = startOfWeek(parseIsoDate(dateIso));
     const sim = { ...weekShifts };
@@ -374,10 +376,16 @@ export default function ShiftFormModal({
       employeeId: form.employeeId,
       date: dateIso,
     };
-    restWarning = !hasConsecutiveDaysOff(form.employeeId, weekStart, sim, undefined, {
+    const opts = {
       priorWeekShifts: priorWeekShifts,
       nextWeekShifts: nextWeekShifts,
-    });
+    };
+    restWarning = !hasConsecutiveDaysOff(form.employeeId, weekStart, sim, undefined, opts);
+    // v1.8.0 amendment: companion wellness check — max 5 consecutive
+    // working days across the 21-day [prior, focus, next] window.
+    maxConsecutiveWarning = !withinMaxConsecutiveWorkingDays(
+      form.employeeId, weekStart, sim, undefined, opts
+    );
   }
 
   const warningBoxStyle = {
@@ -418,6 +426,15 @@ export default function ShiftFormModal({
         ⚠ Saving this would leave this employee without 2 consecutive
         days off this calendar week. You can still save; this is just a
         warning.
+      </div>
+    )
+    : null;
+
+  const maxConsecutiveBanner = maxConsecutiveWarning
+    ? (
+      <div style={warningBoxStyle}>
+        ⚠ Saving this would put this employee at more than 5 consecutive
+        working days. You can still save; this is just a warning.
       </div>
     )
     : null;
@@ -496,6 +513,7 @@ export default function ShiftFormModal({
         {conflictBanner}
         {prefMismatchBanner}
         {restWarningBanner}
+        {maxConsecutiveBanner}
         {saveErrorBanner}
       </Fld>
 

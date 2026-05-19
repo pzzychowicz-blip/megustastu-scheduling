@@ -572,6 +572,74 @@ export function hasConsecutiveDaysOff(employeeId, weekStart, shiftsMap, minConse
   return false;
 }
 
+// ── Max consecutive working days (v1.8.0 amendment) ──────────────────────
+// Labour wellness rule (companion to hasConsecutiveDaysOff): a single
+// employee must never be scheduled for more than `max` consecutive
+// working days. Default cap = 5, so an employee gets a rest day at
+// least every 6 days. Catches the "rest at the edges of two weeks"
+// pattern that the per-calendar-week 2-off rule misses (e.g. Wed–Sun
+// of week 1 + Mon–Fri of week 2 = 10 days straight, each week
+// independently passes the 2-off rule, but the combined stretch is
+// unhealthy).
+//
+// Window: 21 days = [prior Mon..Sun, focus Mon..Sun, next Mon..Sun].
+// We compute working booleans across the full window, find the
+// longest run of `true` cells, and reject the proposal if any run
+// > max overlaps the focus week (indices 7..13). Pre-existing
+// long runs entirely outside the focus week aren't this proposal's
+// problem to fix — they're the manager's state from earlier.
+//
+// Missing prior/next week maps default the adjacent cells to FALSE
+// (not working). Conservative direction here is opposite to
+// hasConsecutiveDaysOff: we don't want to over-report long runs
+// when we lack data.
+export function withinMaxConsecutiveWorkingDays(employeeId, weekStart, shiftsMap, max, options) {
+  if (!employeeId || !weekStart) return true;
+  const cap = max == null ? 5 : max;
+  const opts = options || {};
+
+  // 21 cells, all default to false (= off).
+  const isWorking = new Array(21).fill(false);
+
+  const priorStart = addDays(weekStart, -7);
+  const nextStart = addDays(weekStart, 7);
+  const dateToIndex = {};
+  for (let i = 0; i < 7; i++) {
+    dateToIndex[isoDate(addDays(priorStart, i))] = i;
+    dateToIndex[isoDate(addDays(weekStart, i))] = i + 7;
+    dateToIndex[isoDate(addDays(nextStart, i))] = i + 14;
+  }
+
+  function ingest(map) {
+    if (!map) return;
+    const all = Object.values(map);
+    for (let i = 0; i < all.length; i++) {
+      const s = all[i];
+      if (!s || s.employeeId !== employeeId) continue;
+      const idx = dateToIndex[s.date];
+      if (idx === undefined) continue;
+      isWorking[idx] = true;
+    }
+  }
+  ingest(opts.priorWeekShifts);
+  ingest(shiftsMap);
+  ingest(opts.nextWeekShifts);
+
+  // Scan for any run of working > cap that overlaps focus week (7..13).
+  let run = 0;
+  let runStart = -1;
+  for (let i = 0; i < 21; i++) {
+    if (isWorking[i]) {
+      if (run === 0) runStart = i;
+      run++;
+      if (run > cap && runStart <= 13 && i >= 7) return false;
+    } else {
+      run = 0;
+    }
+  }
+  return true;
+}
+
 // ── Convenience: filter shifts by week ───────────────────────────────────
 // Returns only shift records whose `date` falls within [startDate, startDate+6].
 // Useful for the week view — keeps prop sizes small if the DB grows large.

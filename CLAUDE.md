@@ -150,6 +150,25 @@ separate Firebase project, same UI conventions).
   consecutive-off enforcement there no longer exists — Regenerate now
   wipes the week and refills under the new cross-week rule from
   scratch.
+- **Max consecutive working days = 5 (v1.8.0 companion rule):** the
+  per-calendar-week 2-off rule above can be satisfied by rest at the
+  *edges* of two adjacent weeks (e.g. week 1 Mon–Tue off + Wed–Sun
+  work, then week 2 Mon–Fri work + Sat–Sun off → 10 days straight,
+  each week independently passes). The companion helper
+  `withinMaxConsecutiveWorkingDays(empId, weekStart, shiftsMap, max=5,
+  options)` in `schedule-logic.js` plugs this gap. It scans a 21-day
+  window `[prior week, focus week, next week]`, finds runs of
+  consecutive working days, and rejects any run > max that overlaps
+  the focus week (indices 7..13). Pre-existing long runs entirely
+  outside the focus week aren't this proposal's problem — manager
+  state from earlier decisions stays intact. **HARD** in the
+  generator (`buildCandidates` step 6.5, reason `"max-consecutive"`).
+  **SOFT** in the manual picker — yellow warning banner stacked
+  after the 2-off banner. Swap mechanic skips this rule, matching
+  the 2-off rule's swap behaviour. Missing prior/next week maps
+  default boundary cells to *off* (false) — conservative direction
+  here is the OPPOSITE of `hasConsecutiveDaysOff` (avoid
+  over-reporting long runs when we lack data).
 - **Conflict semantics (revised v0.8.0):**
   - **Same-date double-booking is a HARD block.** A single employee
     cannot hold two shifts on the same date (covers day + evening on
@@ -438,7 +457,7 @@ megustastu-scheduling/
     │                                 v1.7.0: → 1.7.0, sha
     │                                 "swap-highlight-regen-priority".
     │                                 v1.8.0: → 1.8.0, sha
-    │                                 "cross-week-consecutive-off".
+    │                                 "cross-week-consec-and-max-cap".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -499,6 +518,11 @@ megustastu-scheduling/
     │   │                           fixed-days, same-day-dup, over-quota)
     │   │                           were removed. + "regenerated" entry
     │   │                           labelled "Cleared for regeneration".
+    │   │                           v1.8.0: + "max-consecutive" entry
+    │   │                           emitted when every candidate would
+    │   │                           exceed the 5-day cap of the new
+    │   │                           withinMaxConsecutiveWorkingDays
+    │   │                           filter at buildCandidates step 6.5.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -548,6 +572,17 @@ megustastu-scheduling/
     │   │                           boundary days to "worked" — safe
     │   │                           fallback that degrades to the
     │   │                           pre-v1.8.0 Mon..Sun-only scan.
+    │   │                           v1.8.0 (companion):
+    │   │                           + withinMaxConsecutiveWorkingDays(
+    │   │                           empId, weekStart, shiftsMap, max=5,
+    │   │                           options). Scans a 21-day window
+    │   │                           [prior, focus, next]; rejects when
+    │   │                           any run of working days > max
+    │   │                           overlaps the focus week. Missing
+    │   │                           prior/next maps default to OFF
+    │   │                           (false) — opposite conservative
+    │   │                           direction from
+    │   │                           hasConsecutiveDaysOff.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -663,6 +698,16 @@ megustastu-scheduling/
     │                               otherwise byte-identical;
     │                               buildCandidates gains one positional
     │                               arg at the tail.
+    │                               v1.8.0 (companion): + new step 6.5
+    │                               filter calling
+    │                               withinMaxConsecutiveWorkingDays
+    │                               with the same crossWeekShifts bag.
+    │                               Reason code "max-consecutive" for
+    │                               cells where every candidate would
+    │                               exceed the 5-day cap. Step 7's
+    │                               preference filter now reads from
+    │                               cappedOk (the new gate's output)
+    │                               instead of restedOk.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -843,7 +888,13 @@ megustastu-scheduling/
         │                           via the v1.8.0 options bag so the
         │                           yellow rest-warning fires/clears on
         │                           cross-week 2-off straddles
-        │                           (Sun ↔ next-Mon).
+        │                           (Sun ↔ next-Mon). + companion
+        │                           maxConsecutiveBanner — yellow
+        │                           warning stacked after the 2-off
+        │                           banner when the proposed assignment
+        │                           would create > 5 consecutive
+        │                           working days (across the 21-day
+        │                           [prior, focus, next] window).
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
