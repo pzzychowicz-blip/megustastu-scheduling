@@ -50,7 +50,6 @@ import SwapButton from "./SwapButton.jsx";
 import WeeklyShiftSummary from "./WeeklyShiftSummary.jsx";
 import WeeklyRequestsPreview from "./WeeklyRequestsPreview.jsx";
 import GenerateResultsModal from "./GenerateResultsModal.jsx";
-import RequestFormModal from "./RequestFormModal.jsx";
 
 // Section row dividers (visual grouping in the desktop grid).
 function isSectionBoundary(prevSlot, slot) {
@@ -153,28 +152,6 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   }
   function closeModal() { setModalCell(null); }
 
-  // ── Request edit modal (v1.9.0) ──────────────────────────────────────
-  // Opens above the grid when the manager clicks a chip in
-  // WeeklyRequestsPreview. Same Overlay pattern as ShiftFormModal /
-  // GenerateConfirmModal — one shared blur surface, the modal owns the
-  // edit form. State double-duty: `editingRequest !== null` is the open
-  // flag and the request payload at the same time.
-  const [editingRequest, setEditingRequest] = useState(null);
-  function openRequestEdit(requestId) {
-    const req = requests ? requests[requestId] : null;
-    if (!req) return; // request was deleted between renders; quiet no-op
-    setEditingRequest(req);
-  }
-  function closeRequestEdit() { setEditingRequest(null); }
-  function handleRequestSave(payload) {
-    actions.upsertRequest(payload);
-    closeRequestEdit();
-  }
-  function handleRequestDelete(id) {
-    actions.deleteRequest(id);
-    closeRequestEdit();
-  }
-
   // ── Swap / Move mode (v1.7.0) ────────────────────────────────────────
   // Two entry points feed the same mechanic:
   //   - SwapButton in the nav bar → enters "source-select" phase.
@@ -219,9 +196,8 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   useEffect(function () {
     function onKey(e) {
       if (e.key !== "Escape") return;
-      // Modal overlays handle their own Esc; don't fight them. v1.9.0:
-      // the new RequestFormModal mount counts too.
-      if (modalCell || editingRequest) return;
+      // Modal overlay handles its own Esc; don't fight it.
+      if (modalCell) return;
       if (swapMode) {
         exitSwapMode();
       } else if (highlightedEmployeeId) {
@@ -230,7 +206,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     }
     document.addEventListener("keydown", onKey);
     return function () { document.removeEventListener("keydown", onKey); };
-  }, [swapMode, highlightedEmployeeId, modalCell, editingRequest]);
+  }, [swapMode, highlightedEmployeeId, modalCell]);
 
   // ── Result banner (v1.0.0 generator + v1.1.0 clear) ──────────────────
   // After a Generate run, GenerateButton fires onResult({filled, unfilled,
@@ -1122,7 +1098,6 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         employees={employees}
         weekStart={weekStart}
         isMobile={isMobile}
-        onChipClick={openRequestEdit}
       />
 
       <ShiftFormModal
@@ -1152,22 +1127,6 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         employees={employees}
         slotsByKey={slotsByKey}
         isMobile={isMobile}
-      />
-
-      {/* v1.9.0: request edit modal opened from a WeeklyRequestsPreview
-          chip click. Same Overlay pattern as the picker / generate
-          confirm — backdrop blur + sheet on mobile, centred card on
-          desktop. Save/Delete persist via usePersistence's actions
-          (upsertRequest / deleteRequest); both reuse the helpers
-          RequestsList already wires up. */}
-      <RequestFormModal
-        open={editingRequest !== null}
-        request={editingRequest}
-        employees={employees}
-        isMobile={isMobile}
-        onClose={closeRequestEdit}
-        onSave={handleRequestSave}
-        onDelete={handleRequestDelete}
       />
     </div>
   );

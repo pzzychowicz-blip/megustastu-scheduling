@@ -441,26 +441,32 @@ separate Firebase project, same UI conventions).
   evening role with template times) are NOT shown — role identity
   in the PDF is per-row, not per-cell, so the row label already
   tells the reader.
-- **Requests-this-week chips are clickable (v1.9.0):**
-  `<WeeklyRequestsPreview>` rows became `<button type="button">`
-  elements with default chrome stripped (background transparent,
-  border 1px transparent, font inherit) so the inert visual is
-  unchanged from v1.6.0. New optional `onChipClick(requestId)`
-  prop. When wired, a soft pill-background tint + hairline border
-  appears on hover via inline `onMouseEnter` / `onMouseLeave`
-  handlers (no new CSS tokens; reuses `--bg-pill` and
-  `--hairline-strong`). `ScheduleGrid` owns `editingRequest`
-  state and a `RequestFormModal` mount at the bottom of its JSX
-  tree, wired through `actions.upsertRequest` /
-  `actions.deleteRequest` (same helpers `RequestsList` already
-  consumes). The modal uses the same `Overlay` atom as
-  `ShiftFormModal` / `GenerateConfirmModal` so the backdrop blur
-  + mobile-sheet vs desktop-card branching matches the rest of
-  the app. The Esc-key guard in `ScheduleGrid` was extended
-  (`if (modalCell || editingRequest) return;`) so the new modal's
-  Esc isn't swallowed by swap-cancel. Absent / non-function
-  `onChipClick` keeps the row inert and un-styled on hover —
-  preserves a read-only contract for hypothetical future consumers.
+- **Requests-this-week type pills preview the request (v1.9.0):**
+  in `<WeeklyRequestsPreview>` the colored type pill of each chip
+  row became a `<button type="button">` with `className="mgt-req-pill"`.
+  An inline `<style>` block at the top of the rendered tree defines
+  `.mgt-req-pill { transition: transform 120ms ease; cursor:
+  pointer; }` and `.mgt-req-pill:hover { transform: scale(1.08); }`
+  — real CSS `:hover` (mirrors the v1.7.0 swap-pulse keyframes
+  pattern). The row container itself stays inert: no row-level
+  click target, no row-level hover border. Clicking the pill opens
+  a NEW `<RequestPreviewModal>` (Overlay-wrapped, read-only)
+  showing employee name, type pill, full date range, and — for
+  shift-preference requests — the preferred dayPart label
+  ("Day shifts only" / "Evening shifts only") + the recurring
+  weekday list ("Sat, Sun"), and (when set) the notes field. The
+  modal has a single Close button — no Save, no Delete. Edit
+  access stays on the Requests tab via the existing
+  `<RequestFormModal>` mount in `<RequestsList>`. The preview
+  modal's state lives locally inside `<WeeklyRequestsPreview>` —
+  `<ScheduleGrid>` is byte-identical to its pre-v1.9.0 state
+  (no new state, no new mount, no Esc-handler changes). Rationale:
+  this surface is for at-a-glance context only; mixing edit access
+  into the Schedule tab risked accidental changes mid-week-review,
+  and a whole-row click target broke the visual rhythm of the
+  v1.6.0 chip layout. The pill convention also matches the
+  WeeklyShiftSummary "Shifts assigned" pills (single-target buttons
+  inside an inert row container).
 - **Session persistence (v1.5.0):** the open tab (AppShell) and
   displayed week (ScheduleGrid) persist across refresh / Vite HMR
   inside the same browser tab. Storage is `sessionStorage` under the
@@ -559,7 +565,7 @@ megustastu-scheduling/
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
-    │                                 "pdf-visibility-dayoff-chip-edit".
+    │                                 "pdf-visibility-dayoff-chip-preview".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1044,21 +1050,6 @@ megustastu-scheduling/
         │                           consecutive-off filter) and into
         │                           <ShiftFormModal> (→ the manual
         │                           picker's yellow rest-warning).
-        │                           v1.9.0: + editingRequest state +
-        │                           openRequestEdit / closeRequestEdit /
-        │                           handleRequestSave / handleRequestDelete
-        │                           handlers. + RequestFormModal import
-        │                           and bottom-of-tree mount (Overlay
-        │                           pattern matches ShiftFormModal /
-        │                           GenerateConfirmModal — single
-        │                           shared blur surface). onChipClick=
-        │                           {openRequestEdit} threaded into
-        │                           <WeeklyRequestsPreview> so chip
-        │                           clicks open the request modal above
-        │                           the grid. Esc-key guard extended:
-        │                           `if (modalCell || editingRequest)
-        │                           return;` so the new modal's Esc
-        │                           isn't swallowed by swap-cancel.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -1300,23 +1291,46 @@ megustastu-scheduling/
         │                           RequestsList.jsx (small enough; lift
         │                           to schedule-logic if a third caller
         │                           appears).
-        │                           v1.9.0: row `<div>` became
-        │                           `<button type="button">` with
-        │                           default button chrome stripped
-        │                           (background transparent, border 1px
-        │                           transparent, font inherit). + new
-        │                           optional `onChipClick(requestId)`
-        │                           prop. When wired, hover paints a
-        │                           soft `--bg-pill` + `--hairline-
-        │                           strong` border via inline
-        │                           onMouseEnter / onMouseLeave (no
-        │                           new CSS tokens). ScheduleGrid wires
-        │                           the click to open RequestFormModal
-        │                           above the grid via the existing
-        │                           Overlay pattern. Absent /
-        │                           non-function onChipClick keeps the
-        │                           row inert and un-styled on hover
-        │                           (read-only contract preserved).
+        │                           v1.9.0: row container is back to
+        │                           an inert `<div>` (no row-level
+        │                           click target / hover border). Only
+        │                           the colored type pill `<span>`
+        │                           became a `<button type="button">`
+        │                           with `className="mgt-req-pill"`.
+        │                           Inline `<style>` block at the
+        │                           rendered tree's top defines real
+        │                           CSS `:hover { transform: scale(
+        │                           1.08); }` for the pill (mirrors
+        │                           the v1.7.0 swap-pulse keyframes
+        │                           approach). + new local state
+        │                           `[previewRequest, setPreviewRequest]`
+        │                           owns the read-only preview modal
+        │                           — `<RequestPreviewModal>` mounted
+        │                           at the bottom of the component's
+        │                           JSX. Edit access is intentionally
+        │                           NOT wired up here; it stays on
+        │                           the Requests tab via
+        │                           `<RequestsList>` + `<RequestFormModal>`.
+        ├── RequestPreviewModal.jsx v1.9.0: NEW. Read-only preview of
+        │                           a single request, rendered inside
+        │                           Overlay. Opened from the
+        │                           WeeklyRequestsPreview chip pill click.
+        │                           Mirrors RequestFormModal's vertical
+        │                           Fld stack so the preview feels like
+        │                           "read mode" of the same form.
+        │                           Fields rendered: employee (with
+        │                           archived line-through), type pill
+        │                           (palette inherited from
+        │                           REQUEST_TYPES), full date range
+        │                           ("12 May – 18 May 2026"). For
+        │                           shift-preference requests also:
+        │                           preferred dayPart label and
+        │                           recurringDaysOfWeek (Mon..Sun
+        │                           source-order). Notes shown when
+        │                           non-empty. Footer is a single
+        │                           Close button (ghost variant).
+        │                           No Save, no Delete — edit access
+        │                           stays on the Requests tab.
         └── GenerateResultsModal.jsx v1.4.0: NEW. "Details" modal opened
                                     from the generator result banner.
                                     Lists `summary.unfilledCells` and

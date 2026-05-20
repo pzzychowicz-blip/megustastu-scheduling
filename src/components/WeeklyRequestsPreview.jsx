@@ -6,27 +6,33 @@
 //
 // Sort: by dateFrom ascending (chronological across the week).
 // Row format: "<employee name> — <type label> — <range>". Compact.
-// Notes are intentionally NOT shown here (per v1.6.0 ask). Manager opens
-// the Requests tab when they want the full context.
+// Notes are intentionally NOT shown inline (per v1.6.0 ask) — the v1.9.0
+// preview modal surfaces them when the manager clicks the type pill.
 //
 // Empty week (no overlapping requests) → render nothing rather than an
 // empty placeholder. The grid already has enough chrome.
 //
-// v1.9.0 — Rows are now clickable. Clicking a row fires `onChipClick(id)`
-// so the parent (ScheduleGrid) can open the RequestFormModal on top of
-// the grid for editing — same overlay pattern as the Generate confirm
-// dialog. `onChipClick` is optional: when absent (or null), the rows
-// render inert as before. Subtle hover background only when interactive.
+// v1.9.0 — The colored type pill is now clickable. Clicking it opens a
+// READ-ONLY preview modal (RequestPreviewModal) showing the full record
+// details — employee, type, full date range, preferred dayPart (for
+// shift-preference), recurring weekdays (for shift-preference with
+// recurring), and notes (when set). Edit access stays on the Requests
+// tab; this surface is for at-a-glance context only. Hover effect on
+// the pill is a subtle CSS `transform: scale(1.08)` — real `:hover`
+// pseudo-class via an inline <style> block (mirrors the v1.7.0
+// swap-pulse keyframes pattern in ScheduleGrid). The row container
+// stays inert — no row-level hover border, no row-level click target.
 //
 // Props:
-//   requests     ({ [id]: request })   — full map
-//   employees    ({ [id]: employee })  — for resolving employeeId → name
-//   weekStart    (Date)                — Monday of the displayed week
-//   isMobile     (bool)
-//   onChipClick  (fn(requestId)?)      — v1.9.0; optional click handler
+//   requests   ({ [id]: request })   — full map
+//   employees  ({ [id]: employee })  — for resolving employeeId → name
+//   weekStart  (Date)                — Monday of the displayed week
+//   isMobile   (bool)
 
+import { useState } from "react";
 import { S, REQUEST_TYPES } from "../lib/constants.js";
 import { addDays, isoDate, parseIsoDate } from "../lib/schedule-logic.js";
+import RequestPreviewModal from "./RequestPreviewModal.jsx";
 
 // Local copy of the RequestsList row formatter so we don't introduce a
 // cross-component import dependency. Small enough to duplicate; if a
@@ -54,7 +60,13 @@ function typeMeta(key) {
   return { key: key, label: key, palette: null };
 }
 
-export default function WeeklyRequestsPreview({ requests, employees, weekStart, isMobile, onChipClick }) {
+export default function WeeklyRequestsPreview({ requests, employees, weekStart, isMobile }) {
+  // v1.9.0: local state for the read-only preview modal. Stores the full
+  // original request record (not the derived row object) so the modal
+  // can render fields the row doesn't carry (notes, dayPart, recurring
+  // weekdays). null means closed; setting a record opens the modal.
+  const [previewRequest, setPreviewRequest] = useState(null);
+
   const weekStartIso = isoDate(weekStart);
   const weekEndIso = isoDate(addDays(weekStart, 6));
 
@@ -71,6 +83,9 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
     if (to < weekStartIso || from > weekEndIso) continue;
     const emp = employees ? employees[r.employeeId] : null;
     rows.push({
+      // v1.9.0: keep the original record so the pill click can pass it
+      // directly to the preview modal without a second lookup.
+      record: r,
       id: r.id,
       employeeName: emp ? (emp.name || "(unnamed)") : "(unknown)",
       archived: emp ? emp.active === false : false,
@@ -97,6 +112,25 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
         padding: 12,
       }}
     >
+      {/* v1.9.0: real CSS :hover for the pill scale-up. Inline <style>
+          block mirrors the v1.7.0 swap-pulse keyframes approach in
+          ScheduleGrid — React inline-styles don't get :hover for free,
+          and the alternative (onMouseEnter / onMouseLeave handlers that
+          mutate currentTarget.style) was rejected as too heavy for a
+          purely cosmetic effect. `transform: scale(1.08)` is the same
+          magnitude commonly used in iOS-style tap feedback — visible
+          but not jarring. `transform-origin` defaults to center so the
+          pill expands symmetrically. */}
+      <style>{
+        ".mgt-req-pill {" +
+        "  transition: transform 120ms ease;" +
+        "  cursor: pointer;" +
+        "}" +
+        ".mgt-req-pill:hover {" +
+        "  transform: scale(1.08);" +
+        "}"
+      }</style>
+
       <div style={{ ...S.h2, margin: 0, marginBottom: 8, fontSize: 14 }}>
         Requests this week
       </div>
@@ -109,22 +143,9 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
         }}
       >
         {rows.map(function (r) {
-          // v1.9.0: row renders as a button only when an onChipClick
-          // handler is wired up. The visual stays compatible with the
-          // pre-v1.9.0 inert row when no handler is passed (no default
-          // button chrome leaks through). Hover affordance is a soft
-          // background tint, gated on `interactive` so non-clickable
-          // mounts (future read-only consumers) don't flicker.
-          const interactive = typeof onChipClick === "function";
-          const handleClick = interactive
-            ? function () { onChipClick(r.id); }
-            : undefined;
           return (
-            <button
+            <div
               key={r.id}
-              type="button"
-              onClick={handleClick}
-              disabled={!interactive}
               style={{
                 display: "flex",
                 alignItems: "baseline",
@@ -133,32 +154,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                 color: "var(--text-primary)",
                 opacity: r.archived ? 0.55 : 1,
                 flexWrap: "wrap",
-                // Strip default button chrome — keep the row visually
-                // identical to the pre-v1.9.0 <div> when not hovered.
-                background: "transparent",
-                border: "1px solid transparent",
-                borderRadius: 8,
-                padding: "4px 6px",
-                textAlign: "left",
-                font: "inherit",
-                cursor: interactive ? "pointer" : "default",
-                // Subtle interactive feedback: when interactive, a soft
-                // hairline appears on hover so the row reads as a target.
-                transition: interactive ? "background 120ms ease" : undefined,
               }}
-              onMouseEnter={interactive
-                ? function (e) {
-                    e.currentTarget.style.background = "var(--bg-pill)";
-                    e.currentTarget.style.borderColor = "var(--hairline-strong)";
-                  }
-                : undefined}
-              onMouseLeave={interactive
-                ? function (e) {
-                    e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.borderColor = "transparent";
-                  }
-                : undefined}
-              title={interactive ? "Edit request" : undefined}
             >
               <span
                 style={{
@@ -168,7 +164,16 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
               >
                 {r.employeeName}
               </span>
-              <span
+              {/* v1.9.0: the colored type pill is the ONLY clickable
+                  element in the row. Default button chrome stripped
+                  (background = palette bg, border = palette border,
+                  font inherit, padding kept consistent with the v1.6.0
+                  span style). Click opens the read-only preview. */}
+              <button
+                type="button"
+                className="mgt-req-pill"
+                onClick={function () { setPreviewRequest(r.record); }}
+                title="Preview request"
                 style={{
                   padding: "1px 8px",
                   borderRadius: 999,
@@ -177,17 +182,30 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                   background: r.palette ? r.palette.bg : "var(--bg-pill)",
                   color: r.palette ? r.palette.text : "var(--text-secondary)",
                   border: r.palette ? ("1px solid " + r.palette.border) : "1px solid var(--hairline-strong)",
+                  font: "inherit",
+                  lineHeight: 1.4,
                 }}
               >
                 {r.typeLabel}
-              </span>
+              </button>
               <span style={{ ...S.muted, fontSize: 12 }}>
                 {r.range}
               </span>
-            </button>
+            </div>
           );
         })}
       </div>
+
+      {/* v1.9.0: read-only preview modal. Owned locally — ScheduleGrid
+          doesn't see this state. The modal closes via Close button,
+          backdrop click, or Esc (handled by the Overlay atom). */}
+      <RequestPreviewModal
+        open={previewRequest !== null}
+        request={previewRequest}
+        employees={employees}
+        isMobile={isMobile}
+        onClose={function () { setPreviewRequest(null); }}
+      />
     </div>
   );
 }

@@ -5,7 +5,7 @@ an entry. Newest first.
 
 ---
 
-## v1.9.0 — PDF visibility, Day-OFF quota rebalance, request-chip edit
+## v1.9.0 — PDF visibility, Day-OFF quota rebalance, request-chip preview
 
 **Date:** 2026-05-20
 **Behavioural change:** Three manager-visibility / semantics tweaks
@@ -17,10 +17,24 @@ Day-OFF requests no longer decrement the effective-quota number on the
 WeeklyShiftSummary pill or in the generator's quota gate — only
 `holiday` requests subtract from `workingDaysPerWeek`. Day-OFF still
 HARD-blocks the date via `findRequestConflict` and stays hidden in the
-picker by default (no change). (c) Each chip in the WeeklyRequestsPreview
-"Requests this week" panel is now clickable — opens the same
-RequestFormModal used by the Requests tab, rendered above the schedule
-grid in the same Overlay pattern as the Generate confirm dialog.
+picker by default (no change). (c) The colored type pill on each chip
+row in the WeeklyRequestsPreview "Requests this week" panel is now
+clickable — opens a NEW read-only `<RequestPreviewModal>` showing the
+full record (employee, type, full date range, preferred dayPart and
+recurring weekdays for shift-preference requests, notes when set).
+Edit access stays on the Requests tab; the Schedule-tab surface is
+read-only for safety.
+
+### Revision note
+The first commit on this branch wired up an editable
+RequestFormModal in ScheduleGrid + made each chip ROW clickable.
+Patryk's feedback was that the row-level click target was too heavy,
+the row-hover border noisy, and edit access on the Schedule tab risky
+during a glance. The follow-up commit (this entry) reverts those
+ScheduleGrid additions and pares the click target down to just the
+type pill, swaps the row-border hover for a `transform: scale(1.08)`
+on the pill via real CSS `:hover`, and switches the click action to
+a read-only preview modal.
 
 ### What landed
 
@@ -62,32 +76,51 @@ grid in the same Overlay pattern as the Generate confirm dialog.
    the cap of 5 is reachable). Reason code for over-cap rejection
    stays `"all-at-quota"`.
 
-5. **`src/components/WeeklyRequestsPreview.jsx`** — rows converted
-   from `<div>` to `<button type="button">`, with default button
-   chrome stripped so the inert visual is unchanged. New optional
-   `onChipClick(requestId)` prop. When wired, hovering a row
-   produces a soft pill-background tint + hairline border via
-   inline `onMouseEnter` / `onMouseLeave` handlers (no new CSS
-   tokens; reuses `--bg-pill` and `--hairline-strong`). Defensive:
-   absent / non-function `onChipClick` keeps the row inert and
-   un-styled on hover — preserves the pre-v1.9.0 read-only
-   contract for hypothetical future consumers.
+5. **`src/components/WeeklyRequestsPreview.jsx`** — the colored type
+   pill (was a `<span>`) became a `<button type="button"
+   className="mgt-req-pill">` with default button chrome stripped
+   (palette background / border preserved, `font: inherit`,
+   `cursor: pointer`). The row container stays an inert `<div>`
+   — no row-level click target, no row-level hover styling. An
+   inline `<style>` block at the rendered tree's top defines real
+   CSS `.mgt-req-pill:hover { transform: scale(1.08); }` with a
+   120ms transition (mirrors the v1.7.0 swap-pulse keyframes
+   approach in ScheduleGrid). New local state
+   `[previewRequest, setPreviewRequest]` owns the read-only
+   preview modal — pill click sets the full original request
+   record; modal close clears it. `<RequestPreviewModal>` mounted
+   at the bottom of the component's JSX. Each row's intermediate
+   object now carries `record: r` so the click passes the full
+   record to the modal without a second lookup. No `onChipClick`
+   prop on the component — the modal lifecycle is fully internal,
+   so `<ScheduleGrid>` doesn't need to participate.
 
-6. **`src/components/ScheduleGrid.jsx`** — imports `RequestFormModal`.
-   New `editingRequest` state (the payload doubles as the open flag,
-   mirroring the `modalCell` pattern). New `openRequestEdit` /
-   `closeRequestEdit` / `handleRequestSave` / `handleRequestDelete`
-   handlers wired through `actions.upsertRequest` and
-   `actions.deleteRequest` (same helpers `RequestsList` consumes).
-   `onChipClick={openRequestEdit}` threaded into `WeeklyRequestsPreview`.
-   `RequestFormModal` mounted at the bottom of the JSX tree
-   alongside the existing modals. The Esc-key effect's guard
-   (`if (modalCell || editingRequest) return;`) extended so the new
-   modal doesn't have its Esc swallowed by swap-cancel.
+6. **`src/components/RequestPreviewModal.jsx`** — NEW file. Tiny
+   read-only mirror of the request record, rendered inside
+   `<Overlay>`. Fields (in order, conditional on data presence):
+   employee name (with archived line-through + "(archived)"
+   suffix), type pill (palette inherited from `REQUEST_TYPES`),
+   formatted date range ("12 May – 18 May 2026"),
+   preferredDayPart label (shift-preference only),
+   recurringDaysOfWeek list (shift-preference with non-empty
+   array; rendered in WEEKDAYS source order), notes (when set;
+   `whiteSpace: pre-wrap` so manual line breaks render). Footer
+   is a single Close button (ghost variant). No Save, no Delete.
+   Mirrors RequestFormModal's vertical `<Fld>` stack so the
+   preview reads as the "view mode" of the same form. Helper
+   text at the bottom: "Read-only preview. To change this
+   request, open the Requests tab."
 
-7. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.8.2 → 1.9.0,
+7. **`src/components/ScheduleGrid.jsx`** — net-zero change from
+   main. (The first v1.9.0 commit added a `RequestFormModal`
+   import, `editingRequest` state, 4 handlers, a JSX mount, and
+   an Esc-key guard extension; the refinement commit reverts all
+   of that. The preview-modal lifecycle lives entirely in
+   `WeeklyRequestsPreview`.)
+
+8. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.8.2 → 1.9.0,
    `build` 2026-05-19 → 2026-05-20,
-   `sha` "recurring-shift-preference" → "pdf-visibility-dayoff-chip-edit".
+   `sha` "recurring-shift-preference" → "pdf-visibility-dayoff-chip-preview".
 
 ### Locked decisions (session 15)
 
@@ -115,11 +148,13 @@ grid in the same Overlay pattern as the Generate confirm dialog.
   manager reading the print can cross-reference role from the row
   header. If this becomes confusing in practice, add an explicit
   `· Role` suffix on overridden cells.
-- **WeeklyRequestsPreview hover affordance** is inline JS event
-  handlers, not a CSS pseudo-class. Inline-style React doesn't get
-  `:hover` for free, and adding a `<style>` block for one row felt
-  heavier than two onMouse handlers. If a third surface adopts this
-  hover pattern, lift to a tiny `useHoverStyle` hook.
+- **WeeklyRequestsPreview hover affordance** is real CSS `:hover`
+  inside an inline `<style>` block (mirrors the v1.7.0 swap-pulse
+  keyframes approach in ScheduleGrid). React inline-style doesn't
+  get `:hover` for free; the alternative (onMouseEnter /
+  onMouseLeave handlers mutating `e.currentTarget.style`) was
+  rejected as heavier than necessary for a purely cosmetic effect
+  and harder to keep in sync across hover states.
 
 ### Verification
 
@@ -137,28 +172,36 @@ grid in the same Overlay pattern as the Generate confirm dialog.
   generator schedules them on up to 5 dates this week, never Tuesday
   (Details modal shows Tuesday Mary candidates rejected with reason
   `request-conflict`).
-- DEV smoke test: click any chip in "Requests this week" → modal
-  opens above the grid with all fields prefilled (including v1.8.2
-  recurring weekday pills for shift-preference). Save / Delete /
-  Cancel / Esc / backdrop all behave correctly. Swap mode still
-  cancels via Esc when the modal isn't open.
+- DEV smoke test: hover the type pill on any chip in "Requests
+  this week" → the pill scales up ~8%. The row itself shows NO
+  border / NO scale change. Click the pill → read-only preview
+  modal opens with employee + type + full date range. For
+  shift-preference requests, the modal additionally shows the
+  preferred dayPart + recurring weekday list. Requests with notes
+  show the notes block at the bottom. Close button + backdrop
+  click both dismiss the modal.
+- DEV smoke test: open the Requests tab and click any existing
+  row → RequestFormModal opens in edit mode (regression check —
+  RequestsList wasn't touched).
 - Regression: v1.8.2 recurring shift-preference, v1.8.1 preserve-
   overrides on Regenerate, v1.7.0 Swap mechanic, dark mode, mobile
-  day-cards. No console errors. No write-guard banners.
+  day-cards. App loads cleanly on DEV + Vercel (no stuck splash).
+  No console errors. No write-guard banners.
 
 ### Bundle delta
 
 TBD on `npm run build` — recorded in the commit body.
 
-### Line delta
+### Line delta (cumulative across both v1.9.0 commits)
 
-- `src/lib/pdf-export.js`             +30 / -7
-- `src/lib/schedule-logic.js`         +14 / -10  (rename + doc rewrite)
+- `src/lib/pdf-export.js`              +30 / -7
+- `src/lib/schedule-logic.js`          +14 / -10  (rename + doc rewrite)
 - `src/components/WeeklyShiftSummary.jsx`  +10 / -7
-- `src/lib/generator.js`              +20 / -15  (rename + gate doc)
-- `src/components/WeeklyRequestsPreview.jsx` +55 / -10  (button conv + hover)
-- `src/components/ScheduleGrid.jsx`   +40 / -2  (modal mount + handlers)
-- `src/App.jsx`                       +3 / -3
+- `src/lib/generator.js`               +20 / -15  (rename + gate doc)
+- `src/components/WeeklyRequestsPreview.jsx` +80 / -10  (pill button, CSS :hover, preview modal mount + record passthrough)
+- `src/components/RequestPreviewModal.jsx` +175 / 0  (NEW)
+- `src/components/ScheduleGrid.jsx`    net 0  (first commit added the modal mount; refinement commit reverted it)
+- `src/App.jsx`                        +3 / -3
 
 ---
 
