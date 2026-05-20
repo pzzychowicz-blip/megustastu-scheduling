@@ -299,12 +299,22 @@
          declaration only fills in the gap for elements that had none.
       ────────────────────────────────────────────────────────────────── */
       .mgt-hover-scale {
-        transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+        transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease, border-radius 120ms ease;
       }
       .mgt-hover-scale:hover:not(:disabled) {
         transform: scale(1.08);
         background-color: var(--bg-overlay-sheet);
         box-shadow: var(--shadow-soft);
+        /* v1.9.0 (perslot+ commit, second round): rounded corners on the
+           hover card so transparent rows (Toggle atoms, Collapsible
+           headers, Fld-wrapped rows) match the rounded-card aesthetic of
+           the rest of the app when their hover background paints.
+           Elements that already have inline border-radius (most buttons
+           via BTN.base, pills via 999, schedule cells via 10) keep their
+           inline value because inline styles beat CSS at the same level.
+           12px matches S.surfaceSoft / S.card / BTN.base in
+           src/lib/constants.js. */
+        border-radius: 12px;
         position: relative;
         z-index: 2;
       }

@@ -568,6 +568,24 @@ separate Firebase project, same UI conventions).
   the scaled element reads as a card lifting off the surrounding
   surface.
 
+  **Rounded corners + Toggle-container padding (seventh v1.9.0
+  commit):** the hover rule additionally sets `border-radius: 12px`
+  (matches `S.surfaceSoft` / `S.card` / `BTN.base`) so the new
+  hover background paints with rounded corners instead of the
+  sharp-cornered look reported in the sixth-commit screenshots.
+  Elements with their own inline border-radius (pills at 999,
+  cells at 10, etc.) keep their inline value via the
+  inline-beats-CSS rule. In parallel, the schedule-grid
+  clipping-fix pattern (`padding` on the wrapper to give scaled
+  children breathing room) was applied to surfaces that host
+  Toggle atoms: the `<Collapsible>` body's horizontal padding
+  grew from 14 → 20 (atom-level change → covers every
+  Collapsible in Settings) and the `<GenerateConfirmModal>`
+  Toggle card's padding grew from "8px 10px" → "12px 16px". When
+  a Toggle row scales 1.08 inside a Collapsible body that's
+  ALSO scaling 1.08 (compound ≈ 1.166), the extra padding keeps
+  the lifted card visually inside the section's wrapper.
+
 - **Requests-this-week type pills preview the request (v1.9.0):**
   in `<WeeklyRequestsPreview>` the colored type pill of each chip
   row became a `<button type="button">` with `className="mgt-req-pill"`.
@@ -692,7 +710,7 @@ megustastu-scheduling/
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
-    │                                 "perslot-hover-opaque-bg".
+    │                                 "hover-rounded-toggle-padding".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut

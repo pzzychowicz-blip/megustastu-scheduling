@@ -180,7 +180,14 @@ export function Collapsible({ title, open, onToggle, dirty, className, headerCla
     textAlign: "center",
   };
   const bodyStyle = {
-    padding: "0 14px 14px 14px",
+    // v1.9.0 (perslot+ commit, second round): horizontal padding bumped
+    // from 14 to 20 so scaled inner Toggle / Fld rows (1.08 + compound
+    // with the wrapper's own 1.08 = up to 1.166x effective) have
+    // breathing room inside the section card before they visually
+    // overflow its right edge. Matches the schedule-grid clipping fix
+    // (padding on the overflow wrapper) applied to surfaces that host
+    // Toggle atoms. Vertical padding unchanged.
+    padding: "0 20px 14px 20px",
     borderTop: "1px solid var(--hairline)",
     paddingTop: 12,
   };

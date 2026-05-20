@@ -159,12 +159,17 @@ export default function GenerateConfirmModal({
         </div>
       </div>
 
-      {/* v1.8.1: preserve-overrides toggles. Both default ON each open;
-          control the policy passed into onConfirm("regenerate", ...). */}
+      {/* v1.8.1: preserve-overrides toggles. v1.9.0 default state =
+          preserveTimes ON / preserveAssignments OFF (modal opens in
+          danger-red Regenerate variant by default).
+          v1.9.0 (perslot+ commit, second round): horizontal padding
+          bumped from 10 → 16 so scaled Toggle rows (1.08) have
+          breathing room inside the card before they visually overflow
+          its edges. Matches the schedule-grid clipping fix pattern. */}
       <div
         style={{
           ...S.surfaceSoft,
-          padding: "8px 10px",
+          padding: "12px 16px",
           marginBottom: 12,
         }}
       >

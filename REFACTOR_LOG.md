@@ -411,6 +411,42 @@ Files touched: `index.html`, `src/App.jsx`,
 `CLAUDE.md` and this log entry. No JS bundle delta expected
 (CSS-only + one className string).
 
+### Seventh commit — rounded hover corners + Toggle-container padding
+
+Two follow-up issues from the sixth-commit screenshots:
+
+1. **Sharp corners on the hover background.** Adding
+   `border-radius: 12px` to the `.mgt-hover-scale:hover` rule in
+   `index.html`. Matches `S.surfaceSoft` / `S.card` / `BTN.base`
+   so the hover-card look is visually consistent with the rest of
+   the app. Elements with inline border-radius (pills at 999,
+   schedule cells at 10, etc.) keep their inline value because
+   inline beats CSS — the new declaration only fills the gap for
+   transparent rows (Toggles, Collapsible headers, Fld rows).
+
+2. **Toggle row visually overflowing its container** when
+   compounded with the section's own scale (Toggle 1.08 × wrapper
+   1.08 ≈ 1.166 from the original wrapper position). Applied the
+   schedule-grid clipping-fix pattern — extra padding on the
+   container — to surfaces that host Toggle atoms:
+   - `src/components/atoms.jsx` — Collapsible bodyStyle horizontal
+     padding 14 → 20. Atom-level change, so every Collapsible in
+     Settings benefits.
+   - `src/components/GenerateConfirmModal.jsx` — the Toggle card's
+     padding 8px 10px → 12px 16px.
+   `src/components/ShiftFormModal.jsx` left alone — the Toggle
+   there sits in a Fld inside the modal Overlay which already has
+   20px padding on the sheet (more than enough breathing room).
+
+`src/App.jsx`: `sha` "perslot-hover-opaque-bg" →
+"hover-rounded-toggle-padding".
+
+Files touched: `index.html`, `src/App.jsx`,
+`src/components/atoms.jsx`, `src/components/GenerateConfirmModal.jsx`,
+plus doc updates in `CLAUDE.md` and this log entry. JS bundle
+delta in noise range (~+0.05 kB gz for the slightly longer padding
+strings).
+
 ### Locked decisions (session 15)
 
 | Q | A |
