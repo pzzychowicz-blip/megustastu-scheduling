@@ -5,6 +5,60 @@ an entry. Newest first.
 
 ---
 
+## v1.9.1 — Force `NODE_ENV=production` in build script (hotfix)
+
+**Date:** 2026-05-20
+**Behavioural change:** none for the app itself. Production deployment
+fix only.
+
+After v1.9.0 merged to main, Vercel built and deployed the merge
+commit correctly (latest sha + clean build cache + Vite v6.4.2 in
+"building for production..." mode), yet the deployed bundle contained
+`projectId:"megustastu-bookings-dev"` and the green DEV firebase boot
+banner. Direct inspection of
+`https://megustastu-scheduling.vercel.app/assets/index-D48btCoJ.js`
+confirmed Vite had statically resolved `import.meta.env.DEV = true`
+at build time and tree-shaken `prodConfig` out entirely. Login on
+production failed because the manager's PROD credentials don't exist
+in the DEV auth pool.
+
+Vite v5+ derives `import.meta.env.DEV` from `process.env.NODE_ENV`
+(not from the `--mode` flag). Vercel is supposed to set
+`NODE_ENV=production` automatically for production deployments, but
+for this project it apparently didn't (or wasn't being read by Vite
+at the right moment). Local builds always had `[firebase] PROD —`
+because the local shell didn't inherit any conflicting `NODE_ENV`.
+
+### What landed
+
+1. **`package.json`** — `"build"` script changed from `"vite build"`
+   to `"NODE_ENV=production vite build"`. Pins the env var at the
+   npm-script level so Vite always sees the correct value regardless
+   of what Vercel's build environment sets (or doesn't set). Linux
+   syntax — works on Vercel (Linux build host) and on Patryk's local
+   Mac. Would need `cross-env` on Windows but that's not a target
+   platform.
+
+2. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.9.0 → 1.9.1,
+   `sha` "selects-scale-modal-overflow" → "force-prod-build-env".
+   Surface the fix in the version banner so post-deploy verification
+   is unambiguous.
+
+### Verification
+
+- `npm run build` locally → `dist/assets/index-*.js` contains
+  `[firebase] PROD —` and `projectId:"megustastu-scheduling"`. The
+  green DEV banner and `megustastu-bookings-dev` projectId are absent
+  (tree-shaken).
+- After merge + Vercel redeploy, the live bundle at
+  `megustastu-scheduling.vercel.app/assets/index-*.js` should now show
+  the same PROD content. Confirm in DevTools console:
+  - `[firebase] PROD — megustastu-scheduling` (red banner)
+  - `window.__MGT_SCHED_BUILD__` → `{ version: "1.9.1", sha: "force-prod-build-env", build: "2026-05-20" }`
+- Manager login with PROD credentials succeeds.
+
+---
+
 ## v1.9.0 — PDF visibility, Day-OFF quota rebalance, request-chip preview
 
 **Date:** 2026-05-20
