@@ -69,10 +69,18 @@ function sectionHeaderRow(slot, totalCols) {
 // every (section, dayPart) boundary so the four groups read as four
 // discrete bands, matching the in-app banded layout.
 //
-// v1.3.0: cells where the slot's dayPart is closed on that date render
-// as empty strings — the rota structure stays consistent across days
-// but a Day-only Monday produces blank evening cells under Monday's
-// column.
+// v1.3.0: cells where the slot's dayPart is closed on that date used to
+// render as empty strings — visually indistinguishable from an unfilled
+// open cell. v1.9.0 swaps that for a muted italic "Closed" placeholder
+// (mirrors the in-app ScheduleGrid.renderClosedCell) so a manager
+// reading the printed rota immediately sees the restaurant was shut.
+//
+// v1.9.0: filled cells whose start/end differs from the slot template
+// render two lines — assignee on top, override range on the bottom —
+// in a slightly smaller font. The row-header (left column) keeps the
+// template default, so the printed rota shows the reference + the
+// exception together. Same predicate ScheduleGrid uses for the "*"
+// marker, just rendered as readable text on paper.
 function buildTableBody(slots, dates, weekShifts, employees, openingDays) {
   const totalCols = 1 + dates.length;
   const rows = [];
@@ -92,7 +100,22 @@ function buildTableBody(slots, dates, weekShifts, employees, openingDays) {
       ? slot.humanLabel + "\n" + slot.defaultStart
       : slot.humanLabel + "\n" + slot.defaultStart + "–" + slot.defaultEnd;
     const dayCells = dates.map(function (d) {
-      if (openingDays && !isSlotOpenOnDate(d, slot, openingDays)) return "";
+      // v1.9.0: closed-dayPart placeholder. The cell stays in the table
+      // structure (the column belongs to a partially-open day) but reads
+      // as obviously inert — italic muted grey, smaller font. The literal
+      // RGB triplet is intentional: pdf-export.js never reads CSS vars,
+      // because the printed palette is locked to a light scheme regardless
+      // of in-app theme (v0.11.0 decision).
+      if (openingDays && !isSlotOpenOnDate(d, slot, openingDays)) {
+        return {
+          content: "Closed",
+          styles: {
+            fontSize: 8,
+            textColor: [136, 136, 136],
+            fontStyle: "italic",
+          },
+        };
+      }
       const dIso = isoDate(d);
       const existing = findShiftForSlot(weekShifts, dIso, slot);
       const cell = deriveCellState(existing, slot);
@@ -101,11 +124,18 @@ function buildTableBody(slots, dates, weekShifts, employees, openingDays) {
       // be defensive — a stale isWeekComplete call against an updated
       // shifts map could in theory let an empty cell slip through.
       if (!emp) return "";
-      // v0.9.0: cells render the assignee name only. The role is
-      // implicit from the slot column on the left of the row
-      // (e.g., the "Kitchen Evening 1" row is the Chef row by the
-      // v0.8.0 default-role policy).
-      return emp.name;
+      // v1.9.0: time-override detection. Same predicate ScheduleGrid uses
+      // for the "*" cell-marker (ScheduleGrid.jsx — `timeOverridden`).
+      // When true, render a two-line cell so the manager reading the
+      // printed rota at the door can see the cell's actual start/end
+      // without cross-referencing the row header.
+      const timeOverridden =
+        cell.start !== slot.defaultStart || cell.end !== slot.defaultEnd;
+      if (!timeOverridden) return emp.name;
+      return {
+        content: emp.name + "\n" + cell.start + "–" + cell.end,
+        styles: { fontSize: 8 },
+      };
     });
     rows.push([labelCell, ...dayCells]);
   });

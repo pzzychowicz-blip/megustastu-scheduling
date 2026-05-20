@@ -14,6 +14,14 @@
 // `daysOffInWeekByEmployee` in schedule-logic.js. Single source of
 // truth now shared with the auto-generator's quota gate.
 //
+// v1.9.0 — Quota subtraction narrowed to `holiday` requests only.
+// `dayoff` requests no longer decrement the cap — the framing is now
+// "holiday = away, subtract from quota" vs "dayoff = preferred-off, the
+// employee can still work their full quota across the remaining dates."
+// The helper was renamed to `holidayDaysInWeekByEmployee` in lockstep.
+// HARD per-date blocking for dayoff is unchanged (handled in
+// findRequestConflict + the picker hide-by-default toggle).
+//
 // v1.7.0 — Pills are now clickable. Clicking a pill highlights every
 // cell assigned to that employee on the Schedule grid; clicking again
 // (or pressing Esc) clears the highlight. State lives in ScheduleGrid
@@ -38,7 +46,7 @@
 //   onHighlight           (fn(id|null))         — v1.7.0; click handler
 
 import { S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
-import { daysOffInWeekByEmployee } from "../lib/schedule-logic.js";
+import { holidayDaysInWeekByEmployee } from "../lib/schedule-logic.js";
 
 function rawQuotaFor(emp) {
   const v = emp && typeof emp.workingDaysPerWeek === "number" ? emp.workingDaysPerWeek : null;
@@ -74,11 +82,11 @@ export default function WeeklyShiftSummary({
 }) {
   const counts = buildCountByEmployee(weekShifts);
   // v1.6.0: per-employee count of visible-week dates blocked by a
-  // day-off / holiday request. Subtracted from raw quota to get the
-  // "effective" cap shown on the pill.
-  // v1.6.1: helper lifted to schedule-logic.js — shared with the
-  // auto-generator's quota gate.
-  const daysOff = daysOffInWeekByEmployee(requests, dates || []);
+  // request. v1.9.0: narrowed to `holiday` only — `dayoff` no longer
+  // decrements the effective cap (it still HARD-blocks the date via
+  // findRequestConflict / picker hide-by-default; only the math is
+  // changing).
+  const holidayDays = holidayDaysInWeekByEmployee(requests, dates || []);
 
   // Build the row list: every active employee + any archived employee
   // who still has shifts this week (so the orphan is visible).
@@ -89,13 +97,13 @@ export default function WeeklyShiftSummary({
     const count = counts[emp.id] || 0;
     if (emp.active === false && count === 0) continue;
     const raw = rawQuotaFor(emp);
-    const off = daysOff[emp.id] || 0;
+    const holiday = holidayDays[emp.id] || 0;
     // Effective quota floors at 0 (can't go negative) and never exceeds
     // the raw cap (subtracting a positive number never raises it). The
     // closed-day case is already handled because `dates` excludes
-    // closed weekdays, so day-off requests on closed days never enter
-    // `off`.
-    const quota = Math.max(0, raw - off);
+    // closed weekdays, so holiday requests on closed days never enter
+    // `holiday`.
+    const quota = Math.max(0, raw - holiday);
     rows.push({
       id: emp.id,
       name: emp.name || "(unnamed)",

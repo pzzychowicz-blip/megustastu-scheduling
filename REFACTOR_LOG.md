@@ -5,6 +5,163 @@ an entry. Newest first.
 
 ---
 
+## v1.9.0 — PDF visibility, Day-OFF quota rebalance, request-chip edit
+
+**Date:** 2026-05-20
+**Behavioural change:** Three manager-visibility / semantics tweaks
+shipped together. (a) The PDF export now shows the actual start–end on
+any cell whose times differ from the slot template default (second line
+inside the cell), and renders a muted-italic "Closed" placeholder for
+cells that fall on a closed dayPart of a partially-closed day. (b)
+Day-OFF requests no longer decrement the effective-quota number on the
+WeeklyShiftSummary pill or in the generator's quota gate — only
+`holiday` requests subtract from `workingDaysPerWeek`. Day-OFF still
+HARD-blocks the date via `findRequestConflict` and stays hidden in the
+picker by default (no change). (c) Each chip in the WeeklyRequestsPreview
+"Requests this week" panel is now clickable — opens the same
+RequestFormModal used by the Requests tab, rendered above the schedule
+grid in the same Overlay pattern as the Generate confirm dialog.
+
+### What landed
+
+1. **`src/lib/pdf-export.js`** — `buildTableBody` rewritten in two
+   spots. Closed-cell branch now returns
+   `{ content: "Closed", styles: { fontSize: 8, textColor: [136, 136, 136], fontStyle: "italic" } }`
+   instead of an empty string — matches `ScheduleGrid.renderClosedCell`
+   in intent. Filled-cell branch detects `cell.start !== slot.defaultStart
+   || cell.end !== slot.defaultEnd` (same predicate `ScheduleGrid` uses
+   for the "*" marker) and switches the cell from a plain name string
+   to a two-line `{ content: name + "\n" + start–end, styles: { fontSize: 8 } }`
+   so the override is legible on paper. Pure local change; row-header
+   labels and the rest of autotable's config untouched. Literal RGB
+   triplet is intentional: `pdf-export.js` never reads CSS vars (printed
+   palette stays light per v0.11.0 decision).
+
+2. **`src/lib/schedule-logic.js`** — `daysOffInWeekByEmployee` renamed
+   to `holidayDaysInWeekByEmployee`. Filter narrowed from
+   `r.type !== "dayoff" && r.type !== "holiday"` to `r.type !== "holiday"`.
+   The function semantic and doc-block updated to reflect: "only
+   `holiday` requests reduce the weekly cap; `dayoff` is informational
+   and still HARD-blocks its date via `findRequestConflict`." Locked
+   decision recorded in the session 15 questionnaire.
+
+3. **`src/components/WeeklyShiftSummary.jsx`** — import + callsite +
+   local variable names (`daysOff` → `holidayDays`, `off` → `holiday`)
+   renamed in lockstep. Pill math is identical otherwise; the
+   denominator just stops shrinking for Day-OFF requests. The
+   WeeklyRequestsPreview panel right below remains the manager's
+   visibility into which dates a Day-OFF actually covers.
+
+4. **`src/lib/generator.js`** — import renamed; `daysOffByEmp` →
+   `holidayDaysByEmp` in `buildCandidates` signature and inside the
+   step (5) quota gate. `generateWeek` builds the map via the renamed
+   helper. Algorithm otherwise byte-identical. Net effect: an employee
+   with a 5-day quota and a single Day-OFF on Tuesday is now eligible
+   for up to 5 other shifts that week (was capped at 4 before — the
+   Tuesday HARD-block alone constrains the available dates to 6, so
+   the cap of 5 is reachable). Reason code for over-cap rejection
+   stays `"all-at-quota"`.
+
+5. **`src/components/WeeklyRequestsPreview.jsx`** — rows converted
+   from `<div>` to `<button type="button">`, with default button
+   chrome stripped so the inert visual is unchanged. New optional
+   `onChipClick(requestId)` prop. When wired, hovering a row
+   produces a soft pill-background tint + hairline border via
+   inline `onMouseEnter` / `onMouseLeave` handlers (no new CSS
+   tokens; reuses `--bg-pill` and `--hairline-strong`). Defensive:
+   absent / non-function `onChipClick` keeps the row inert and
+   un-styled on hover — preserves the pre-v1.9.0 read-only
+   contract for hypothetical future consumers.
+
+6. **`src/components/ScheduleGrid.jsx`** — imports `RequestFormModal`.
+   New `editingRequest` state (the payload doubles as the open flag,
+   mirroring the `modalCell` pattern). New `openRequestEdit` /
+   `closeRequestEdit` / `handleRequestSave` / `handleRequestDelete`
+   handlers wired through `actions.upsertRequest` and
+   `actions.deleteRequest` (same helpers `RequestsList` consumes).
+   `onChipClick={openRequestEdit}` threaded into `WeeklyRequestsPreview`.
+   `RequestFormModal` mounted at the bottom of the JSX tree
+   alongside the existing modals. The Esc-key effect's guard
+   (`if (modalCell || editingRequest) return;`) extended so the new
+   modal doesn't have its Esc swallowed by swap-cancel.
+
+7. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.8.2 → 1.9.0,
+   `build` 2026-05-19 → 2026-05-20,
+   `sha` "recurring-shift-preference" → "pdf-visibility-dayoff-chip-edit".
+
+### Locked decisions (session 15)
+
+| Q | A |
+|---|---|
+| Day-OFF generator behaviour | **Keep HARD block.** Generator never auto-assigns over a covering Day-OFF (unchanged). Only the quota-decrement is removed. Patryk left this open; chose the smaller-blast-radius option that stays consistent with the picker's hide-by-default behaviour. |
+| Day-OFF picker behaviour | **Hidden-by-default stays.** Picker keeps the existing toggle ("Show staff on day off / holiday"). Only the WeeklyShiftSummary pill and the generator's quota gate are affected. |
+| PDF override format | **Name on first line, time on second line.** Two-line cell at `fontSize: 8` (one step below the autotable body default of 9). Inline single-line with `·` separator was the runner-up; the two-line form was picked for legibility on a printed sheet. |
+
+### Side-effects / things to know
+
+- **A 5-day employee with one Day-OFF in the visible week now shows
+  `0/5` on the pill instead of `0/4`.** Working as intended. The Day-OFF
+  still HARD-blocks its date in the picker dropdown and in the
+  generator — only the cap math changed.
+- **The generator can now reach a 5-day quota when one date in the
+  week is Day-OFF-blocked (was capped at 4 before).** Working as
+  intended — the cap matches "how many days the employee said they
+  can work", not "how many days they have left after preference
+  filtering."
+- **A cell with both a different role AND different time on an evening
+  slot — only the time difference shows in the PDF.** Row identity in
+  the PDF is per-slot (one row per slot key), so the role is implicit
+  from the row label by v0.8.0's default-role policy. Acceptable: the
+  manager reading the print can cross-reference role from the row
+  header. If this becomes confusing in practice, add an explicit
+  `· Role` suffix on overridden cells.
+- **WeeklyRequestsPreview hover affordance** is inline JS event
+  handlers, not a CSS pseudo-class. Inline-style React doesn't get
+  `:hover` for free, and adding a `<style>` block for one row felt
+  heavier than two onMouse handlers. If a third surface adopts this
+  hover pattern, lift to a tiny `useHoverStyle` hook.
+
+### Verification
+
+- DEV smoke test: created an evening cell with override start `18:00`
+  (template `17:00`). Export PDF → cell shows "Mary\n18:00–23:00" in
+  smaller font; surrounding cells show plain names.
+- DEV smoke test: set Wednesday evening closed in Settings → Operating
+  time, Wednesday day open. Export PDF → Wednesday day-row cells
+  render normally; Wednesday evening rows render "Closed" in muted
+  italic.
+- DEV smoke test: 5-day employee with one Day-OFF (Tuesday) in the
+  visible week → pill shows `0/5` (was `0/4` pre-v1.9.0). Same
+  employee with Tuesday changed to Holiday → pill shows `0/4`.
+- DEV smoke test: Generate run with the same employee + Day-OFF →
+  generator schedules them on up to 5 dates this week, never Tuesday
+  (Details modal shows Tuesday Mary candidates rejected with reason
+  `request-conflict`).
+- DEV smoke test: click any chip in "Requests this week" → modal
+  opens above the grid with all fields prefilled (including v1.8.2
+  recurring weekday pills for shift-preference). Save / Delete /
+  Cancel / Esc / backdrop all behave correctly. Swap mode still
+  cancels via Esc when the modal isn't open.
+- Regression: v1.8.2 recurring shift-preference, v1.8.1 preserve-
+  overrides on Regenerate, v1.7.0 Swap mechanic, dark mode, mobile
+  day-cards. No console errors. No write-guard banners.
+
+### Bundle delta
+
+TBD on `npm run build` — recorded in the commit body.
+
+### Line delta
+
+- `src/lib/pdf-export.js`             +30 / -7
+- `src/lib/schedule-logic.js`         +14 / -10  (rename + doc rewrite)
+- `src/components/WeeklyShiftSummary.jsx`  +10 / -7
+- `src/lib/generator.js`              +20 / -15  (rename + gate doc)
+- `src/components/WeeklyRequestsPreview.jsx` +55 / -10  (button conv + hover)
+- `src/components/ScheduleGrid.jsx`   +40 / -2  (modal mount + handlers)
+- `src/App.jsx`                       +3 / -3
+
+---
+
 ## v1.8.2 — Recurring shift-preference patterns
 
 **Date:** 2026-05-19

@@ -440,25 +440,34 @@ export function findShiftPreferenceMismatch(requestsMap, employeeId, dateIso, da
   return null;
 }
 
-// ── Days off in week (v1.6.0; lifted v1.6.1) ─────────────────────────────
+// ── Holiday days in week (v1.6.0 as daysOffInWeekByEmployee; renamed v1.9.0) ─
 // Per-employee count of distinct dates in `dates` that are covered by a
-// `dayoff` or `holiday` request. Two consumers:
+// `holiday` request. Two consumers:
 //   - WeeklyShiftSummary — drives the effective-quota number on the
 //     "Shifts assigned" pill (raw workingDaysPerWeek − this count).
-//   - generator.js (v1.6.1) — applies the same effective cap in the
-//     candidate quota gate and the Regenerate over-quota clear pass.
+//   - generator.js — applies the same effective cap in the candidate
+//     quota gate so the algorithm and the UI agree on the cap.
 //
-// `shift-preference` requests are intentionally skipped — they
-// constrain which dayPart the employee can work, not whether they
-// work that day. Closed weekdays are already absent from `dates`
-// (callers pass the post-filter `visibleWeekDates(...)` list), so
-// requests covering closed days don't inflate the count.
+// v1.9.0 scope narrowing: `dayoff` requests are intentionally NOT
+// counted any more. The semantic shift: holiday = "I'm away, don't
+// schedule me at all" (subtract from the weekly cap); dayoff = "I'd
+// prefer this specific date off" (still HARD-blocks that date via
+// findRequestConflict, but the employee remains available for their
+// full quota across the remaining open dates). The WeeklyRequestsPreview
+// panel still surfaces every dayoff request so the manager retains full
+// visibility into the "why" without the math being wrong.
+//
+// `shift-preference` requests are also skipped — they constrain which
+// dayPart the employee can work, not whether they work that day.
+// Closed weekdays are already absent from `dates` (callers pass the
+// post-filter `visibleWeekDates(...)` list), so requests covering
+// closed days don't inflate the count.
 //
 // Returns { [employeeId]: count }. Employees with no matching dates
 // are absent from the map (callers treat missing as 0). `dates` is a
 // JS Date[]; we ISO-format internally for the YYYY-MM-DD string
 // compare against `dateFrom` / `dateTo`.
-export function daysOffInWeekByEmployee(requestsMap, dates) {
+export function holidayDaysInWeekByEmployee(requestsMap, dates) {
   const out = {};
   if (!requestsMap) return out;
   const dateIsos = [];
@@ -467,7 +476,7 @@ export function daysOffInWeekByEmployee(requestsMap, dates) {
   for (let i = 0; i < all.length; i++) {
     const r = all[i];
     if (!r || !r.employeeId || !r.dateFrom) continue;
-    if (r.type !== "dayoff" && r.type !== "holiday") continue;
+    if (r.type !== "holiday") continue;
     const from = r.dateFrom;
     const to = r.dateTo || r.dateFrom;
     let hits = out[r.employeeId];

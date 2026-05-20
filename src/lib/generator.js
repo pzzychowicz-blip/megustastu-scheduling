@@ -37,6 +37,14 @@
 // fresh global allocation rather than localized constraint repairs).
 // `roleMatches` was lifted into schedule-logic.js as
 // `roleMatchesSlot` (now shared with the v1.7.0 Swap mechanic).
+//
+// v1.9.0: the effective-quota math now subtracts ONLY `holiday`
+// requests, not `dayoff`. The helper was renamed to
+// `holidayDaysInWeekByEmployee` to match. dayoff still HARD-blocks
+// the date via findRequestConflict at step (2); only the cap got
+// looser. Net effect: a 5-day employee with a single Monday dayoff
+// can now be auto-assigned to up to 5 other dates that week (was
+// capped at 4 before).
 
 import {
   visibleWeekDates,
@@ -50,7 +58,7 @@ import {
   hasConsecutiveDaysOff,
   withinMaxConsecutiveWorkingDays,
   isSlotOpenOnDate,
-  daysOffInWeekByEmployee,
+  holidayDaysInWeekByEmployee,
   roleMatchesSlot,
 } from "./schedule-logic.js";
 import { DEFAULT_WORKING_DAYS } from "./constants.js";
@@ -231,21 +239,23 @@ function rankCandidates(candidates, currentShifts, priorShifts, prevAssigneeId) 
 //   "all-conflicted"    — would-be candidates are already on another shift
 //                          this date or blocked by fixedDays
 //   "all-at-quota"      — would-be candidates have hit workingDaysPerWeek
-//                          (v1.6.1: effective cap = raw − days-off-in-week)
+//                          (v1.6.1: effective cap = raw − holiday days;
+//                           v1.9.0: dayoff no longer counts)
 //   "no-2-off"          — v1.2.0: adding this shift would leave the
 //                          candidate without 2 consecutive days off
 //   "preference"        — Hard mode left no preference-matching candidates
 //
-// v1.6.1: `daysOffByEmp` (optional) is the {[empId]: count} map of
-// distinct visible-week dates each employee has covered by a dayoff /
-// holiday request. The quota gate uses it to lower each candidate's
-// effective cap (max(0, raw − off)). Missing / undefined defaults to
-// 0 per-candidate so legacy callers that don't pass it keep raw-cap
-// behaviour.
+// v1.6.1: `holidayDaysByEmp` (optional) is the {[empId]: count} map of
+// distinct visible-week dates each employee has covered by a request.
+// The quota gate uses it to lower each candidate's effective cap
+// (max(0, raw − holiday)). Missing / undefined defaults to 0
+// per-candidate so legacy callers that don't pass it keep raw-cap
+// behaviour. v1.9.0: scope narrowed to `holiday` requests only (was
+// also subtracting `dayoff` pre-v1.9.0).
 function buildCandidates(
   slotDef, dateIso, date, weekStart,
   employees, requests, currentShifts, strictPreference,
-  daysOffByEmp, crossWeekShifts
+  holidayDaysByEmp, crossWeekShifts
 ) {
   const all = Object.values(employees || {});
   if (all.length === 0) return { eligible: [], reason: "no-role-match" };
@@ -281,13 +291,16 @@ function buildCandidates(
   });
   if (dayOk.length === 0) return { eligible: [], reason: "all-conflicted" };
 
-  // (5) Working-days quota. v1.6.1: effective cap = raw − dayoff/holiday
-  // days in the visible week (Math.max floor at 0 so a fully-on-holiday
-  // employee can't be picked). Mirrors WeeklyShiftSummary's pill math.
+  // (5) Working-days quota. v1.6.1: effective cap = raw − holiday days
+  // in the visible week (Math.max floor at 0 so a fully-on-holiday
+  // employee can't be picked). v1.9.0: dayoff requests no longer
+  // contribute — they still HARD-block their date at step (2) via
+  // findRequestConflict, but the weekly cap isn't shrunk. Mirrors
+  // WeeklyShiftSummary's pill math.
   const quotaOk = dayOk.filter(function (e) {
     const rawCap = workingDaysFor(e);
-    const off = (daysOffByEmp && daysOffByEmp[e.id]) || 0;
-    const cap = Math.max(0, rawCap - off);
+    const holiday = (holidayDaysByEmp && holidayDaysByEmp[e.id]) || 0;
+    const cap = Math.max(0, rawCap - holiday);
     return countAssignedDates(currentShifts, e.id) < cap;
   });
   if (quotaOk.length === 0) return { eligible: [], reason: "all-at-quota" };
@@ -533,10 +546,11 @@ export function generateWeek(args) {
   const dates = visibleWeekDates(weekStart, openingDays);
   const rarity = buildRoleRarity(employees);
 
-  // v1.6.1: per-employee count of visible-week dates blocked by a dayoff/
-  // holiday request. Computed once and threaded through buildCandidates
-  // so the quota gate matches the effective cap the UI advertises.
-  const daysOffByEmp = daysOffInWeekByEmployee(requests, dates);
+  // v1.6.1: per-employee count of visible-week dates blocked by a
+  // holiday request (v1.9.0 narrowed scope — dayoff no longer counted).
+  // Computed once and threaded through buildCandidates so the quota
+  // gate matches the effective cap the UI advertises.
+  const holidayDaysByEmp = holidayDaysInWeekByEmployee(requests, dates);
 
   // workingShifts starts as a shallow clone so we never mutate caller data.
   // v1.7.0: in regenerate mode, the wipe-pass empties it entirely; in
@@ -582,7 +596,7 @@ export function generateWeek(args) {
       if (existing) continue;
       const built = buildCandidates(
         slot, dIso, date, weekStart,
-        employees, requests, workingShifts, strictPreference, daysOffByEmp,
+        employees, requests, workingShifts, strictPreference, holidayDaysByEmp,
         crossWeekShifts
       );
       work.push({
@@ -607,7 +621,7 @@ export function generateWeek(args) {
     const slot = entry.slot;
     const built = buildCandidates(
       slot, entry.dateIso, entry.date, weekStart,
-      employees, requests, pendingShifts, strictPreference, daysOffByEmp,
+      employees, requests, pendingShifts, strictPreference, holidayDaysByEmp,
       crossWeekShifts
     );
     if (built.eligible.length === 0) {

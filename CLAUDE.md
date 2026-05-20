@@ -400,6 +400,67 @@ separate Firebase project, same UI conventions).
   filters are byte-identical). Reason code for over-cap clears
   stays `"over-quota"` — the semantic ("over their cap") is the
   same; only the cap got tighter.
+- **Day-OFF is informational, not quota-reducing (v1.9.0):** narrows
+  the v1.6.0 / v1.6.1 effective-quota math. Only `holiday` requests
+  subtract from `workingDaysPerWeek` on the WeeklyShiftSummary pill
+  and in the generator's quota gate; `dayoff` requests no longer
+  contribute to that count. Semantic: holiday = "I'm gone, don't
+  count me" (subtract from the cap); dayoff = "I'd prefer this
+  specific date off" (still HARD-blocks that date via
+  `findRequestConflict`, but the employee remains available for
+  their full quota across the remaining open dates). The helper
+  `daysOffInWeekByEmployee` was renamed in lockstep to
+  `holidayDaysInWeekByEmployee` (single-developer codebase, single-
+  session rename — safe). Picker hide-by-default behaviour is
+  unchanged: Day-OFF employees still hidden behind the existing
+  "Show staff on day off / holiday" toggle in `ShiftFormModal`.
+  Net visible effect: a 5-day employee with one Day-OFF request in
+  the visible week now shows `0/5` on the pill (was `0/4`), and
+  the generator can fill them on up to 5 dates that week (the
+  Day-OFF date is still skipped via the HARD per-date block at
+  step 2 of `buildCandidates`). The WeeklyRequestsPreview panel
+  remains the manager's visibility into which dates a Day-OFF
+  actually covers.
+- **PDF export shows per-cell time overrides + "Closed" placeholder
+  (v1.9.0):** `pdf-export.js` `buildTableBody` reworked in two
+  places. (a) Cells whose `cell.start / cell.end` differ from the
+  slot template defaults — same predicate `ScheduleGrid` uses for
+  the `*` marker — render as a two-line `{ content: name +
+  "\n" + start–end, styles: { fontSize: 8 } }` autotable cell. The
+  row-header keeps the template default, so the printed rota shows
+  the reference + the exception together. Slightly smaller font
+  signals "secondary info" without losing legibility. (b) Cells
+  whose slot's `dayPart` is closed on that date previously rendered
+  as empty strings — visually indistinguishable from an unfilled
+  open cell. Now render as `{ content: "Closed", styles: {
+  fontSize: 8, textColor: [136, 136, 136], fontStyle: "italic" } }`
+  — mirrors the in-app `renderClosedCell` intent in print. Literal
+  RGB triplet is intentional: `pdf-export.js` never reads CSS vars
+  because the printed palette is locked to a light scheme regardless
+  of in-app theme (v0.11.0 decision). Role-only changes (different
+  evening role with template times) are NOT shown — role identity
+  in the PDF is per-row, not per-cell, so the row label already
+  tells the reader.
+- **Requests-this-week chips are clickable (v1.9.0):**
+  `<WeeklyRequestsPreview>` rows became `<button type="button">`
+  elements with default chrome stripped (background transparent,
+  border 1px transparent, font inherit) so the inert visual is
+  unchanged from v1.6.0. New optional `onChipClick(requestId)`
+  prop. When wired, a soft pill-background tint + hairline border
+  appears on hover via inline `onMouseEnter` / `onMouseLeave`
+  handlers (no new CSS tokens; reuses `--bg-pill` and
+  `--hairline-strong`). `ScheduleGrid` owns `editingRequest`
+  state and a `RequestFormModal` mount at the bottom of its JSX
+  tree, wired through `actions.upsertRequest` /
+  `actions.deleteRequest` (same helpers `RequestsList` already
+  consumes). The modal uses the same `Overlay` atom as
+  `ShiftFormModal` / `GenerateConfirmModal` so the backdrop blur
+  + mobile-sheet vs desktop-card branching matches the rest of
+  the app. The Esc-key guard in `ScheduleGrid` was extended
+  (`if (modalCell || editingRequest) return;`) so the new modal's
+  Esc isn't swallowed by swap-cancel. Absent / non-function
+  `onChipClick` keeps the row inert and un-styled on hover —
+  preserves a read-only contract for hypothetical future consumers.
 - **Session persistence (v1.5.0):** the open tab (AppShell) and
   displayed week (ScheduleGrid) persist across refresh / Vite HMR
   inside the same browser tab. Storage is `sessionStorage` under the
@@ -464,7 +525,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.7.0)
+## File structure (current — v1.9.0)
 
 ```
 megustastu-scheduling/
@@ -497,6 +558,8 @@ megustastu-scheduling/
     │                                 "preserve-overrides-on-regenerate".
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
+    │                                 v1.9.0: → 1.9.0, sha
+    │                                 "pdf-visibility-dayoff-chip-edit".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -634,6 +697,17 @@ megustastu-scheduling/
     │   │                           generator HARD filter and the
     │   │                           picker SOFT warning inherit the
     │   │                           new check automatically.
+    │   │                           v1.9.0: daysOffInWeekByEmployee
+    │   │                           renamed to holidayDaysInWeekByEmployee
+    │   │                           and the type filter narrowed from
+    │   │                           "dayoff OR holiday" to "holiday only".
+    │   │                           Day-OFF requests no longer contribute
+    │   │                           to the effective-quota subtraction in
+    │   │                           WeeklyShiftSummary's pill OR in the
+    │   │                           generator's quota gate. HARD per-date
+    │   │                           blocking for dayoff is unchanged
+    │   │                           (findRequestConflict still includes
+    │   │                           both types in BLOCKING_REQUEST_TYPES).
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -648,6 +722,19 @@ megustastu-scheduling/
     │   │                           is closed on that date render as empty
     │   │                           strings via isSlotOpenOnDate (legacy
     │   │                           boolean openingDays still accepted).
+    │   │                           v1.9.0: closed-cell empty string
+    │   │                           replaced by a muted-italic "Closed"
+    │   │                           placeholder (literal RGB triplet
+    │   │                           [136,136,136] + fontStyle italic +
+    │   │                           fontSize 8). Filled cells whose
+    │   │                           start/end differs from the slot
+    │   │                           template defaults render two-line —
+    │   │                           name on top, override range below
+    │   │                           in fontSize 8 — so the printed rota
+    │   │                           shows both the template reference
+    │   │                           (left column) and the per-cell
+    │   │                           exception. Same predicate
+    │   │                           ScheduleGrid uses for the "*" marker.
     │   └── generator.js            v1.0.0: NEW. Pure greedy auto-generator.
     │                               generateWeek({weekStart, weekShifts,
     │                               employees, requests, shiftTemplate,
@@ -779,6 +866,20 @@ megustastu-scheduling/
     │                               returns modifiedShifts in the
     │                               result for GenerateButton to
     │                               upsert.
+    │                               v1.9.0: daysOffByEmp renamed
+    │                               holidayDaysByEmp; import switched
+    │                               to holidayDaysInWeekByEmployee
+    │                               from schedule-logic. Step (5) of
+    │                               buildCandidates now subtracts only
+    │                               holiday days from the cap (was
+    │                               dayoff + holiday). Algorithm
+    │                               otherwise byte-identical; reason
+    │                               codes unchanged. Net effect: a
+    │                               5-day employee with one Day-OFF
+    │                               in the week can be assigned to up
+    │                               to 5 OTHER dates (the Day-OFF
+    │                               date is still skipped at step (2)
+    │                               via findRequestConflict).
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -943,6 +1044,21 @@ megustastu-scheduling/
         │                           consecutive-off filter) and into
         │                           <ShiftFormModal> (→ the manual
         │                           picker's yellow rest-warning).
+        │                           v1.9.0: + editingRequest state +
+        │                           openRequestEdit / closeRequestEdit /
+        │                           handleRequestSave / handleRequestDelete
+        │                           handlers. + RequestFormModal import
+        │                           and bottom-of-tree mount (Overlay
+        │                           pattern matches ShiftFormModal /
+        │                           GenerateConfirmModal — single
+        │                           shared blur surface). onChipClick=
+        │                           {openRequestEdit} threaded into
+        │                           <WeeklyRequestsPreview> so chip
+        │                           clicks open the request modal above
+        │                           the grid. Esc-key guard extended:
+        │                           `if (modalCell || editingRequest)
+        │                           return;` so the new modal's Esc
+        │                           isn't swallowed by swap-cancel.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -1160,6 +1276,15 @@ megustastu-scheduling/
         │                           ScheduleGrid. Selected pill gains
         │                           accent fill + accent border + 2px
         │                           accent ring via box-shadow.
+        │                           v1.9.0: import renamed
+        │                           daysOffInWeekByEmployee →
+        │                           holidayDaysInWeekByEmployee. Local
+        │                           variables daysOff / off renamed
+        │                           holidayDays / holiday in lockstep.
+        │                           Pill denominator no longer shrinks
+        │                           for Day-OFF requests — only Holiday
+        │                           subtracts from workingDaysPerWeek.
+        │                           Math + visual otherwise identical.
         ├── WeeklyRequestsPreview.jsx v1.6.0: NEW. Footer panel under
         │                           WeeklyShiftSummary on the Schedule
         │                           grid. Lists every request whose date
@@ -1175,6 +1300,23 @@ megustastu-scheduling/
         │                           RequestsList.jsx (small enough; lift
         │                           to schedule-logic if a third caller
         │                           appears).
+        │                           v1.9.0: row `<div>` became
+        │                           `<button type="button">` with
+        │                           default button chrome stripped
+        │                           (background transparent, border 1px
+        │                           transparent, font inherit). + new
+        │                           optional `onChipClick(requestId)`
+        │                           prop. When wired, hover paints a
+        │                           soft `--bg-pill` + `--hairline-
+        │                           strong` border via inline
+        │                           onMouseEnter / onMouseLeave (no
+        │                           new CSS tokens). ScheduleGrid wires
+        │                           the click to open RequestFormModal
+        │                           above the grid via the existing
+        │                           Overlay pattern. Absent /
+        │                           non-function onChipClick keeps the
+        │                           row inert and un-styled on hover
+        │                           (read-only contract preserved).
         └── GenerateResultsModal.jsx v1.4.0: NEW. "Details" modal opened
                                     from the generator result banner.
                                     Lists `summary.unfilledCells` and

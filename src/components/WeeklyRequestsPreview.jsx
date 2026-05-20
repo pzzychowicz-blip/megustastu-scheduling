@@ -12,11 +12,18 @@
 // Empty week (no overlapping requests) → render nothing rather than an
 // empty placeholder. The grid already has enough chrome.
 //
+// v1.9.0 — Rows are now clickable. Clicking a row fires `onChipClick(id)`
+// so the parent (ScheduleGrid) can open the RequestFormModal on top of
+// the grid for editing — same overlay pattern as the Generate confirm
+// dialog. `onChipClick` is optional: when absent (or null), the rows
+// render inert as before. Subtle hover background only when interactive.
+//
 // Props:
-//   requests   ({ [id]: request })   — full map
-//   employees  ({ [id]: employee })  — for resolving employeeId → name
-//   weekStart  (Date)                — Monday of the displayed week
-//   isMobile   (bool)
+//   requests     ({ [id]: request })   — full map
+//   employees    ({ [id]: employee })  — for resolving employeeId → name
+//   weekStart    (Date)                — Monday of the displayed week
+//   isMobile     (bool)
+//   onChipClick  (fn(requestId)?)      — v1.9.0; optional click handler
 
 import { S, REQUEST_TYPES } from "../lib/constants.js";
 import { addDays, isoDate, parseIsoDate } from "../lib/schedule-logic.js";
@@ -47,7 +54,7 @@ function typeMeta(key) {
   return { key: key, label: key, palette: null };
 }
 
-export default function WeeklyRequestsPreview({ requests, employees, weekStart, isMobile }) {
+export default function WeeklyRequestsPreview({ requests, employees, weekStart, isMobile, onChipClick }) {
   const weekStartIso = isoDate(weekStart);
   const weekEndIso = isoDate(addDays(weekStart, 6));
 
@@ -102,9 +109,22 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
         }}
       >
         {rows.map(function (r) {
+          // v1.9.0: row renders as a button only when an onChipClick
+          // handler is wired up. The visual stays compatible with the
+          // pre-v1.9.0 inert row when no handler is passed (no default
+          // button chrome leaks through). Hover affordance is a soft
+          // background tint, gated on `interactive` so non-clickable
+          // mounts (future read-only consumers) don't flicker.
+          const interactive = typeof onChipClick === "function";
+          const handleClick = interactive
+            ? function () { onChipClick(r.id); }
+            : undefined;
           return (
-            <div
+            <button
               key={r.id}
+              type="button"
+              onClick={handleClick}
+              disabled={!interactive}
               style={{
                 display: "flex",
                 alignItems: "baseline",
@@ -113,7 +133,32 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                 color: "var(--text-primary)",
                 opacity: r.archived ? 0.55 : 1,
                 flexWrap: "wrap",
+                // Strip default button chrome — keep the row visually
+                // identical to the pre-v1.9.0 <div> when not hovered.
+                background: "transparent",
+                border: "1px solid transparent",
+                borderRadius: 8,
+                padding: "4px 6px",
+                textAlign: "left",
+                font: "inherit",
+                cursor: interactive ? "pointer" : "default",
+                // Subtle interactive feedback: when interactive, a soft
+                // hairline appears on hover so the row reads as a target.
+                transition: interactive ? "background 120ms ease" : undefined,
               }}
+              onMouseEnter={interactive
+                ? function (e) {
+                    e.currentTarget.style.background = "var(--bg-pill)";
+                    e.currentTarget.style.borderColor = "var(--hairline-strong)";
+                  }
+                : undefined}
+              onMouseLeave={interactive
+                ? function (e) {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.borderColor = "transparent";
+                  }
+                : undefined}
+              title={interactive ? "Edit request" : undefined}
             >
               <span
                 style={{
@@ -139,7 +184,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
               <span style={{ ...S.muted, fontSize: 12 }}>
                 {r.range}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
