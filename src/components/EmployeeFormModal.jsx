@@ -158,6 +158,7 @@ export default function EmployeeFormModal({
           <button
             key={r}
             type="button"
+            className="mgt-hover-scale"
             onClick={function () { toggleRole(r); }}
             style={{
               ...BTN.base,
@@ -195,6 +196,7 @@ export default function EmployeeFormModal({
           <button
             key={opt.key}
             type="button"
+            className="mgt-hover-scale"
             onClick={function () { setField("preference", opt.key); }}
             style={{
               ...BTN.base,
@@ -231,6 +233,7 @@ export default function EmployeeFormModal({
           <button
             key={n}
             type="button"
+            className="mgt-hover-scale"
             onClick={function () { setField("workingDaysPerWeek", n); }}
             style={{
               ...BTN.base,
@@ -259,6 +262,7 @@ export default function EmployeeFormModal({
             <button
               key={d.key}
               type="button"
+              className="mgt-hover-scale"
               onClick={function () { toggleFixedDay(d.key); }}
               style={{
                 ...BTN.base,
@@ -282,6 +286,7 @@ export default function EmployeeFormModal({
   const activeToggle = (
     <button
       type="button"
+      className="mgt-hover-scale"
       onClick={function () { setField("active", !form.active); }}
       style={{
         ...BTN.base,
@@ -299,6 +304,7 @@ export default function EmployeeFormModal({
   const fixedDaysToggle = (
     <button
       type="button"
+      className="mgt-hover-scale"
       onClick={toggleFixedDaysOnOff}
       style={{
         ...BTN.base,
@@ -319,6 +325,7 @@ export default function EmployeeFormModal({
   const priorityToggle = (
     <button
       type="button"
+      className="mgt-hover-scale"
       onClick={function () { setField("schedulingPriority", !form.schedulingPriority); }}
       style={{
         ...BTN.base,
@@ -336,6 +343,7 @@ export default function EmployeeFormModal({
   const deleteButton = isEdit
     ? mkBtn({
         type: "button",
+        className: "mgt-hover-scale",
         variant: "danger",
         onClick: handleDelete,
         children: "Delete",
@@ -406,12 +414,14 @@ export default function EmployeeFormModal({
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
           {mkBtn({
             type: "button",
+            className: "mgt-hover-scale",
             variant: "ghost",
             onClick: onClose,
             children: "Cancel",
           })}
           {mkBtn({
             type: "button",
+            className: "mgt-hover-scale",
             variant: "primary",
             onClick: handleSave,
             disabled: !valid,

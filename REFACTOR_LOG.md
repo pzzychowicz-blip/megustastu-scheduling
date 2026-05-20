@@ -51,6 +51,35 @@ theme tokens; consumers just add `className="mgt-hover-scale"`.
 The local `mgt-req-pill` class + inline `<style>` block inside
 `WeeklyRequestsPreview` are removed as part of the consolidation.
 
+The **fourth commit** (hover-scale broad + clipping fix +
+preserveAssignments default flip) does three things:
+1. **Broadens hover-scale scope** to cover modal action buttons,
+   modal segmented controls, modal pill toggles, the multi-select
+   weekday pickers in RequestFormModal, the `Sign out` button,
+   every Collapsible section header in Settings, every Fld-wrapped
+   row in Settings, every Toggle in Settings, the Open days
+   weekday pills, and the Day/Evening buttons inside the Open days
+   popover. The `<Fld>`, `<Toggle>`, and `<Collapsible>` atoms
+   gained optional `className` / `headerClassName` props so callers
+   can opt-in row by row without forking the atom.
+2. **Fixes schedule grid cell clipping on hover.** The desktopGrid
+   wrapper's `overflowX: auto` forces an implicit `overflow-y: auto`
+   in browsers, which clips transformed children at the wrapper
+   box on hover — Sunday's FoH evening 2 cell (right-bottom edge)
+   was getting visibly cut at the surrounding section border. Fix:
+   `padding: 8` on the wrapper + `minWidth: 120 + dates.length * 120
+   - 16` on the grid so the horizontal scroll threshold is
+   unchanged. The 8px padding gives every edge cell room to scale
+   (≈5px each direction for a 60px cell) before hitting the clip.
+3. **`preserveAssignments` default flipped to OFF** in
+   `GenerateConfirmModal`. Managers hit Regenerate precisely to
+   reshuffle staff; the previous "default ON" made the first click
+   degenerate into Fill-empty. New defaults match intent —
+   reshuffle staff (preserveAssignments OFF), keep manual time
+   edits (preserveTimes ON). The modal opens with the danger-red
+   Regenerate variant by default, making the destructive default
+   explicit before any click.
+
 ### What landed
 
 1. **`src/lib/pdf-export.js`** — `buildTableBody` rewritten in two
@@ -135,9 +164,10 @@ The local `mgt-req-pill` class + inline `<style>` block inside
 
 8. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.8.2 → 1.9.0,
    `build` 2026-05-19 → 2026-05-20,
-   `sha` "recurring-shift-preference" → "pdf-visibility-dayoff-preview-hover"
-   (renamed across the three commits as the scope grew —
-   "pdf-visibility-dayoff-chip-edit" → "-chip-preview" → "-preview-hover").
+   `sha` "recurring-shift-preference" → "pdf-dayoff-preview-hover-broad"
+   (renamed across the four commits as the scope grew —
+   "pdf-visibility-dayoff-chip-edit" → "-chip-preview" → "-preview-hover"
+   → "-preview-hover-broad").
 
 ### Third commit — unified hover-scale (files touched)
 
@@ -190,6 +220,71 @@ I. **`src/components/Settings.jsx`** — Reset to defaults + Save
    changes `mkBtn` calls gain the className.
 
 J. **`src/App.jsx`** — sha bump (see above).
+
+### Fourth commit — broader hover-scale + clipping fix + preserveAssignments OFF (files touched)
+
+K. **`index.html`** — unchanged (the global `.mgt-hover-scale`
+   rule introduced in the third commit covers all the new
+   consumers).
+
+L. **`src/components/atoms.jsx`** — `<Fld>`, `<Toggle>`, and
+   `<Collapsible>` each gained an optional `className` /
+   `headerClassName` prop, applied to the clickable / wrapping
+   div respectively. No default value (absent prop = no extra
+   class). The change is additive — existing callers don't pass
+   the prop and see no behavioural diff.
+
+M. **`src/components/ScheduleGrid.jsx`** — desktopGrid outer
+   wrapper gains `padding: 8`; the inner grid's `minWidth`
+   decreases by 16 so the horizontal-scroll threshold is
+   unchanged. Prevents transform-scaled edge cells (Sunday FoH
+   evening 2 was the reported case) from being clipped by the
+   wrapper's implicit overflow-y when overflow-x is auto.
+
+N. **`src/components/AppShell.jsx`** — Sign out button gains
+   `className="mgt-hover-scale"` (separate from the existing
+   tab nav additions in the third commit).
+
+O. **`src/components/Settings.jsx`** — all five Collapsible
+   section headers (Operating time / Display / Auto-generator /
+   FoH / Kitchen) gain `headerClassName="mgt-hover-scale"`. All
+   `<Fld>` wrappers inside the accordions gain `className=
+   "mgt-hover-scale"` — Operating time's Start/End rows, every
+   row inside `renderBlock` for FoH/Kitchen (Count, Start, End,
+   plus the 2nd-person-starts row when applicable). The three
+   Toggle atoms in Display + Auto-generator gain the same. The
+   seven Open days weekday pills + the two Day/Evening buttons
+   inside the open-day popover each gain the class.
+
+P. **`src/components/GenerateConfirmModal.jsx`** — two Toggles
+   gain the class; all three bottom-row mkBtn calls (Cancel,
+   Regenerate, Fill empty) gain the class. AND
+   `preserveAssignments` default flipped from `useState(true)`
+   to `useState(false)`; the open-reset effect flipped from
+   `setPreserveAssignments(true)` to `setPreserveAssignments(false)`
+   so reopening always gives the new default.
+
+Q. **`src/components/ClearConfirmModal.jsx`** — `scopeButton`
+   helper gains the class on every scope button (Whole week +
+   per-day buttons). Both bottom-row mkBtn calls (Cancel, the
+   danger-variant Confirm) gain the class.
+
+R. **`src/components/EmployeeFormModal.jsx`** — every role pill
+   (in rolesGrid), every preference segment (Day/Evening/Either),
+   every working-days segment (1..7), every fixed-day pill (when
+   shown), `activeToggle`, `fixedDaysToggle`, `priorityToggle`,
+   and the bottom-row Delete / Cancel / Save mkBtn calls each
+   gain the class.
+
+S. **`src/components/RequestFormModal.jsx`** — every type
+   segment, every preferredDayPart segment (Day shifts only /
+   Evening shifts only — when shift-preference), every weekday
+   pill in the v1.8.2 recurring picker, and the bottom-row
+   Delete / Cancel / Save mkBtn calls each gain the class.
+
+T. **`src/App.jsx`** — `sha` 
+   "pdf-visibility-dayoff-preview-hover" → 
+   "pdf-dayoff-preview-hover-broad".
 
 ### Locked decisions (session 15)
 

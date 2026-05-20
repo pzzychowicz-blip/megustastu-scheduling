@@ -375,6 +375,18 @@ separate Firebase project, same UI conventions).
   Regenerate runs triggered by unrelated requests. The policy
   carves out the common "keep my edits" case without removing the
   full-wipe affordance.
+  **v1.9.0 default flip:** `preserveAssignments` defaults to OFF
+  (was ON), `preserveTimes` stays default ON. Per-run defaults reset
+  on every modal open — closing and re-opening always gives the same
+  starting state. Rationale: managers hit Regenerate precisely when
+  they want assignments reshuffled (the whole point of "regenerate").
+  Defaulting the assignment-preserve to ON meant the action did
+  almost nothing on first click (essentially Fill-empty), forcing a
+  second click after toggling the flag. The new defaults match
+  intent: reshuffle staff, keep manual time edits. Because at least
+  one preserve flag is OFF by default, the Regenerate button opens
+  in the danger-red variant — making the destructive default
+  explicit before any click.
 - **Priority badge re-pin (v1.7.0):** the "Priority" `<TBadge>` in
   EmployeesList moved out of the top-right cluster. It now shares the
   bottom row with the Pattern + fixed-days text — the badge anchors
@@ -447,11 +459,13 @@ separate Firebase project, same UI conventions).
   ease } .mgt-hover-scale:hover:not(:disabled) { transform:
   scale(1.08); }` — defined once globally in `index.html` alongside
   the theme tokens. Consumers (cells, pills, nav buttons, row cards,
-  tab nav) just add `className="mgt-hover-scale"`. The `:not(:disabled)`
-  guard is load-bearing — browsers DO apply `:hover` to disabled
-  buttons by default, and Export PDF needs to stay flat when the week
-  is incomplete. Surfaces gaining the class: `WeeklyShiftSummary`
-  pill, every schedule grid cell, the Prev/Today/Next nav buttons,
+  tab nav, modals, Settings rows) just add `className="mgt-hover-scale"`.
+  The `:not(:disabled)` guard is load-bearing — browsers DO apply
+  `:hover` to disabled buttons by default, and Export PDF needs to
+  stay flat when the week is incomplete.
+  
+  **First wave (third v1.9.0 commit):** `WeeklyShiftSummary` pill,
+  every schedule grid cell, the Prev/Today/Next nav buttons,
   `<GenerateButton>`, `<SwapButton>`, `<ClearButton>`, `<ExportButton>`
   (gated by `:disabled`), the top tab nav in `<AppShell>` (Schedule
   | Employees | Requests | Settings), employee row cards + Add
@@ -459,13 +473,36 @@ separate Firebase project, same UI conventions).
   Add Request + Show past in `<RequestsList>`, Save changes + Reset
   to defaults in `<Settings>`, and the v1.9.0 request type pill in
   `<WeeklyRequestsPreview>` (renamed from the local `mgt-req-pill`
-  class). Out of scope (deliberately): form inputs, Toggle atom
-  switches, segmented controls, Collapsible accordion headers, and
-  modal action buttons — they have their own interaction patterns
-  that scaling would compete with. The single magnitude (`1.08`)
-  was picked to match the v1.9.0 request pill that introduced the
-  pattern; `transform` is paint-only so adjacent surfaces don't
-  reflow when a hovered cell visually lifts.
+  class).
+  
+  **Second wave (fourth v1.9.0 commit, broader):** Sign out button
+  in `<AppShell>`; every clickable element in `<GenerateConfirmModal>`,
+  `<ClearConfirmModal>`, `<EmployeeFormModal>`, `<RequestFormModal>`
+  (action buttons + segmented controls + pill toggles + multi-select
+  pickers + Toggle atoms — broadened from the original "no modal
+  buttons" exclusion); inside `<Settings>`: every Collapsible
+  section header, every `Fld`-wrapped row, every Toggle, every Open
+  days weekday pill, and the Day/Evening buttons inside the Open
+  days popover. The atoms `<Fld>`, `<Toggle>`, and `<Collapsible>`
+  gained an optional `className` / `headerClassName` prop so callers
+  can opt individual rows into the utility without forking the atom.
+  
+  **Still out of scope** (deliberately): standalone `<input>` /
+  `<select>` form controls (they get scaling through their `<Fld>`
+  wrapper in Settings, but the input element itself stays still),
+  modal close-via-backdrop (no element to scale), banner dismiss
+  `×` buttons.
+  
+  The single magnitude (`1.08`) was picked to match the v1.9.0
+  request pill that introduced the pattern; `transform` is
+  paint-only so adjacent surfaces don't reflow when a hovered cell
+  visually lifts. The schedule grid's outer `overflowX: auto`
+  wrapper was given `padding: 8` (with `minWidth` reduced by 16)
+  so edge-column cells (Sunday in particular) don't get clipped
+  against the wrapper when they scale — browsers force the
+  implicit `overflow-y: auto` when `overflow-x` is non-visible, so
+  any padding-less scrolling container clips transformed children
+  at all four sides.
 
 - **Requests-this-week type pills preview the request (v1.9.0):**
   in `<WeeklyRequestsPreview>` the colored type pill of each chip
@@ -591,7 +628,7 @@ megustastu-scheduling/
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
-    │                                 "pdf-visibility-dayoff-preview-hover".
+    │                                 "pdf-dayoff-preview-hover-broad".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1241,6 +1278,18 @@ megustastu-scheduling/
         │                           Regenerate path: ("regenerate",
         │                           {preserveTimes, preserveAssignments}).
         │                           Fill-empty path unchanged.
+        │                           v1.9.0: preserveAssignments default
+        │                           flipped to OFF (was ON);
+        │                           preserveTimes stays ON. The modal
+        │                           now opens with the danger-red
+        │                           Regenerate variant by default,
+        │                           matching the intent "reshuffle
+        │                           staff but keep my time edits".
+        │                           Both Toggle atoms and all three
+        │                           bottom-row mkBtn calls (Cancel,
+        │                           Regenerate, Fill empty) opted into
+        │                           `.mgt-hover-scale` (4th v1.9.0
+        │                           commit).
         ├── SwapButton.jsx          v1.7.0: NEW. Schedule nav-bar
         │                           toggle between Generate and Clear.
         │                           Owns no swap state — reads `active`

@@ -192,6 +192,7 @@ export default function RequestFormModal({
           <button
             key={t.key}
             type="button"
+            className="mgt-hover-scale"
             onClick={function () { setField("type", t.key); }}
             style={{
               ...BTN.base,
@@ -235,6 +236,7 @@ export default function RequestFormModal({
               <button
                 key={opt.key}
                 type="button"
+                className="mgt-hover-scale"
                 onClick={function () { setField("preferredDayPart", opt.key); }}
                 style={{
                   ...BTN.base,
@@ -273,6 +275,7 @@ export default function RequestFormModal({
               <button
                 key={w.key}
                 type="button"
+                className="mgt-hover-scale"
                 onClick={function () { toggleRecurringDay(w.key); }}
                 style={{
                   ...BTN.base,
@@ -306,7 +309,7 @@ export default function RequestFormModal({
     : null;
 
   const deleteButton = isEdit
-    ? mkBtn({ type: "button", variant: "danger", onClick: handleDelete, children: "Delete" })
+    ? mkBtn({ type: "button", className: "mgt-hover-scale", variant: "danger", onClick: handleDelete, children: "Delete" })
     : null;
 
   // ── Render ───────────────────────────────────────────────────────────
@@ -382,9 +385,10 @@ export default function RequestFormModal({
           {deleteButton}
         </div>
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-          {mkBtn({ type: "button", variant: "ghost", onClick: onClose, children: "Cancel" })}
+          {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "ghost", onClick: onClose, children: "Cancel" })}
           {mkBtn({
             type: "button",
+            className: "mgt-hover-scale",
             variant: "primary",
             onClick: handleSave,
             disabled: !valid,

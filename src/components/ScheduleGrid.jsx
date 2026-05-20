@@ -696,14 +696,23 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   const todayIndex = dates.findIndex(function (d) { return isoDate(d) === todayIso; });
 
   const desktopGrid = (
-    <div style={{ overflowX: "auto" }}>
+    // v1.9.0 (hover-scale fix): the wrapper's `overflowX: auto` clips
+    // transformed children at its box boundary — browsers force overflow-y
+    // to behave like auto whenever overflow-x is non-visible. Without
+    // padding, a Sunday-column cell scaling to 1.08 on hover gets its
+    // right edge clipped by the wrapper / surrounding card border.
+    // The 8px padding gives every edge cell room to scale (≈5px each
+    // direction for a 60px cell) before the clip kicks in. The grid's
+    // minWidth is also reduced by the horizontal padding so the
+    // horizontal scrollbar threshold is unchanged for narrow viewports.
+    <div style={{ overflowX: "auto", padding: 8 }}>
       <div
         style={{
           display: "grid",
           gridTemplateColumns:
             "120px repeat(" + dates.length + ", minmax(120px, 1fr))",
           gap: 6,
-          minWidth: 120 + dates.length * 120,
+          minWidth: 120 + dates.length * 120 - 16,
           // v1.4.0 fixup: containing block for the absolutely-positioned
           // tint + column-rule underlays below. Without this, the underlays
           // would resolve their `gridColumn` against the nearest positioned

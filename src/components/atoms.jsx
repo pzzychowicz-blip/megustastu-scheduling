@@ -87,9 +87,11 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
 
 // ── Fld ──────────────────────────────────────────────────────────────────
 // Labelled field wrapper. Pass the input/select/etc. as the single child.
-export function Fld({ label, children }) {
+// v1.9.0: optional `className` lands on the wrapper div — used by Settings
+// to opt individual rows into the `.mgt-hover-scale` utility.
+export function Fld({ label, children, className }) {
   return (
-    <div style={S.fldRow}>
+    <div style={S.fldRow} className={className}>
       {label ? <label style={S.fldLabel}>{label}</label> : null}
       {children}
     </div>
@@ -114,14 +116,16 @@ export function Section({ title, children, style }) {
 // when `open === true`. Parent owns the open state — pass `open` + `onToggle`.
 //
 // Props:
-//   title      (str)  — header text
-//   open       (bool) — controlled; parent manages single-open-at-a-time
-//   onToggle   (fn)   — fired on header click (no args)
-//   dirty      (bool) — show a small blue dot in the header when true
-//   children   (node) — body content, only rendered when open
+//   title            (str)  — header text
+//   open             (bool) — controlled; parent manages single-open-at-a-time
+//   onToggle         (fn)   — fired on header click (no args)
+//   dirty            (bool) — show a small blue dot in the header when true
+//   headerClassName  (str)  — v1.9.0; lands on the clickable header div
+//                             (used to opt-in to .mgt-hover-scale)
+//   children         (node) — body content, only rendered when open
 //
 // No new backdropFilter — sits inside the existing card blur.
-export function Collapsible({ title, open, onToggle, dirty, children }) {
+export function Collapsible({ title, open, onToggle, dirty, headerClassName, children }) {
   const wrapStyle = {
     ...S.surfaceSoft,
     padding: 0,
@@ -167,6 +171,7 @@ export function Collapsible({ title, open, onToggle, dirty, children }) {
     <div style={wrapStyle}>
       <div
         style={headerStyle}
+        className={headerClassName}
         onClick={onToggle}
         role="button"
         tabIndex={0}
@@ -198,7 +203,9 @@ export function Collapsible({ title, open, onToggle, dirty, children }) {
 //   label      (str)             — main row label
 //   helper     (str|null)        — smaller helper text below the label
 //   disabled   (bool, default false)
-export function Toggle({ checked, onChange, label, helper, disabled }) {
+//   className  (str)             — v1.9.0; lands on the clickable row div
+//                                   (used to opt-in to .mgt-hover-scale)
+export function Toggle({ checked, onChange, label, helper, disabled, className }) {
   const off = disabled ? 0.5 : 1;
   const rowStyle = {
     display: "flex",
@@ -251,6 +258,7 @@ export function Toggle({ checked, onChange, label, helper, disabled }) {
   return (
     <div
       style={rowStyle}
+      className={className}
       onClick={handleClick}
       role="switch"
       aria-checked={checked ? "true" : "false"}

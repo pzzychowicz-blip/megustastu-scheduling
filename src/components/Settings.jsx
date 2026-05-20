@@ -465,7 +465,7 @@ export default function Settings({
       <div style={{ marginBottom: 14 }}>
         <div style={{ ...S.fldLabel, marginBottom: 6 }}>{label}</div>
         <div style={rowStyle}>
-          <Fld label="Count">
+          <Fld label="Count" className="mgt-hover-scale">
             {mkInp({
               type: "number",
               min: 1,
@@ -474,14 +474,14 @@ export default function Settings({
               onChange: function (e) { onCountChange(section, dayPart, e); },
             })}
           </Fld>
-          <Fld label="Start">
+          <Fld label="Start" className="mgt-hover-scale">
             {mkInp({
               type: "time",
               value: block.start,
               onChange: function (e) { onTimeChange(section, dayPart, "start", e); },
             })}
           </Fld>
-          <Fld label="End">
+          <Fld label="End" className="mgt-hover-scale">
             {mkInp({
               type: "time",
               value: block.end,
@@ -489,7 +489,7 @@ export default function Settings({
             })}
           </Fld>
           {withSecondPerson ? (
-            <Fld label="2nd person starts">
+            <Fld label="2nd person starts" className="mgt-hover-scale">
               <select
                 value={block.secondPersonStart || "18:00"}
                 onChange={function (e) {
@@ -555,17 +555,18 @@ export default function Settings({
           open={openSection === "hours"}
           onToggle={function () { toggleSection("hours"); }}
           dirty={operatingDirty}
+          headerClassName="mgt-hover-scale"
         >
           <div style={{ ...S.fldLabel, marginBottom: 6 }}>Restaurant open</div>
           <div style={hoursRowStyle}>
-            <Fld label="Start">
+            <Fld label="Start" className="mgt-hover-scale">
               {mkInp({
                 type: "time",
                 value: hoursForm.operatingStart,
                 onChange: function (e) { onHoursChange("operatingStart", e); },
               })}
             </Fld>
-            <Fld label="End">
+            <Fld label="End" className="mgt-hover-scale">
               {mkInp({
                 type: "time",
                 value: hoursForm.operatingEnd,
@@ -615,6 +616,7 @@ export default function Settings({
                   <div key={d.key} style={{ position: "relative" }}>
                     <button
                       type="button"
+                      className="mgt-hover-scale"
                       onClick={function () {
                         setOpenDayPopover(function (cur) {
                           return cur === d.key ? null : d.key;
@@ -696,6 +698,7 @@ export default function Settings({
                             <button
                               key={opt.key}
                               type="button"
+                              className="mgt-hover-scale"
                               onClick={function () {
                                 setOpeningDayPart(d.key, opt.key, !opt.on);
                               }}
@@ -747,12 +750,14 @@ export default function Settings({
           title="Display"
           open={openSection === "display"}
           onToggle={function () { toggleSection("display"); }}
+          headerClassName="mgt-hover-scale"
         >
           <Toggle
             checked={showRolePills}
             onChange={onShowRolePillsChange}
             label="Show role pills on schedule cells"
             helper="The small coloured tag (Bar / Floor / Chef / Plating / Pot) next to each assignee's name in the schedule grid. Off hides them; the Employees tab badges are unaffected."
+            className="mgt-hover-scale"
           />
           {/* v0.11.0: dark mode. First-time default follows OS preference;
               flipping the toggle saves an explicit boolean that overrides
@@ -764,6 +769,7 @@ export default function Settings({
             helper={darkModeFollowingSystem
               ? "Following your system preference. Tap to override."
               : null}
+            className="mgt-hover-scale"
           />
         </Collapsible>
 
@@ -775,6 +781,7 @@ export default function Settings({
           title="Auto-generator"
           open={openSection === "generator"}
           onToggle={function () { toggleSection("generator"); }}
+          headerClassName="mgt-hover-scale"
         >
           <Toggle
             checked={strictPreference === true}
@@ -783,6 +790,7 @@ export default function Settings({
             helper={strictPreference
               ? "Hard — generator only assigns preference-matching employees. May leave cells empty when no preferred candidate is available."
               : "Soft mode (default) — generator tries preferred employees first, falls back if no one fits."}
+            className="mgt-hover-scale"
           />
         </Collapsible>
 
@@ -791,6 +799,7 @@ export default function Settings({
           open={openSection === "foh"}
           onToggle={function () { toggleSection("foh"); }}
           dirty={fohDirty}
+          headerClassName="mgt-hover-scale"
         >
           {renderBlock("foh", "day", "Day shift", false)}
           {renderBlock("foh", "evening", "Evening shift", true)}
@@ -801,6 +810,7 @@ export default function Settings({
           open={openSection === "kitchen"}
           onToggle={function () { toggleSection("kitchen"); }}
           dirty={kitchenDirty}
+          headerClassName="mgt-hover-scale"
         >
           {renderBlock("kitchen", "day", "Day shift", false)}
           {renderBlock("kitchen", "evening", "Evening shift", false)}
