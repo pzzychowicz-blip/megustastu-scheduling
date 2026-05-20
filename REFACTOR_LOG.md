@@ -286,6 +286,87 @@ T. **`src/App.jsx`** — `sha`
    "pdf-visibility-dayoff-preview-hover" → 
    "pdf-dayoff-preview-hover-broad".
 
+### Fifth commit — ShiftFormModal + Collapsible scaling + per-slot hours
+
+**Three buckets:**
+
+1. **ShiftFormModal + swap banner Cancel:** every clickable element
+   inside the cell-edit modal in the Schedule grid gets
+   `mgt-hover-scale`. Specifically: the "Show staff on day off /
+   holiday" Toggle, each evening-role pill in the role picker, the
+   "Reset times & role to template defaults" ghost button, Clear
+   (delete), Move/Swap, Cancel, Save. Plus the
+   `swap-mode banner`'s Cancel/× button on `ScheduleGrid`.
+
+2. **Settings: whole-section + clipping fix:** the `Collapsible`
+   atom gained an optional `className` prop on its outer wrapper
+   div (previously only `headerClassName` lived on the header
+   inside). Settings passes `className="mgt-hover-scale"` on every
+   Collapsible — so the whole section scales when the cursor
+   enters anywhere inside it. The inner Toggles / Flds / pills
+   already had the class from the 4th commit, so the effect
+   compounds: hovering a specific row scales BOTH the section and
+   the row, giving a layered "section is hot" + "this row is hot"
+   feedback. Additionally, `Collapsible`'s wrapper `overflow`
+   flipped from `hidden` to `visible` so transform-scaled inner
+   rows can break out of the section border — matches the Schedule
+   grid clipping behaviour from the 4th commit. Side-effect: the
+   body's `borderTop` hairline now extends to the wrapper's box
+   edge rather than being clipped at the rounded corner (1-2 px
+   cosmetic exposure, acceptable trade-off). The Open days
+   popover stays anchored ABOVE its pill row (the original
+   workaround for the now-removed `overflow: hidden`); leaving it
+   above keeps the layout stable and avoids re-introducing a
+   downward clip risk.
+
+3. **Per-slot shift hours in FoH/Kitchen:** the `/shiftTemplate`
+   shape per (section, dayPart) block changed from
+   `{count, start, end, secondPersonStart?}` to
+   `{count, times: [{start, end}, ...]}` with `times.length ===
+   count`. Each shift now carries its own start/end on the
+   template. Kitchen evening's Chef can run 16:00–23:00 while
+   Plating runs 16:00–22:00 and Pot runs 17:00–22:30 — all
+   stored independently.
+   - `src/lib/constants.js`: `DEFAULT_SHIFT_TEMPLATE` updated to
+     the new shape (defaults preserve the v0.8.0 behaviour:
+     FoH evening slot 0 starts 17:00, slot 1 starts 18:00; all
+     other slots inherit their block's existing single time).
+   - `src/lib/schedule-logic.js`: new internal helper
+     `slotTimeFor(block, sectionKey, dayPart, index)` reads from
+     `block.times[i]` when present, falls back to the legacy
+     `start`/`end`/`secondPersonStart` shape otherwise. Used by
+     `slotsForDay()` for each slot it enumerates. Consumers
+     (grid, picker, generator, PDF export) read
+     `slot.defaultStart`/`slot.defaultEnd` as before — no
+     downstream change.
+   - `src/components/Settings.jsx`: new helper `materializeBlock()`
+     normalizes any block (new or legacy shape) into the per-slot
+     shape — used by `cloneTemplate()` on form init. `blockError`
+     validates each slot's times independently (error messages
+     include the slot index, e.g. "Shift 2: end time must be
+     after start"). `blockDirty` compares the per-slot arrays
+     (with `materializeBlock` on the saved side so a legacy doc
+     doesn't register as permanently dirty). `onCountChange`
+     grows/truncates the `times` array: growing copies the last
+     entry's times (intent: "add another person at the same
+     hours"); shrinking drops trailing entries. New
+     `onSlotTimeChange(section, dayPart, slotIndex, field, e)`
+     replaces the old block-wide `onTimeChange`. `renderBlock`
+     renders the `Count` input once at the top, then N labelled
+     per-slot rows below — labelled with the section's role
+     (Chef / Plating / Pot / Bar / Floor) for evening slots, or
+     "Shift N" for day slots where one person covers all section
+     roles.
+   - No write migration: existing Firebase docs with the legacy
+     shape are upgraded lazily on the next Save click. Reads from
+     legacy docs work via the slotsForDay fallback.
+
+`src/App.jsx`: `sha` "pdf-dayoff-preview-hover-broad" →
+"perslot-hours-hover-polish".
+
+Bundle delta: 164.03 → 164.67 kB gz main (+0.64 kB), 320 modules
+unchanged.
+
 ### Locked decisions (session 15)
 
 | Q | A |

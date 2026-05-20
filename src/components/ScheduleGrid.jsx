@@ -1044,6 +1044,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         {swapMode || swapBanner.tone !== "info" ? (
           <button
             type="button"
+            className="mgt-hover-scale"
             onClick={swapMode ? exitSwapMode : function () { setSwapBanner(null); }}
             aria-label={swapMode ? "Cancel" : "Dismiss"}
             style={{

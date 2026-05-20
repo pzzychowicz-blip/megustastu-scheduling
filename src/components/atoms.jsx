@@ -120,16 +120,34 @@ export function Section({ title, children, style }) {
 //   open             (bool) — controlled; parent manages single-open-at-a-time
 //   onToggle         (fn)   — fired on header click (no args)
 //   dirty            (bool) — show a small blue dot in the header when true
+//   className        (str)  — v1.9.0; lands on the OUTER wrapper div. Used
+//                             by Settings to apply `.mgt-hover-scale` so
+//                             the whole section scales when the cursor
+//                             enters anywhere inside it. Inner rows that
+//                             also carry the class compound the effect on
+//                             top — hovering a specific row scales the
+//                             wrapper AND the row visually.
 //   headerClassName  (str)  — v1.9.0; lands on the clickable header div
 //                             (used to opt-in to .mgt-hover-scale)
 //   children         (node) — body content, only rendered when open
 //
+// v1.9.0: overflow changed from `hidden` → `visible` so transform-scaled
+// inner rows can break out of the section border on hover (matches the
+// row-card behaviour in Employees / Requests tabs). Side-effect: the body
+// `borderTop` hairline now extends to the wrapper's box edge rather than
+// being clipped at the rounded corner — a 1-2px cosmetic exposure, but
+// the trade-off is the scaled rows no longer get cut at the section
+// boundary. The Open days popover (Settings v1.3.0) was originally
+// anchored ABOVE its pill row specifically to dodge the old
+// `overflow: hidden`; the comment in Settings.jsx still references that
+// historical reason and the positioning stays unchanged.
+//
 // No new backdropFilter — sits inside the existing card blur.
-export function Collapsible({ title, open, onToggle, dirty, headerClassName, children }) {
+export function Collapsible({ title, open, onToggle, dirty, className, headerClassName, children }) {
   const wrapStyle = {
     ...S.surfaceSoft,
     padding: 0,
-    overflow: "hidden",
+    overflow: "visible",
   };
   const headerStyle = {
     display: "flex",
@@ -168,7 +186,7 @@ export function Collapsible({ title, open, onToggle, dirty, headerClassName, chi
   };
 
   return (
-    <div style={wrapStyle}>
+    <div style={wrapStyle} className={className}>
       <div
         style={headerStyle}
         className={headerClassName}

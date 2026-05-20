@@ -36,19 +36,52 @@ export const SECTIONS = Object.freeze({
 });
 
 // ── Default shift template ───────────────────────────────────────────────
+// v1.9.0 shape: each (section, dayPart) block stores `count` + a per-slot
+// `times` array of `{start, end}` entries (one per slot). Lets the
+// manager set distinct hours for each shift in a section/dayPart — e.g.
+// Kitchen evening's Chef (16:00–23:00), Plating (16:00–22:00), Pot
+// (17:00–22:30) all independent.
+//
+// Legacy v0.5.0–v1.8.x shape was `{count, start, end, secondPersonStart?}`
+// — a single start/end shared by every slot. slotsForDay() in
+// schedule-logic.js handles both shapes for backward compat: it reads
+// `times[i]` when present, falls back to the legacy fields otherwise
+// (with the v0.8.0 FoH-evening secondPersonStart override for slot 1+).
+// Settings.jsx materializes the legacy shape into the new shape on first
+// render so the form always edits per-slot.
 export const DEFAULT_SHIFT_TEMPLATE = Object.freeze({
   foh: {
-    day: { start: "11:00", end: "17:00", count: 1 },
+    day: {
+      count: 1,
+      times: [
+        { start: "11:00", end: "17:00" },
+      ],
+    },
     evening: {
-      start: "17:00",
-      end: "23:00",
       count: 2,
-      secondPersonStart: "18:00",
+      // v0.8.0 default behaviour preserved: 1st FoH evening starts at 17:00,
+      // 2nd at 18:00. Both end at 23:00 (close of service).
+      times: [
+        { start: "17:00", end: "23:00" },
+        { start: "18:00", end: "23:00" },
+      ],
     },
   },
   kitchen: {
-    day: { start: "11:00", end: "16:00", count: 1 },
-    evening: { start: "16:00", end: "23:00", count: 3 },
+    day: {
+      count: 1,
+      times: [
+        { start: "11:00", end: "16:00" },
+      ],
+    },
+    evening: {
+      count: 3,
+      times: [
+        { start: "16:00", end: "23:00" },
+        { start: "16:00", end: "23:00" },
+        { start: "16:00", end: "23:00" },
+      ],
+    },
   },
 });
 

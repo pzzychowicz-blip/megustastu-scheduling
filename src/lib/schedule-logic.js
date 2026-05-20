@@ -171,19 +171,40 @@ function defaultRoleForSlot(section, dayPart, index) {
   return roles[index] || null;
 }
 
+// v1.9.0: pull per-slot default times from a block. Reads from the new
+// `times` array when present; falls back to the legacy v0.5.0 shape
+// (single `start`/`end` per block, plus FoH-evening `secondPersonStart`
+// for slot 1+) when the saved doc predates the per-slot model. Settings
+// migrates on save, so legacy reads should be rare — but `slotsForDay`
+// is the read path for every consumer (grid, modal, generator, PDF
+// export) so the fallback has to live here, not just in Settings.
+function slotTimeFor(block, sectionKey, dayPart, index) {
+  if (Array.isArray(block.times)) {
+    const t = block.times[index];
+    if (t && t.start && t.end) return { start: t.start, end: t.end };
+  }
+  // Legacy fallback. FoH evening slot 1+ honours secondPersonStart.
+  let start = block.start;
+  if (sectionKey === "foh" && dayPart === "evening" && index > 0 && block.secondPersonStart) {
+    start = block.secondPersonStart;
+  }
+  return { start: start, end: block.end };
+}
+
 export function slotsForDay(template) {
   const slots = [];
 
   // Kitchen day
   const kitDay = template.kitchen.day;
   for (let i = 0; i < kitDay.count; i++) {
+    const t = slotTimeFor(kitDay, "kitchen", "day", i);
     slots.push({
       key: "kitchen-day-" + i,
       section: "kitchen",
       dayPart: "day",
       slotIndex: i,
-      defaultStart: kitDay.start,
-      defaultEnd: kitDay.end,
+      defaultStart: t.start,
+      defaultEnd: t.end,
       defaultRole: null,
       sectionLabel: SECTIONS.kitchen.label,
       dayPartLabel: "Day",
@@ -204,13 +225,14 @@ export function slotsForDay(template) {
   // Kitchen evening
   const kitEve = template.kitchen.evening;
   for (let i = 0; i < kitEve.count; i++) {
+    const t = slotTimeFor(kitEve, "kitchen", "evening", i);
     slots.push({
       key: "kitchen-evening-" + i,
       section: "kitchen",
       dayPart: "evening",
       slotIndex: i,
-      defaultStart: kitEve.start,
-      defaultEnd: kitEve.end,
+      defaultStart: t.start,
+      defaultEnd: t.end,
       defaultRole: defaultRoleForSlot("kitchen", "evening", i),
       sectionLabel: SECTIONS.kitchen.label,
       dayPartLabel: "Evening",
@@ -223,13 +245,14 @@ export function slotsForDay(template) {
   // FoH day
   const fohDay = template.foh.day;
   for (let i = 0; i < fohDay.count; i++) {
+    const t = slotTimeFor(fohDay, "foh", "day", i);
     slots.push({
       key: "foh-day-" + i,
       section: "foh",
       dayPart: "day",
       slotIndex: i,
-      defaultStart: fohDay.start,
-      defaultEnd: fohDay.end,
+      defaultStart: t.start,
+      defaultEnd: t.end,
       defaultRole: null,
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Day",
@@ -242,17 +265,18 @@ export function slotsForDay(template) {
     });
   }
 
-  // FoH evening (position 0 starts at evening.start; position 1+ at secondPersonStart)
+  // FoH evening. v1.9.0: per-slot times via slotTimeFor (legacy
+  // secondPersonStart still honoured for backward-compat reads).
   const fohEve = template.foh.evening;
   for (let i = 0; i < fohEve.count; i++) {
-    const start = i === 0 ? fohEve.start : (fohEve.secondPersonStart || fohEve.start);
+    const t = slotTimeFor(fohEve, "foh", "evening", i);
     slots.push({
       key: "foh-evening-" + i,
       section: "foh",
       dayPart: "evening",
       slotIndex: i,
-      defaultStart: start,
-      defaultEnd: fohEve.end,
+      defaultStart: t.start,
+      defaultEnd: t.end,
       defaultRole: defaultRoleForSlot("foh", "evening", i),
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Evening",

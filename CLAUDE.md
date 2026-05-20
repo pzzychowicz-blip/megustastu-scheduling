@@ -387,6 +387,33 @@ separate Firebase project, same UI conventions).
   one preserve flag is OFF by default, the Regenerate button opens
   in the danger-red variant — making the destructive default
   explicit before any click.
+
+- **Per-slot shift hours (v1.9.0):** the `/shiftTemplate` shape per
+  (section, dayPart) block became `{count, times: [{start, end}, ...]}`
+  where `times.length === count`. Each shift slot now carries its
+  OWN start/end — Kitchen evening's Chef can run 16:00–23:00 while
+  Plating runs 16:00–22:00 and Pot runs 17:00–22:30, all stored
+  independently on the template. Replaces the single shared
+  `{start, end}` per block (legacy v0.5.0–v1.8.x shape) and the
+  v0.8.0 `secondPersonStart` field for FoH evening (which was a
+  partial per-slot override of just the start time). The Settings
+  UI in FoH / Kitchen sections renders `Count` once at the top then
+  N labelled per-slot rows below — labelled with the section's role
+  (Chef / Plating / Pot / Bar / Floor) for evening slots, or
+  "Shift N" for day slots where one person covers all section
+  roles. `slotsForDay()` in schedule-logic.js reads `times[i]` when
+  present and falls back to the legacy `start`/`end`/
+  `secondPersonStart` shape when reading a pre-v1.9.0 saved doc, so
+  in-flight reads during a partial upgrade don't break. Settings
+  always saves the new shape, so existing docs upgrade lazily on
+  the manager's next Save click. No write migration job needed.
+  `blockError` and `blockDirty` in Settings.jsx compare the per-slot
+  arrays; count changes grow / truncate the `times` array
+  (extending with the last entry's times — common case is "add
+  another person at the same hours"). The shift records on
+  `/shifts/{id}` are unaffected — they already carry their own
+  start/end overrides per cell; the template only seeds defaults
+  for new cells.
 - **Priority badge re-pin (v1.7.0):** the "Priority" `<TBadge>` in
   EmployeesList moved out of the top-right cluster. It now shares the
   bottom row with the Pattern + fixed-days text — the badge anchors
@@ -486,6 +513,25 @@ separate Firebase project, same UI conventions).
   days popover. The atoms `<Fld>`, `<Toggle>`, and `<Collapsible>`
   gained an optional `className` / `headerClassName` prop so callers
   can opt individual rows into the utility without forking the atom.
+  
+  **Third wave (fifth v1.9.0 commit, ShiftFormModal + section-level
+  scaling + overflow fix):** every clickable element inside
+  `<ShiftFormModal>` (the cell-edit modal in the Schedule grid) —
+  the assignee-related Toggle, each evening-role pill, the
+  "Reset times & role" ghost button, Clear (delete), Move/Swap,
+  Cancel, and Save; the swap-mode banner's Cancel/× button on the
+  Schedule grid. Settings `<Collapsible>` sections now scale as a
+  WHOLE when the cursor enters anywhere inside them (via a new
+  `className` prop on the atom's wrapper div) and the existing
+  per-row scaling on inner Toggles / Flds / pills layers ON TOP,
+  giving the manager a clear "section is hot" feedback PLUS a
+  finer-grained "this specific row is hot" cue. The Collapsible
+  atom's `overflow: hidden` was relaxed to `overflow: visible` so
+  scaled inner rows can break out of the section border (matches
+  the Schedule grid's clipping fix); side-effect: the body's
+  `borderTop` hairline extends to the wrapper's box edge rather
+  than the rounded corner — a 1-2 px cosmetic exposure, traded
+  for the row-scale visibility.
   
   **Still out of scope** (deliberately): standalone `<input>` /
   `<select>` form controls (they get scaling through their `<Fld>`
@@ -628,7 +674,7 @@ megustastu-scheduling/
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
-    │                                 "pdf-dayoff-preview-hover-broad".
+    │                                 "perslot-hours-hover-polish".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1453,11 +1499,16 @@ src/
                                      // this employee before non-priority ones
       active }
 
-/shiftTemplate
-  → { foh:     { day: {start,end,count},
-                 evening: {start,end,count,secondPersonStart} },
-      kitchen: { day: {start,end,count},
-                 evening: {start,end,count} } }
+/shiftTemplate                                              // v1.9.0 shape
+  → { foh:     { day:     { count, times: [{start,end},...] },
+                 evening: { count, times: [{start,end},...] } },
+      kitchen: { day:     { count, times: [{start,end},...] },
+                 evening: { count, times: [{start,end},...] } } }
+   // Per-slot times — each shift in a section/dayPart has its own
+   // start/end. `times.length === count`. Pre-v1.9.0 docs with the
+   // legacy `{start,end,count,secondPersonStart?}` shape still read
+   // correctly via the slotsForDay fallback; Settings rewrites to the
+   // new shape on the next Save.
 
 /shifts/{shiftId}
   → { date, section: "foh"|"kitchen", dayPart: "day"|"evening",

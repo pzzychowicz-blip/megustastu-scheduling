@@ -319,6 +319,7 @@ export default function ShiftFormModal({
               ? eligible.requestHiddenCount + " hidden"
               : null
           }
+          className="mgt-hover-scale"
         />
       </div>
     )
@@ -458,6 +459,7 @@ export default function ShiftFormModal({
               <button
                 key={r}
                 type="button"
+                className="mgt-hover-scale"
                 onClick={function () { setField("role", on ? "" : r); }}
                 style={{
                   ...BTN.base,
@@ -483,7 +485,7 @@ export default function ShiftFormModal({
     );
 
   const deleteButton = (shift && shift.id)
-    ? mkBtn({ type: "button", variant: "danger", onClick: handleDelete, children: "Clear" })
+    ? mkBtn({ type: "button", className: "mgt-hover-scale", variant: "danger", onClick: handleDelete, children: "Clear" })
     : null;
 
   // v1.7.0: Move/Swap entry. Only visible when an assignment exists AND
@@ -492,6 +494,7 @@ export default function ShiftFormModal({
   const swapButton = (shift && shift.id && shift.employeeId && onStartSwap)
     ? mkBtn({
         type: "button",
+        className: "mgt-hover-scale",
         variant: "secondary",
         onClick: handleStartSwap,
         children: "Move / Swap…",
@@ -549,6 +552,7 @@ export default function ShiftFormModal({
       <div style={{ marginTop: 4 }}>
         <button
           type="button"
+          className="mgt-hover-scale"
           onClick={resetToDefaults}
           style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 12 }}
         >
@@ -570,9 +574,10 @@ export default function ShiftFormModal({
           {swapButton}
         </div>
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-          {mkBtn({ type: "button", variant: "ghost",   onClick: onClose,    children: "Cancel" })}
+          {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "ghost", onClick: onClose, children: "Cancel" })}
           {mkBtn({
             type: "button",
+            className: "mgt-hover-scale",
             variant: "primary",
             onClick: handleSave,
             disabled: !valid,
