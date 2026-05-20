@@ -549,6 +549,24 @@ separate Firebase project, same UI conventions).
   implicit `overflow-y: auto` when `overflow-x` is non-visible, so
   any padding-less scrolling container clips transformed children
   at all four sides.
+  
+  **Opaque-bg-on-hover (sixth v1.9.0 commit):** the
+  `.mgt-hover-scale:hover` rule now also sets
+  `background-color: var(--bg-overlay-sheet)` +
+  `box-shadow: var(--shadow-soft)` + `position: relative` +
+  `z-index: 2`. Surfaces that had no inline `background` (Toggle
+  atoms, Collapsible section headers, Fld-wrapped rows in Settings)
+  used to read as transparent when scaled — their text "bled" into
+  adjacent rows on hover. The new declarations fill that gap.
+  Elements WITH an inline `background:` style (mkBtn variant
+  buttons, palette pills, schedule cells, row cards) keep their
+  existing colours because inline styles beat CSS rules at the
+  same level — the new `background-color` only fills in the gap
+  for elements that had none, so colour-coded surfaces are
+  unaffected. The z-index bump lifts the hovered element above
+  its siblings during the hover; combined with the box-shadow,
+  the scaled element reads as a card lifting off the surrounding
+  surface.
 
 - **Requests-this-week type pills preview the request (v1.9.0):**
   in `<WeeklyRequestsPreview>` the colored type pill of each chip
@@ -674,7 +692,7 @@ megustastu-scheduling/
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
-    │                                 "perslot-hours-hover-polish".
+    │                                 "perslot-hover-opaque-bg".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut

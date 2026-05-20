@@ -194,7 +194,7 @@ export default function RequestPreviewModal({ open, request, employees, isMobile
           marginTop: 16,
         }}
       >
-        {mkBtn({ type: "button", variant: "ghost", onClick: onClose, children: "Close" })}
+        {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "ghost", onClick: onClose, children: "Close" })}
       </div>
 
       <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>

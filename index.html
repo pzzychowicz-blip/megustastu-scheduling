@@ -273,9 +273,10 @@
       /* ── v1.9.0: unified hover-scale utility ────────────────────────────
          Single reusable hover affordance, applied to every primary
          interactive surface (schedule cells, nav buttons, list rows,
-         pills, top-tab nav). Originally introduced in v1.9.0 as
-         `.mgt-req-pill` inside WeeklyRequestsPreview; lifted here so
-         every consumer reads from one rule.
+         pills, top-tab nav, Settings rows, modal actions). Originally
+         introduced in v1.9.0 as `.mgt-req-pill` inside
+         WeeklyRequestsPreview; lifted here so every consumer reads
+         from one rule.
 
          `:not(:disabled)` keeps gated buttons (e.g. Export PDF before
          the week is complete) from reacting to hover — browsers DO
@@ -285,12 +286,27 @@
          transform is paint-only: no layout reflow on adjacent cells /
          buttons. A hovered grid cell visually lifts over its neighbours
          while their positions stay put — matches the iOS-tappable feel.
+
+         v1.9.0 (perslot+ commit): added `background-color` + `box-shadow`
+         + `position: relative` + `z-index` on hover so transparent rows
+         (Toggle atoms in ShiftFormModal / Settings, Collapsible section
+         headers, Fld-wrapped rows in Settings) get an opaque card-like
+         surface when hovered instead of bleeding text into the row
+         below. Elements that already have an inline `background:` style
+         (mkBtn variant buttons, palette pills, schedule cells, row
+         cards) keep their existing colour because inline styles beat
+         CSS rules at the same level — the new `background-color`
+         declaration only fills in the gap for elements that had none.
       ────────────────────────────────────────────────────────────────── */
       .mgt-hover-scale {
-        transition: transform 120ms ease;
+        transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
       }
       .mgt-hover-scale:hover:not(:disabled) {
         transform: scale(1.08);
+        background-color: var(--bg-overlay-sheet);
+        box-shadow: var(--shadow-soft);
+        position: relative;
+        z-index: 2;
       }
     </style>
   </head>

@@ -367,6 +367,50 @@ T. **`src/App.jsx`** — `sha`
 Bundle delta: 164.03 → 164.67 kB gz main (+0.64 kB), 320 modules
 unchanged.
 
+### Sixth commit — RequestPreviewModal Close + opaque background on hover
+
+Two surfaces flagged in the v1.9.0 5th-commit review:
+
+1. **RequestPreviewModal's Close button was missing
+   `mgt-hover-scale`.** Added the className via the `mkBtn` props.
+
+2. **Transparent rows had their text bleed into adjacent rows on
+   hover** — visible on the "Show staff on day off / holiday"
+   Toggle inside ShiftFormModal and on the Settings accordion
+   section headers ("Operating time", etc.). The scaled element
+   had no opaque background of its own, so when its visual extent
+   grew past the original row, the row below's text was still
+   visible through the scaled area. Fix lives entirely in
+   `index.html`'s `.mgt-hover-scale:hover` rule:
+
+   ```css
+   .mgt-hover-scale:hover:not(:disabled) {
+     transform: scale(1.08);
+     background-color: var(--bg-overlay-sheet);
+     box-shadow: var(--shadow-soft);
+     position: relative;
+     z-index: 2;
+   }
+   ```
+
+   Elements with inline `background:` styles (mkBtn variant
+   buttons, palette pills, status cells, row cards) keep their
+   inline colours because inline beats CSS — the new
+   `background-color` only fills in the gap for surfaces that
+   had no inline background. The `position: relative + z-index:
+   2` lifts the hovered element above its non-positioned siblings
+   so the painted card visually covers anything underneath even
+   when the inline background isn't fully opaque. `box-shadow`
+   adds a subtle elevation cue.
+
+`src/App.jsx`: `sha` "perslot-hours-hover-polish" →
+"perslot-hover-opaque-bg".
+
+Files touched: `index.html`, `src/App.jsx`,
+`src/components/RequestPreviewModal.jsx`, plus doc updates in
+`CLAUDE.md` and this log entry. No JS bundle delta expected
+(CSS-only + one className string).
+
 ### Locked decisions (session 15)
 
 | Q | A |
