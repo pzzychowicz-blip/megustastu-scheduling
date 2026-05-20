@@ -527,6 +527,7 @@ export default function ShiftFormModal({
           <Fld label="Start">
             {mkInp({
               type: "time",
+              className: "mgt-hover-scale",
               value: form.start,
               onChange: function (e) { setField("start", e.target.value); },
             })}
@@ -536,6 +537,7 @@ export default function ShiftFormModal({
           <Fld label="End">
             {mkInp({
               type: "time",
+              className: "mgt-hover-scale",
               value: form.end,
               onChange: function (e) { setField("end", e.target.value); },
             })}

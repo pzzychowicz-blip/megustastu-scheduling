@@ -586,6 +586,30 @@ separate Firebase project, same UI conventions).
   ALSO scaling 1.08 (compound ≈ 1.166), the extra padding keeps
   the lifted card visually inside the section's wrapper.
 
+  **Field-only scale pattern (eighth v1.9.0 commit):** for any
+  field where the manager adjusts a time / date / count value or
+  enters notes, the `.mgt-hover-scale` class moves from the
+  wrapping `<Fld>` (which scaled the label + input together) to
+  the input element itself. Labels stay anchored; only the
+  editable surface lifts on hover — the user-visible affordance
+  is "the thing you can change is the thing that highlights."
+  Applied across:
+    - `Settings.jsx` Operating time Start / End (already field-only-
+      scale candidates from the start of v1.9.0 — this commit
+      moves the existing className from the Fld to the inputs);
+    - `Settings.jsx` FoH / Kitchen renderBlock — Count input +
+      every per-slot Start / End input. The slot-label column
+      ("Chef", "Plating", "Pot", "Bar", "Floor", "Shift N") is
+      a static `<div>` and never scaled, so it stays put;
+    - `ShiftFormModal.jsx` cell-edit Start / End time inputs;
+    - `RequestFormModal.jsx` From / To date inputs + Notes
+      textarea.
+  The `Toggle` atom's `rowStyle` padding bumped from `"6px 0"` to
+  `"10px 12px"` so the hover background (added in the sixth
+  v1.9.0 commit) has visible breathing room around the label and
+  switch instead of hugging them tight — fixes the "squashed"
+  appearance reported in the seventh-commit screenshots.
+
 - **Requests-this-week type pills preview the request (v1.9.0):**
   in `<WeeklyRequestsPreview>` the colored type pill of each chip
   row became a `<button type="button">` with `className="mgt-req-pill"`.
@@ -710,7 +734,7 @@ megustastu-scheduling/
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
-    │                                 "hover-rounded-toggle-padding".
+    │                                 "field-only-scale-pattern".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut

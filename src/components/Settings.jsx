@@ -597,11 +597,12 @@ export default function Settings({
     return (
       <div style={{ marginBottom: 14 }}>
         <div style={{ ...S.fldLabel, marginBottom: 6 }}>{label}</div>
-        <Fld label="Count" className="mgt-hover-scale">
+        <Fld label="Count">
           {mkInp({
             type: "number",
             min: 1,
             step: 1,
+            className: "mgt-hover-scale",
             value: Number.isFinite(block.count) ? block.count : "",
             onChange: function (e) { onCountChange(section, dayPart, e); },
             style: { maxWidth: 120 },
@@ -621,16 +622,18 @@ export default function Settings({
               >
                 {slotLabelFor(section, dayPart, i, block.count)}
               </div>
-              <Fld label="Start" className="mgt-hover-scale">
+              <Fld label="Start">
                 {mkInp({
                   type: "time",
+                  className: "mgt-hover-scale",
                   value: t.start,
                   onChange: function (e) { onSlotTimeChange(section, dayPart, i, "start", e); },
                 })}
               </Fld>
-              <Fld label="End" className="mgt-hover-scale">
+              <Fld label="End">
                 {mkInp({
                   type: "time",
+                  className: "mgt-hover-scale",
                   value: t.end,
                   onChange: function (e) { onSlotTimeChange(section, dayPart, i, "end", e); },
                 })}
@@ -695,16 +698,18 @@ export default function Settings({
         >
           <div style={{ ...S.fldLabel, marginBottom: 6 }}>Restaurant open</div>
           <div style={hoursRowStyle}>
-            <Fld label="Start" className="mgt-hover-scale">
+            <Fld label="Start">
               {mkInp({
                 type: "time",
+                className: "mgt-hover-scale",
                 value: hoursForm.operatingStart,
                 onChange: function (e) { onHoursChange("operatingStart", e); },
               })}
             </Fld>
-            <Fld label="End" className="mgt-hover-scale">
+            <Fld label="End">
               {mkInp({
                 type: "time",
+                className: "mgt-hover-scale",
                 value: hoursForm.operatingEnd,
                 onChange: function (e) { onHoursChange("operatingEnd", e); },
               })}

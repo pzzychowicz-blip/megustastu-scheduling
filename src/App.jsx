@@ -23,7 +23,7 @@ import AppShell from "./components/AppShell.jsx";
 export const __APP_SIGNATURE__ = Object.freeze({
   version: "1.9.0",
   build: "2026-05-20",
-  sha: "hover-rounded-toggle-padding",
+  sha: "field-only-scale-pattern",
 });
 
 // Expose for DevTools / debugging.

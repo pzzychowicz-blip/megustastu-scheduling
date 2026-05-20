@@ -343,6 +343,7 @@ export default function RequestFormModal({
           <Fld label="From">
             {mkInp({
               type: "date",
+              className: "mgt-hover-scale",
               value: form.dateFrom,
               onChange: function (e) { setDateFrom(e.target.value); },
             })}
@@ -352,6 +353,7 @@ export default function RequestFormModal({
           <Fld label="To">
             {mkInp({
               type: "date",
+              className: "mgt-hover-scale",
               value: form.dateTo,
               min: form.dateFrom || undefined,
               onChange: function (e) { setField("dateTo", e.target.value); },
@@ -364,6 +366,7 @@ export default function RequestFormModal({
 
       <Fld label="Notes (optional)">
         <textarea
+          className="mgt-hover-scale"
           value={form.notes}
           onChange={function (e) { setField("notes", e.target.value); }}
           rows={2}

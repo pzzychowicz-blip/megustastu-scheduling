@@ -236,7 +236,14 @@ export function Toggle({ checked, onChange, label, helper, disabled, className }
     display: "flex",
     alignItems: "center",
     gap: 12,
-    padding: "6px 0",
+    // v1.9.0 (perslot+ commit, third round): row padding bumped from
+    // "6px 0" to "10px 12px" so the hover background (added in the
+    // sixth v1.9.0 commit) has visible breathing room around the
+    // label / switch instead of hugging them tight. Vertical 10 keeps
+    // multi-line helper text legible; horizontal 12 inset matches the
+    // app's general button / pill padding so the lifted card reads
+    // as a coherent surface.
+    padding: "10px 12px",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: off,
     userSelect: "none",

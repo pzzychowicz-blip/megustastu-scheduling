@@ -447,6 +447,59 @@ plus doc updates in `CLAUDE.md` and this log entry. JS bundle
 delta in noise range (~+0.05 kB gz for the slightly longer padding
 strings).
 
+### Eighth commit — Toggle padding + field-only-scale pattern
+
+Three points from the seventh-commit screenshot review:
+
+1. **Toggle row's hover background looked squashed against the
+   text.** `atoms.jsx` Toggle `rowStyle.padding` bumped from
+   `"6px 0"` (vertical-only, hugging the row edges horizontally)
+   to `"10px 12px"`. Vertical breathing room near-doubles so
+   multi-line helper text isn't crowded; horizontal 12 inset
+   matches the app's general button / pill padding so the lifted
+   card reads as a coherent surface.
+
+2. **In Settings FoH / Kitchen, "Count" / "Start" / "End"
+   LABELS were scaling on hover** — the manager's eye snapped to
+   the label rather than the editable field. The
+   `mgt-hover-scale` className moved from the wrapping `<Fld>` to
+   the input element itself. Labels stay anchored; only the
+   editable surface lifts. Applies to:
+   - `Settings.jsx` Operating time Start / End inputs;
+   - `Settings.jsx` FoH / Kitchen Count + every per-slot Start /
+     End input (renderBlock);
+
+3. **Same pattern persistently applied across the app** for any
+   field where the manager adjusts time / date / notes:
+   - `ShiftFormModal.jsx` cell-edit Start / End time inputs;
+   - `RequestFormModal.jsx` From / To date inputs + Notes
+     `<textarea>`.
+
+   `EmployeeFormModal.jsx` has no time / date / notes fields
+   (Name is a free-text identifier, not a notes field), so no
+   changes there. Read-only modals (`RequestPreviewModal`) display
+   values as static text and aren't affected.
+
+Item #3 from the user's report — "Show staff on day off /
+holiday Toggle must be able to overflow the section border when
+mgt-hover-scale is in use" — is left unconstrained by design:
+the Toggle's wrapping `<div style={{marginTop: 8}}>` in
+`ShiftFormModal.jsx` has no overflow rule, and the modal
+Overlay sheet's `overflow: auto` clips only when content actually
+exceeds 80vh — a slim Toggle row at the top of the Assignee Fld
+doesn't reach that threshold, so the scaled card lifts freely
+within the modal sheet.
+
+`src/App.jsx`: `sha` "hover-rounded-toggle-padding" →
+"field-only-scale-pattern".
+
+Files touched: `src/App.jsx`, `src/components/atoms.jsx`,
+`src/components/Settings.jsx`, `src/components/ShiftFormModal.jsx`,
+`src/components/RequestFormModal.jsx`, plus doc updates in
+`CLAUDE.md` and this log entry. Bundle delta in noise range
+(className strings moved between elements; Toggle padding string
+4 chars longer).
+
 ### Locked decisions (session 15)
 
 | Q | A |
