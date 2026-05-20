@@ -112,25 +112,6 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
         padding: 12,
       }}
     >
-      {/* v1.9.0: real CSS :hover for the pill scale-up. Inline <style>
-          block mirrors the v1.7.0 swap-pulse keyframes approach in
-          ScheduleGrid — React inline-styles don't get :hover for free,
-          and the alternative (onMouseEnter / onMouseLeave handlers that
-          mutate currentTarget.style) was rejected as too heavy for a
-          purely cosmetic effect. `transform: scale(1.08)` is the same
-          magnitude commonly used in iOS-style tap feedback — visible
-          but not jarring. `transform-origin` defaults to center so the
-          pill expands symmetrically. */}
-      <style>{
-        ".mgt-req-pill {" +
-        "  transition: transform 120ms ease;" +
-        "  cursor: pointer;" +
-        "}" +
-        ".mgt-req-pill:hover {" +
-        "  transform: scale(1.08);" +
-        "}"
-      }</style>
-
       <div style={{ ...S.h2, margin: 0, marginBottom: 8, fontSize: 14 }}>
         Requests this week
       </div>
@@ -168,10 +149,13 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                   element in the row. Default button chrome stripped
                   (background = palette bg, border = palette border,
                   font inherit, padding kept consistent with the v1.6.0
-                  span style). Click opens the read-only preview. */}
+                  span style). Click opens the read-only preview.
+                  Hover-scale comes from the shared `.mgt-hover-scale`
+                  class defined in index.html (one rule for every
+                  primary interactive surface in the app). */}
               <button
                 type="button"
-                className="mgt-req-pill"
+                className="mgt-hover-scale"
                 onClick={function () { setPreviewRequest(r.record); }}
                 title="Preview request"
                 style={{
@@ -184,6 +168,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                   border: r.palette ? ("1px solid " + r.palette.border) : "1px solid var(--hairline-strong)",
                   font: "inherit",
                   lineHeight: 1.4,
+                  cursor: "pointer",
                 }}
               >
                 {r.typeLabel}

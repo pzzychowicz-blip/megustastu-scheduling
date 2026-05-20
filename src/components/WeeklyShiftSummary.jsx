@@ -189,6 +189,7 @@ export default function WeeklyShiftSummary({
             <button
               key={r.id}
               type="button"
+              className="mgt-hover-scale"
               onClick={interactive
                 ? function () { onHighlight(isSelected ? null : r.id); }
                 : undefined}

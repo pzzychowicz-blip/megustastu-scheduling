@@ -441,6 +441,32 @@ separate Firebase project, same UI conventions).
   evening role with template times) are NOT shown — role identity
   in the PDF is per-row, not per-cell, so the row label already
   tells the reader.
+- **Unified hover-scale across interactive surfaces (v1.9.0):**
+  every primary interactive surface in the app shares a single CSS
+  hover affordance — `.mgt-hover-scale { transition: transform 120ms
+  ease } .mgt-hover-scale:hover:not(:disabled) { transform:
+  scale(1.08); }` — defined once globally in `index.html` alongside
+  the theme tokens. Consumers (cells, pills, nav buttons, row cards,
+  tab nav) just add `className="mgt-hover-scale"`. The `:not(:disabled)`
+  guard is load-bearing — browsers DO apply `:hover` to disabled
+  buttons by default, and Export PDF needs to stay flat when the week
+  is incomplete. Surfaces gaining the class: `WeeklyShiftSummary`
+  pill, every schedule grid cell, the Prev/Today/Next nav buttons,
+  `<GenerateButton>`, `<SwapButton>`, `<ClearButton>`, `<ExportButton>`
+  (gated by `:disabled`), the top tab nav in `<AppShell>` (Schedule
+  | Employees | Requests | Settings), employee row cards + Add
+  Employee + Show archived in `<EmployeesList>`, request row cards +
+  Add Request + Show past in `<RequestsList>`, Save changes + Reset
+  to defaults in `<Settings>`, and the v1.9.0 request type pill in
+  `<WeeklyRequestsPreview>` (renamed from the local `mgt-req-pill`
+  class). Out of scope (deliberately): form inputs, Toggle atom
+  switches, segmented controls, Collapsible accordion headers, and
+  modal action buttons — they have their own interaction patterns
+  that scaling would compete with. The single magnitude (`1.08`)
+  was picked to match the v1.9.0 request pill that introduced the
+  pattern; `transform` is paint-only so adjacent surfaces don't
+  reflow when a hovered cell visually lifts.
+
 - **Requests-this-week type pills preview the request (v1.9.0):**
   in `<WeeklyRequestsPreview>` the colored type pill of each chip
   row became a `<button type="button">` with `className="mgt-req-pill"`.
@@ -565,7 +591,7 @@ megustastu-scheduling/
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
-    │                                 "pdf-visibility-dayoff-chip-preview".
+    │                                 "pdf-visibility-dayoff-preview-hover".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1295,22 +1321,23 @@ megustastu-scheduling/
         │                           an inert `<div>` (no row-level
         │                           click target / hover border). Only
         │                           the colored type pill `<span>`
-        │                           became a `<button type="button">`
-        │                           with `className="mgt-req-pill"`.
-        │                           Inline `<style>` block at the
-        │                           rendered tree's top defines real
-        │                           CSS `:hover { transform: scale(
-        │                           1.08); }` for the pill (mirrors
-        │                           the v1.7.0 swap-pulse keyframes
-        │                           approach). + new local state
+        │                           became a `<button type="button">`.
+        │                           First v1.9.0 used a local class
+        │                           `mgt-req-pill` with an inline
+        │                           `<style>` block; the third v1.9.0
+        │                           commit consolidates the pill into
+        │                           the shared `.mgt-hover-scale`
+        │                           utility defined in `index.html` —
+        │                           local class + inline `<style>`
+        │                           block both removed. + local state
         │                           `[previewRequest, setPreviewRequest]`
-        │                           owns the read-only preview modal
-        │                           — `<RequestPreviewModal>` mounted
-        │                           at the bottom of the component's
-        │                           JSX. Edit access is intentionally
-        │                           NOT wired up here; it stays on
-        │                           the Requests tab via
-        │                           `<RequestsList>` + `<RequestFormModal>`.
+        │                           owns the read-only preview modal —
+        │                           `<RequestPreviewModal>` mounted at
+        │                           the bottom of the component's JSX.
+        │                           Edit access is intentionally NOT
+        │                           wired up here; it stays on the
+        │                           Requests tab via `<RequestsList>`
+        │                           + `<RequestFormModal>`.
         ├── RequestPreviewModal.jsx v1.9.0: NEW. Read-only preview of
         │                           a single request, rendered inside
         │                           Overlay. Opened from the

@@ -540,6 +540,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       <button
         key={slot.key + "-" + dIso}
         type="button"
+        className="mgt-hover-scale"
         onClick={function () { cellClick(dIso, slot, existing); }}
         style={{
           width: "100%",
@@ -637,9 +638,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       }}
     >
       <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={goPrev}  style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>‹ Prev</button>
-        <button onClick={goToday} style={{ ...BTN.base, ...BTN.secondary, padding: "6px 12px", fontSize: 13 }}>Today</button>
-        <button onClick={goNext}  style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>Next ›</button>
+        <button onClick={goPrev}  className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>‹ Prev</button>
+        <button onClick={goToday} className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.secondary, padding: "6px 12px", fontSize: 13 }}>Today</button>
+        <button onClick={goNext}  className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>Next ›</button>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>

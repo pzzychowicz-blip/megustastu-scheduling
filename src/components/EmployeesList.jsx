@@ -109,6 +109,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
       <button
         key={emp.id}
         type="button"
+        className="mgt-hover-scale"
         onClick={function () { openEdit(emp); }}
         style={{
           display: "block",
@@ -193,6 +194,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
         <p style={{ ...S.body, marginBottom: 12 }}>No employees yet.</p>
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: "primary",
           onClick: openAdd,
           children: "Add your first employee",
@@ -221,6 +223,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
         </span>
         <button
           type="button"
+          className="mgt-hover-scale"
           onClick={function () { setShowArchived(function (v) { return !v; }); }}
           style={{ ...BTN.base, ...BTN.ghost, padding: "4px 10px", fontSize: 12 }}
         >
@@ -249,6 +252,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
         </span>
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: "primary",
           onClick: openAdd,
           children: "+ Add employee",

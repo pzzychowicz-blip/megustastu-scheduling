@@ -269,6 +269,29 @@
         color: var(--color-body);
         -webkit-font-smoothing: antialiased;
       }
+
+      /* ── v1.9.0: unified hover-scale utility ────────────────────────────
+         Single reusable hover affordance, applied to every primary
+         interactive surface (schedule cells, nav buttons, list rows,
+         pills, top-tab nav). Originally introduced in v1.9.0 as
+         `.mgt-req-pill` inside WeeklyRequestsPreview; lifted here so
+         every consumer reads from one rule.
+
+         `:not(:disabled)` keeps gated buttons (e.g. Export PDF before
+         the week is complete) from reacting to hover — browsers DO
+         apply :hover to disabled buttons by default, so the guard is
+         load-bearing.
+
+         transform is paint-only: no layout reflow on adjacent cells /
+         buttons. A hovered grid cell visually lifts over its neighbours
+         while their positions stay put — matches the iOS-tappable feel.
+      ────────────────────────────────────────────────────────────────── */
+      .mgt-hover-scale {
+        transition: transform 120ms ease;
+      }
+      .mgt-hover-scale:hover:not(:disabled) {
+        transform: scale(1.08);
+      }
     </style>
   </head>
   <body>

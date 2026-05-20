@@ -54,6 +54,7 @@ export default function ExportButton({ weekStart, slots, weekShifts, employees, 
   return (
     <button
       type="button"
+      className="mgt-hover-scale"
       onClick={handleClick}
       disabled={!ready}
       style={style}

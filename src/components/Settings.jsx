@@ -818,11 +818,13 @@ export default function Settings({
       >
         {mkBtn({
           variant: "ghost",
+          className: "mgt-hover-scale",
           onClick: handleReset,
           children: "Reset to defaults",
         })}
         {mkBtn({
           variant: "primary",
+          className: "mgt-hover-scale",
           onClick: handleSave,
           disabled: saveDisabled,
           style: saveStyle,

@@ -153,6 +153,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
           <button
             key={t.key}
             type="button"
+            className="mgt-hover-scale"
             onClick={function () { setTab(t.key); }}
             style={{
               ...BTN.base,

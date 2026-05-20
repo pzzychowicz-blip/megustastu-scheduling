@@ -46,6 +46,7 @@ export default function SwapButton({ active, onToggle }) {
   return (
     <button
       type="button"
+      className="mgt-hover-scale"
       onClick={onToggle}
       style={style}
       title={active

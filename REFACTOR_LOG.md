@@ -30,11 +30,26 @@ The first commit on this branch wired up an editable
 RequestFormModal in ScheduleGrid + made each chip ROW clickable.
 Patryk's feedback was that the row-level click target was too heavy,
 the row-hover border noisy, and edit access on the Schedule tab risky
-during a glance. The follow-up commit (this entry) reverts those
-ScheduleGrid additions and pares the click target down to just the
-type pill, swaps the row-border hover for a `transform: scale(1.08)`
-on the pill via real CSS `:hover`, and switches the click action to
-a read-only preview modal.
+during a glance. The second commit reverted those ScheduleGrid
+additions and pared the click target down to just the type pill,
+swapped the row-border hover for a `transform: scale(1.08)` on the
+pill via real CSS `:hover`, and switched the click action to a
+read-only preview modal.
+
+The **third commit** (hover-scale) extends the v1.9.0 request-pill
+hover affordance to every primary interactive surface in the app —
+schedule grid cells, "Shifts assigned" pills, nav buttons
+(Prev/Today/Next/Generate/Swap/Clear/Export PDF — Export
+auto-skipped when disabled via `:not(:disabled)`), top tab nav
+(Schedule | Employees | Requests | Settings), employee row cards +
+Add Employee + Show archived, request row cards + Add Request +
+Show past, and Settings' Save changes + Reset to defaults. Form
+controls, Toggle atoms, segmented controls, accordion headers,
+and modal action buttons are deliberately out of scope. The
+class is defined once globally in `index.html` alongside the
+theme tokens; consumers just add `className="mgt-hover-scale"`.
+The local `mgt-req-pill` class + inline `<style>` block inside
+`WeeklyRequestsPreview` are removed as part of the consolidation.
 
 ### What landed
 
@@ -120,7 +135,61 @@ a read-only preview modal.
 
 8. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.8.2 → 1.9.0,
    `build` 2026-05-19 → 2026-05-20,
-   `sha` "recurring-shift-preference" → "pdf-visibility-dayoff-chip-preview".
+   `sha` "recurring-shift-preference" → "pdf-visibility-dayoff-preview-hover"
+   (renamed across the three commits as the scope grew —
+   "pdf-visibility-dayoff-chip-edit" → "-chip-preview" → "-preview-hover").
+
+### Third commit — unified hover-scale (files touched)
+
+A. **`index.html`** — added `.mgt-hover-scale { transition:
+   transform 120ms ease } .mgt-hover-scale:hover:not(:disabled)
+   { transform: scale(1.08); }` inside the existing top-of-file
+   `<style>` block alongside the theme tokens. Single source for
+   the hover affordance.
+
+B. **`src/components/WeeklyRequestsPreview.jsx`** — removed the
+   local `mgt-req-pill` class + the inline `<style>` block; the
+   type pill now uses `className="mgt-hover-scale"`. Cursor stays
+   inline (default `pointer` for buttons; explicit declaration
+   kept on the pill for clarity).
+
+C. **`src/components/WeeklyShiftSummary.jsx`** — pill button gains
+   `className="mgt-hover-scale"`.
+
+D. **`src/components/ScheduleGrid.jsx`** — schedule grid cell
+   button + the three nav buttons (Prev, Today, Next) gain
+   `className="mgt-hover-scale"`. The cell's existing inline
+   `animation` (swap-pulse on the source cell) composes cleanly
+   with the hover transform — different CSS properties, no
+   conflict.
+
+E. **`src/components/GenerateButton.jsx`**,
+   **`src/components/SwapButton.jsx`**,
+   **`src/components/ClearButton.jsx`**,
+   **`src/components/ExportButton.jsx`** — each component's single
+   button gains the className. Export PDF's disabled state is
+   already handled by the CSS rule's `:not(:disabled)` guard — no
+   per-render conditional needed.
+
+F. **`src/components/AppShell.jsx`** — top tab-nav `<button>`
+   inside `TABS.map` gains the className. All four tabs (Schedule,
+   Employees, Requests, Settings) participate.
+
+G. **`src/components/EmployeesList.jsx`** — row card button + Show
+   archived button + both `mkBtn`-rendered Add Employee buttons
+   (empty-state CTA and header-row CTA) gain the className. The
+   `mkBtn` helper already spreads `...rest` onto its `<button>`,
+   so passing `className` through the props object lands it on the
+   DOM node without any helper signature changes.
+
+H. **`src/components/RequestsList.jsx`** — symmetric to
+   EmployeesList: row card button + Show past + both Add Request
+   `mkBtn` instances.
+
+I. **`src/components/Settings.jsx`** — Reset to defaults + Save
+   changes `mkBtn` calls gain the className.
+
+J. **`src/App.jsx`** — sha bump (see above).
 
 ### Locked decisions (session 15)
 
@@ -182,7 +251,26 @@ a read-only preview modal.
   click both dismiss the modal.
 - DEV smoke test: open the Requests tab and click any existing
   row → RequestFormModal opens in edit mode (regression check —
-  RequestsList wasn't touched).
+  RequestsList wasn't touched substantively; only className
+  additions in the third commit).
+- DEV smoke test (third commit hover-scale):
+  - Schedule nav: hover each of Prev / Today / Next / Generate /
+    Swap / Clear / Export PDF → all scale by 8%. With an
+    incomplete week, Export PDF is disabled and does NOT scale.
+  - Schedule grid: hover any cell → scales. Hover the swap-source
+    cell during swap mode → still pulses AND scales together.
+  - "Shifts assigned": hover any pill → scales. Selected
+    (green-fill) pill still scales on hover.
+  - Top tab nav: hover each of Schedule / Employees / Requests /
+    Settings → scales. Active tab still scales (its tinted
+    background follows the transform).
+  - Employees tab: hover any employee row card → scales. Hover
+    Add Employee → scales. Hover Show archived → scales.
+  - Requests tab: hover any request row card → scales. Hover
+    Add Request → scales. Hover Show past → scales.
+  - Settings tab: hover Save changes → scales. Hover Reset to
+    defaults → scales. Accordion headers and Toggle atoms do NOT
+    scale (deliberately out of scope).
 - Regression: v1.8.2 recurring shift-preference, v1.8.1 preserve-
   overrides on Regenerate, v1.7.0 Swap mechanic, dark mode, mobile
   day-cards. App loads cleanly on DEV + Vercel (no stuck splash).
@@ -192,15 +280,24 @@ a read-only preview modal.
 
 TBD on `npm run build` — recorded in the commit body.
 
-### Line delta (cumulative across both v1.9.0 commits)
+### Line delta (cumulative across all three v1.9.0 commits)
 
+- `index.html`                          +24 / -1  (NEW .mgt-hover-scale rule)
 - `src/lib/pdf-export.js`              +30 / -7
 - `src/lib/schedule-logic.js`          +14 / -10  (rename + doc rewrite)
-- `src/components/WeeklyShiftSummary.jsx`  +10 / -7
+- `src/components/WeeklyShiftSummary.jsx`  +11 / -7  (+1 className)
 - `src/lib/generator.js`               +20 / -15  (rename + gate doc)
-- `src/components/WeeklyRequestsPreview.jsx` +80 / -10  (pill button, CSS :hover, preview modal mount + record passthrough)
+- `src/components/WeeklyRequestsPreview.jsx` +70 / -25  (pill via shared class, inline <style> block removed)
 - `src/components/RequestPreviewModal.jsx` +175 / 0  (NEW)
-- `src/components/ScheduleGrid.jsx`    net 0  (first commit added the modal mount; refinement commit reverted it)
+- `src/components/ScheduleGrid.jsx`    +4 / -1   (1 cell className + 3 nav-button classNames)
+- `src/components/GenerateButton.jsx`  +1 / 0
+- `src/components/SwapButton.jsx`      +1 / 0
+- `src/components/ClearButton.jsx`     +1 / 0
+- `src/components/ExportButton.jsx`    +1 / 0
+- `src/components/EmployeesList.jsx`   +4 / 0   (row + Show archived + 2 Add buttons)
+- `src/components/RequestsList.jsx`    +4 / 0   (row + Show past + 2 Add buttons)
+- `src/components/Settings.jsx`        +2 / 0   (Save + Reset)
+- `src/components/AppShell.jsx`        +1 / 0   (tab nav)
 - `src/App.jsx`                        +3 / -3
 
 ---
