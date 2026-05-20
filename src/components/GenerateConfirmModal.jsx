@@ -13,6 +13,13 @@
 //   The explainer copy + button variant adapt live based on the
 //   toggles' state — manager sees danger (red) styling only when at
 //   least one preserve flag is OFF.
+// v1.9.0 — `preserveAssignments` default flipped to OFF. Per-run
+//   default is now "reshuffle staff but keep my custom times" which
+//   matches the most common manager intent — they hit Regenerate
+//   precisely because they want assignments redone. `preserveTimes`
+//   stays default ON (custom times survive). The modal still opens
+//   with danger-red Regenerate styling (since at least one preserve
+//   flag is OFF), making the destructive default explicit.
 //
 // Reuses Overlay (the single source of backdrop blur per the
 // ≤4-blur-instances rule). The actual algorithm runs in the parent's
@@ -36,15 +43,19 @@ import { Overlay, Toggle, mkBtn } from "./atoms.jsx";
 export default function GenerateConfirmModal({
   open, weekLabel, strictPref, busy, isMobile, onClose, onConfirm,
 }) {
-  // v1.8.1: per-run policy state. Resets to both-ON each time the modal
-  // opens — sticky-across-opens would be a power-user request, default
-  // resets keep the safe default in front of the manager every run.
+  // v1.8.1: per-run policy state. Resets each time the modal opens —
+  // sticky-across-opens would be a power-user request, default resets
+  // keep predictable behaviour. v1.9.0: `preserveAssignments` default
+  // flipped to OFF (was ON) — managers hit Regenerate precisely to
+  // reshuffle staff, so the default now matches that intent.
+  // `preserveTimes` stays default ON so manual time edits survive
+  // unless the manager opts to reset them.
   const [preserveTimes, setPreserveTimes] = useState(true);
-  const [preserveAssignments, setPreserveAssignments] = useState(true);
+  const [preserveAssignments, setPreserveAssignments] = useState(false);
   useEffect(function () {
     if (open) {
       setPreserveTimes(true);
-      setPreserveAssignments(true);
+      setPreserveAssignments(false);
     }
   }, [open]);
 
@@ -148,12 +159,17 @@ export default function GenerateConfirmModal({
         </div>
       </div>
 
-      {/* v1.8.1: preserve-overrides toggles. Both default ON each open;
-          control the policy passed into onConfirm("regenerate", ...). */}
+      {/* v1.8.1: preserve-overrides toggles. v1.9.0 default state =
+          preserveTimes ON / preserveAssignments OFF (modal opens in
+          danger-red Regenerate variant by default).
+          v1.9.0 (perslot+ commit, second round): horizontal padding
+          bumped from 10 → 16 so scaled Toggle rows (1.08) have
+          breathing room inside the card before they visually overflow
+          its edges. Matches the schedule-grid clipping fix pattern. */}
       <div
         style={{
           ...S.surfaceSoft,
-          padding: "8px 10px",
+          padding: "12px 16px",
           marginBottom: 12,
         }}
       >
@@ -166,6 +182,7 @@ export default function GenerateConfirmModal({
           checked={preserveTimes}
           onChange={setPreserveTimes}
           disabled={busy}
+          className="mgt-hover-scale"
         />
         <div style={{ height: 6 }} />
         <Toggle
@@ -174,6 +191,7 @@ export default function GenerateConfirmModal({
           checked={preserveAssignments}
           onChange={setPreserveAssignments}
           disabled={busy}
+          className="mgt-hover-scale"
         />
       </div>
 
@@ -187,6 +205,7 @@ export default function GenerateConfirmModal({
       >
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: "ghost",
           onClick: onClose,
           disabled: busy,
@@ -195,6 +214,7 @@ export default function GenerateConfirmModal({
         })}
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: destructive ? "danger" : "primary",
           onClick: function () {
             onConfirm("regenerate", {
@@ -208,6 +228,7 @@ export default function GenerateConfirmModal({
         })}
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: "primary",
           onClick: function () { onConfirm("fill-empty"); },
           disabled: busy,

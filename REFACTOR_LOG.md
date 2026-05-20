@@ -5,6 +5,643 @@ an entry. Newest first.
 
 ---
 
+## v1.9.0 — PDF visibility, Day-OFF quota rebalance, request-chip preview
+
+**Date:** 2026-05-20
+**Behavioural change:** Three manager-visibility / semantics tweaks
+shipped together. (a) The PDF export now shows the actual start–end on
+any cell whose times differ from the slot template default (second line
+inside the cell), and renders a muted-italic "Closed" placeholder for
+cells that fall on a closed dayPart of a partially-closed day. (b)
+Day-OFF requests no longer decrement the effective-quota number on the
+WeeklyShiftSummary pill or in the generator's quota gate — only
+`holiday` requests subtract from `workingDaysPerWeek`. Day-OFF still
+HARD-blocks the date via `findRequestConflict` and stays hidden in the
+picker by default (no change). (c) The colored type pill on each chip
+row in the WeeklyRequestsPreview "Requests this week" panel is now
+clickable — opens a NEW read-only `<RequestPreviewModal>` showing the
+full record (employee, type, full date range, preferred dayPart and
+recurring weekdays for shift-preference requests, notes when set).
+Edit access stays on the Requests tab; the Schedule-tab surface is
+read-only for safety.
+
+### Revision note
+The first commit on this branch wired up an editable
+RequestFormModal in ScheduleGrid + made each chip ROW clickable.
+Patryk's feedback was that the row-level click target was too heavy,
+the row-hover border noisy, and edit access on the Schedule tab risky
+during a glance. The second commit reverted those ScheduleGrid
+additions and pared the click target down to just the type pill,
+swapped the row-border hover for a `transform: scale(1.08)` on the
+pill via real CSS `:hover`, and switched the click action to a
+read-only preview modal.
+
+The **third commit** (hover-scale) extends the v1.9.0 request-pill
+hover affordance to every primary interactive surface in the app —
+schedule grid cells, "Shifts assigned" pills, nav buttons
+(Prev/Today/Next/Generate/Swap/Clear/Export PDF — Export
+auto-skipped when disabled via `:not(:disabled)`), top tab nav
+(Schedule | Employees | Requests | Settings), employee row cards +
+Add Employee + Show archived, request row cards + Add Request +
+Show past, and Settings' Save changes + Reset to defaults. Form
+controls, Toggle atoms, segmented controls, accordion headers,
+and modal action buttons are deliberately out of scope. The
+class is defined once globally in `index.html` alongside the
+theme tokens; consumers just add `className="mgt-hover-scale"`.
+The local `mgt-req-pill` class + inline `<style>` block inside
+`WeeklyRequestsPreview` are removed as part of the consolidation.
+
+The **fourth commit** (hover-scale broad + clipping fix +
+preserveAssignments default flip) does three things:
+1. **Broadens hover-scale scope** to cover modal action buttons,
+   modal segmented controls, modal pill toggles, the multi-select
+   weekday pickers in RequestFormModal, the `Sign out` button,
+   every Collapsible section header in Settings, every Fld-wrapped
+   row in Settings, every Toggle in Settings, the Open days
+   weekday pills, and the Day/Evening buttons inside the Open days
+   popover. The `<Fld>`, `<Toggle>`, and `<Collapsible>` atoms
+   gained optional `className` / `headerClassName` props so callers
+   can opt-in row by row without forking the atom.
+2. **Fixes schedule grid cell clipping on hover.** The desktopGrid
+   wrapper's `overflowX: auto` forces an implicit `overflow-y: auto`
+   in browsers, which clips transformed children at the wrapper
+   box on hover — Sunday's FoH evening 2 cell (right-bottom edge)
+   was getting visibly cut at the surrounding section border. Fix:
+   `padding: 8` on the wrapper + `minWidth: 120 + dates.length * 120
+   - 16` on the grid so the horizontal scroll threshold is
+   unchanged. The 8px padding gives every edge cell room to scale
+   (≈5px each direction for a 60px cell) before hitting the clip.
+3. **`preserveAssignments` default flipped to OFF** in
+   `GenerateConfirmModal`. Managers hit Regenerate precisely to
+   reshuffle staff; the previous "default ON" made the first click
+   degenerate into Fill-empty. New defaults match intent —
+   reshuffle staff (preserveAssignments OFF), keep manual time
+   edits (preserveTimes ON). The modal opens with the danger-red
+   Regenerate variant by default, making the destructive default
+   explicit before any click.
+
+### What landed
+
+1. **`src/lib/pdf-export.js`** — `buildTableBody` rewritten in two
+   spots. Closed-cell branch now returns
+   `{ content: "Closed", styles: { fontSize: 8, textColor: [136, 136, 136], fontStyle: "italic" } }`
+   instead of an empty string — matches `ScheduleGrid.renderClosedCell`
+   in intent. Filled-cell branch detects `cell.start !== slot.defaultStart
+   || cell.end !== slot.defaultEnd` (same predicate `ScheduleGrid` uses
+   for the "*" marker) and switches the cell from a plain name string
+   to a two-line `{ content: name + "\n" + start–end, styles: { fontSize: 8 } }`
+   so the override is legible on paper. Pure local change; row-header
+   labels and the rest of autotable's config untouched. Literal RGB
+   triplet is intentional: `pdf-export.js` never reads CSS vars (printed
+   palette stays light per v0.11.0 decision).
+
+2. **`src/lib/schedule-logic.js`** — `daysOffInWeekByEmployee` renamed
+   to `holidayDaysInWeekByEmployee`. Filter narrowed from
+   `r.type !== "dayoff" && r.type !== "holiday"` to `r.type !== "holiday"`.
+   The function semantic and doc-block updated to reflect: "only
+   `holiday` requests reduce the weekly cap; `dayoff` is informational
+   and still HARD-blocks its date via `findRequestConflict`." Locked
+   decision recorded in the session 15 questionnaire.
+
+3. **`src/components/WeeklyShiftSummary.jsx`** — import + callsite +
+   local variable names (`daysOff` → `holidayDays`, `off` → `holiday`)
+   renamed in lockstep. Pill math is identical otherwise; the
+   denominator just stops shrinking for Day-OFF requests. The
+   WeeklyRequestsPreview panel right below remains the manager's
+   visibility into which dates a Day-OFF actually covers.
+
+4. **`src/lib/generator.js`** — import renamed; `daysOffByEmp` →
+   `holidayDaysByEmp` in `buildCandidates` signature and inside the
+   step (5) quota gate. `generateWeek` builds the map via the renamed
+   helper. Algorithm otherwise byte-identical. Net effect: an employee
+   with a 5-day quota and a single Day-OFF on Tuesday is now eligible
+   for up to 5 other shifts that week (was capped at 4 before — the
+   Tuesday HARD-block alone constrains the available dates to 6, so
+   the cap of 5 is reachable). Reason code for over-cap rejection
+   stays `"all-at-quota"`.
+
+5. **`src/components/WeeklyRequestsPreview.jsx`** — the colored type
+   pill (was a `<span>`) became a `<button type="button"
+   className="mgt-req-pill">` with default button chrome stripped
+   (palette background / border preserved, `font: inherit`,
+   `cursor: pointer`). The row container stays an inert `<div>`
+   — no row-level click target, no row-level hover styling. An
+   inline `<style>` block at the rendered tree's top defines real
+   CSS `.mgt-req-pill:hover { transform: scale(1.08); }` with a
+   120ms transition (mirrors the v1.7.0 swap-pulse keyframes
+   approach in ScheduleGrid). New local state
+   `[previewRequest, setPreviewRequest]` owns the read-only
+   preview modal — pill click sets the full original request
+   record; modal close clears it. `<RequestPreviewModal>` mounted
+   at the bottom of the component's JSX. Each row's intermediate
+   object now carries `record: r` so the click passes the full
+   record to the modal without a second lookup. No `onChipClick`
+   prop on the component — the modal lifecycle is fully internal,
+   so `<ScheduleGrid>` doesn't need to participate.
+
+6. **`src/components/RequestPreviewModal.jsx`** — NEW file. Tiny
+   read-only mirror of the request record, rendered inside
+   `<Overlay>`. Fields (in order, conditional on data presence):
+   employee name (with archived line-through + "(archived)"
+   suffix), type pill (palette inherited from `REQUEST_TYPES`),
+   formatted date range ("12 May – 18 May 2026"),
+   preferredDayPart label (shift-preference only),
+   recurringDaysOfWeek list (shift-preference with non-empty
+   array; rendered in WEEKDAYS source order), notes (when set;
+   `whiteSpace: pre-wrap` so manual line breaks render). Footer
+   is a single Close button (ghost variant). No Save, no Delete.
+   Mirrors RequestFormModal's vertical `<Fld>` stack so the
+   preview reads as the "view mode" of the same form. Helper
+   text at the bottom: "Read-only preview. To change this
+   request, open the Requests tab."
+
+7. **`src/components/ScheduleGrid.jsx`** — net-zero change from
+   main. (The first v1.9.0 commit added a `RequestFormModal`
+   import, `editingRequest` state, 4 handlers, a JSX mount, and
+   an Esc-key guard extension; the refinement commit reverts all
+   of that. The preview-modal lifecycle lives entirely in
+   `WeeklyRequestsPreview`.)
+
+8. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.8.2 → 1.9.0,
+   `build` 2026-05-19 → 2026-05-20,
+   `sha` "recurring-shift-preference" → "pdf-dayoff-preview-hover-broad"
+   (renamed across the four commits as the scope grew —
+   "pdf-visibility-dayoff-chip-edit" → "-chip-preview" → "-preview-hover"
+   → "-preview-hover-broad").
+
+### Third commit — unified hover-scale (files touched)
+
+A. **`index.html`** — added `.mgt-hover-scale { transition:
+   transform 120ms ease } .mgt-hover-scale:hover:not(:disabled)
+   { transform: scale(1.08); }` inside the existing top-of-file
+   `<style>` block alongside the theme tokens. Single source for
+   the hover affordance.
+
+B. **`src/components/WeeklyRequestsPreview.jsx`** — removed the
+   local `mgt-req-pill` class + the inline `<style>` block; the
+   type pill now uses `className="mgt-hover-scale"`. Cursor stays
+   inline (default `pointer` for buttons; explicit declaration
+   kept on the pill for clarity).
+
+C. **`src/components/WeeklyShiftSummary.jsx`** — pill button gains
+   `className="mgt-hover-scale"`.
+
+D. **`src/components/ScheduleGrid.jsx`** — schedule grid cell
+   button + the three nav buttons (Prev, Today, Next) gain
+   `className="mgt-hover-scale"`. The cell's existing inline
+   `animation` (swap-pulse on the source cell) composes cleanly
+   with the hover transform — different CSS properties, no
+   conflict.
+
+E. **`src/components/GenerateButton.jsx`**,
+   **`src/components/SwapButton.jsx`**,
+   **`src/components/ClearButton.jsx`**,
+   **`src/components/ExportButton.jsx`** — each component's single
+   button gains the className. Export PDF's disabled state is
+   already handled by the CSS rule's `:not(:disabled)` guard — no
+   per-render conditional needed.
+
+F. **`src/components/AppShell.jsx`** — top tab-nav `<button>`
+   inside `TABS.map` gains the className. All four tabs (Schedule,
+   Employees, Requests, Settings) participate.
+
+G. **`src/components/EmployeesList.jsx`** — row card button + Show
+   archived button + both `mkBtn`-rendered Add Employee buttons
+   (empty-state CTA and header-row CTA) gain the className. The
+   `mkBtn` helper already spreads `...rest` onto its `<button>`,
+   so passing `className` through the props object lands it on the
+   DOM node without any helper signature changes.
+
+H. **`src/components/RequestsList.jsx`** — symmetric to
+   EmployeesList: row card button + Show past + both Add Request
+   `mkBtn` instances.
+
+I. **`src/components/Settings.jsx`** — Reset to defaults + Save
+   changes `mkBtn` calls gain the className.
+
+J. **`src/App.jsx`** — sha bump (see above).
+
+### Fourth commit — broader hover-scale + clipping fix + preserveAssignments OFF (files touched)
+
+K. **`index.html`** — unchanged (the global `.mgt-hover-scale`
+   rule introduced in the third commit covers all the new
+   consumers).
+
+L. **`src/components/atoms.jsx`** — `<Fld>`, `<Toggle>`, and
+   `<Collapsible>` each gained an optional `className` /
+   `headerClassName` prop, applied to the clickable / wrapping
+   div respectively. No default value (absent prop = no extra
+   class). The change is additive — existing callers don't pass
+   the prop and see no behavioural diff.
+
+M. **`src/components/ScheduleGrid.jsx`** — desktopGrid outer
+   wrapper gains `padding: 8`; the inner grid's `minWidth`
+   decreases by 16 so the horizontal-scroll threshold is
+   unchanged. Prevents transform-scaled edge cells (Sunday FoH
+   evening 2 was the reported case) from being clipped by the
+   wrapper's implicit overflow-y when overflow-x is auto.
+
+N. **`src/components/AppShell.jsx`** — Sign out button gains
+   `className="mgt-hover-scale"` (separate from the existing
+   tab nav additions in the third commit).
+
+O. **`src/components/Settings.jsx`** — all five Collapsible
+   section headers (Operating time / Display / Auto-generator /
+   FoH / Kitchen) gain `headerClassName="mgt-hover-scale"`. All
+   `<Fld>` wrappers inside the accordions gain `className=
+   "mgt-hover-scale"` — Operating time's Start/End rows, every
+   row inside `renderBlock` for FoH/Kitchen (Count, Start, End,
+   plus the 2nd-person-starts row when applicable). The three
+   Toggle atoms in Display + Auto-generator gain the same. The
+   seven Open days weekday pills + the two Day/Evening buttons
+   inside the open-day popover each gain the class.
+
+P. **`src/components/GenerateConfirmModal.jsx`** — two Toggles
+   gain the class; all three bottom-row mkBtn calls (Cancel,
+   Regenerate, Fill empty) gain the class. AND
+   `preserveAssignments` default flipped from `useState(true)`
+   to `useState(false)`; the open-reset effect flipped from
+   `setPreserveAssignments(true)` to `setPreserveAssignments(false)`
+   so reopening always gives the new default.
+
+Q. **`src/components/ClearConfirmModal.jsx`** — `scopeButton`
+   helper gains the class on every scope button (Whole week +
+   per-day buttons). Both bottom-row mkBtn calls (Cancel, the
+   danger-variant Confirm) gain the class.
+
+R. **`src/components/EmployeeFormModal.jsx`** — every role pill
+   (in rolesGrid), every preference segment (Day/Evening/Either),
+   every working-days segment (1..7), every fixed-day pill (when
+   shown), `activeToggle`, `fixedDaysToggle`, `priorityToggle`,
+   and the bottom-row Delete / Cancel / Save mkBtn calls each
+   gain the class.
+
+S. **`src/components/RequestFormModal.jsx`** — every type
+   segment, every preferredDayPart segment (Day shifts only /
+   Evening shifts only — when shift-preference), every weekday
+   pill in the v1.8.2 recurring picker, and the bottom-row
+   Delete / Cancel / Save mkBtn calls each gain the class.
+
+T. **`src/App.jsx`** — `sha` 
+   "pdf-visibility-dayoff-preview-hover" → 
+   "pdf-dayoff-preview-hover-broad".
+
+### Fifth commit — ShiftFormModal + Collapsible scaling + per-slot hours
+
+**Three buckets:**
+
+1. **ShiftFormModal + swap banner Cancel:** every clickable element
+   inside the cell-edit modal in the Schedule grid gets
+   `mgt-hover-scale`. Specifically: the "Show staff on day off /
+   holiday" Toggle, each evening-role pill in the role picker, the
+   "Reset times & role to template defaults" ghost button, Clear
+   (delete), Move/Swap, Cancel, Save. Plus the
+   `swap-mode banner`'s Cancel/× button on `ScheduleGrid`.
+
+2. **Settings: whole-section + clipping fix:** the `Collapsible`
+   atom gained an optional `className` prop on its outer wrapper
+   div (previously only `headerClassName` lived on the header
+   inside). Settings passes `className="mgt-hover-scale"` on every
+   Collapsible — so the whole section scales when the cursor
+   enters anywhere inside it. The inner Toggles / Flds / pills
+   already had the class from the 4th commit, so the effect
+   compounds: hovering a specific row scales BOTH the section and
+   the row, giving a layered "section is hot" + "this row is hot"
+   feedback. Additionally, `Collapsible`'s wrapper `overflow`
+   flipped from `hidden` to `visible` so transform-scaled inner
+   rows can break out of the section border — matches the Schedule
+   grid clipping behaviour from the 4th commit. Side-effect: the
+   body's `borderTop` hairline now extends to the wrapper's box
+   edge rather than being clipped at the rounded corner (1-2 px
+   cosmetic exposure, acceptable trade-off). The Open days
+   popover stays anchored ABOVE its pill row (the original
+   workaround for the now-removed `overflow: hidden`); leaving it
+   above keeps the layout stable and avoids re-introducing a
+   downward clip risk.
+
+3. **Per-slot shift hours in FoH/Kitchen:** the `/shiftTemplate`
+   shape per (section, dayPart) block changed from
+   `{count, start, end, secondPersonStart?}` to
+   `{count, times: [{start, end}, ...]}` with `times.length ===
+   count`. Each shift now carries its own start/end on the
+   template. Kitchen evening's Chef can run 16:00–23:00 while
+   Plating runs 16:00–22:00 and Pot runs 17:00–22:30 — all
+   stored independently.
+   - `src/lib/constants.js`: `DEFAULT_SHIFT_TEMPLATE` updated to
+     the new shape (defaults preserve the v0.8.0 behaviour:
+     FoH evening slot 0 starts 17:00, slot 1 starts 18:00; all
+     other slots inherit their block's existing single time).
+   - `src/lib/schedule-logic.js`: new internal helper
+     `slotTimeFor(block, sectionKey, dayPart, index)` reads from
+     `block.times[i]` when present, falls back to the legacy
+     `start`/`end`/`secondPersonStart` shape otherwise. Used by
+     `slotsForDay()` for each slot it enumerates. Consumers
+     (grid, picker, generator, PDF export) read
+     `slot.defaultStart`/`slot.defaultEnd` as before — no
+     downstream change.
+   - `src/components/Settings.jsx`: new helper `materializeBlock()`
+     normalizes any block (new or legacy shape) into the per-slot
+     shape — used by `cloneTemplate()` on form init. `blockError`
+     validates each slot's times independently (error messages
+     include the slot index, e.g. "Shift 2: end time must be
+     after start"). `blockDirty` compares the per-slot arrays
+     (with `materializeBlock` on the saved side so a legacy doc
+     doesn't register as permanently dirty). `onCountChange`
+     grows/truncates the `times` array: growing copies the last
+     entry's times (intent: "add another person at the same
+     hours"); shrinking drops trailing entries. New
+     `onSlotTimeChange(section, dayPart, slotIndex, field, e)`
+     replaces the old block-wide `onTimeChange`. `renderBlock`
+     renders the `Count` input once at the top, then N labelled
+     per-slot rows below — labelled with the section's role
+     (Chef / Plating / Pot / Bar / Floor) for evening slots, or
+     "Shift N" for day slots where one person covers all section
+     roles.
+   - No write migration: existing Firebase docs with the legacy
+     shape are upgraded lazily on the next Save click. Reads from
+     legacy docs work via the slotsForDay fallback.
+
+`src/App.jsx`: `sha` "pdf-dayoff-preview-hover-broad" →
+"perslot-hours-hover-polish".
+
+Bundle delta: 164.03 → 164.67 kB gz main (+0.64 kB), 320 modules
+unchanged.
+
+### Sixth commit — RequestPreviewModal Close + opaque background on hover
+
+Two surfaces flagged in the v1.9.0 5th-commit review:
+
+1. **RequestPreviewModal's Close button was missing
+   `mgt-hover-scale`.** Added the className via the `mkBtn` props.
+
+2. **Transparent rows had their text bleed into adjacent rows on
+   hover** — visible on the "Show staff on day off / holiday"
+   Toggle inside ShiftFormModal and on the Settings accordion
+   section headers ("Operating time", etc.). The scaled element
+   had no opaque background of its own, so when its visual extent
+   grew past the original row, the row below's text was still
+   visible through the scaled area. Fix lives entirely in
+   `index.html`'s `.mgt-hover-scale:hover` rule:
+
+   ```css
+   .mgt-hover-scale:hover:not(:disabled) {
+     transform: scale(1.08);
+     background-color: var(--bg-overlay-sheet);
+     box-shadow: var(--shadow-soft);
+     position: relative;
+     z-index: 2;
+   }
+   ```
+
+   Elements with inline `background:` styles (mkBtn variant
+   buttons, palette pills, status cells, row cards) keep their
+   inline colours because inline beats CSS — the new
+   `background-color` only fills in the gap for surfaces that
+   had no inline background. The `position: relative + z-index:
+   2` lifts the hovered element above its non-positioned siblings
+   so the painted card visually covers anything underneath even
+   when the inline background isn't fully opaque. `box-shadow`
+   adds a subtle elevation cue.
+
+`src/App.jsx`: `sha` "perslot-hours-hover-polish" →
+"perslot-hover-opaque-bg".
+
+Files touched: `index.html`, `src/App.jsx`,
+`src/components/RequestPreviewModal.jsx`, plus doc updates in
+`CLAUDE.md` and this log entry. No JS bundle delta expected
+(CSS-only + one className string).
+
+### Seventh commit — rounded hover corners + Toggle-container padding
+
+Two follow-up issues from the sixth-commit screenshots:
+
+1. **Sharp corners on the hover background.** Adding
+   `border-radius: 12px` to the `.mgt-hover-scale:hover` rule in
+   `index.html`. Matches `S.surfaceSoft` / `S.card` / `BTN.base`
+   so the hover-card look is visually consistent with the rest of
+   the app. Elements with inline border-radius (pills at 999,
+   schedule cells at 10, etc.) keep their inline value because
+   inline beats CSS — the new declaration only fills the gap for
+   transparent rows (Toggles, Collapsible headers, Fld rows).
+
+2. **Toggle row visually overflowing its container** when
+   compounded with the section's own scale (Toggle 1.08 × wrapper
+   1.08 ≈ 1.166 from the original wrapper position). Applied the
+   schedule-grid clipping-fix pattern — extra padding on the
+   container — to surfaces that host Toggle atoms:
+   - `src/components/atoms.jsx` — Collapsible bodyStyle horizontal
+     padding 14 → 20. Atom-level change, so every Collapsible in
+     Settings benefits.
+   - `src/components/GenerateConfirmModal.jsx` — the Toggle card's
+     padding 8px 10px → 12px 16px.
+   `src/components/ShiftFormModal.jsx` left alone — the Toggle
+   there sits in a Fld inside the modal Overlay which already has
+   20px padding on the sheet (more than enough breathing room).
+
+`src/App.jsx`: `sha` "perslot-hover-opaque-bg" →
+"hover-rounded-toggle-padding".
+
+Files touched: `index.html`, `src/App.jsx`,
+`src/components/atoms.jsx`, `src/components/GenerateConfirmModal.jsx`,
+plus doc updates in `CLAUDE.md` and this log entry. JS bundle
+delta in noise range (~+0.05 kB gz for the slightly longer padding
+strings).
+
+### Eighth commit — Toggle padding + field-only-scale pattern
+
+Three points from the seventh-commit screenshot review:
+
+1. **Toggle row's hover background looked squashed against the
+   text.** `atoms.jsx` Toggle `rowStyle.padding` bumped from
+   `"6px 0"` (vertical-only, hugging the row edges horizontally)
+   to `"10px 12px"`. Vertical breathing room near-doubles so
+   multi-line helper text isn't crowded; horizontal 12 inset
+   matches the app's general button / pill padding so the lifted
+   card reads as a coherent surface.
+
+2. **In Settings FoH / Kitchen, "Count" / "Start" / "End"
+   LABELS were scaling on hover** — the manager's eye snapped to
+   the label rather than the editable field. The
+   `mgt-hover-scale` className moved from the wrapping `<Fld>` to
+   the input element itself. Labels stay anchored; only the
+   editable surface lifts. Applies to:
+   - `Settings.jsx` Operating time Start / End inputs;
+   - `Settings.jsx` FoH / Kitchen Count + every per-slot Start /
+     End input (renderBlock);
+
+3. **Same pattern persistently applied across the app** for any
+   field where the manager adjusts time / date / notes:
+   - `ShiftFormModal.jsx` cell-edit Start / End time inputs;
+   - `RequestFormModal.jsx` From / To date inputs + Notes
+     `<textarea>`.
+
+   `EmployeeFormModal.jsx` has no time / date / notes fields
+   (Name is a free-text identifier, not a notes field), so no
+   changes there. Read-only modals (`RequestPreviewModal`) display
+   values as static text and aren't affected.
+
+Item #3 from the user's report — "Show staff on day off /
+holiday Toggle must be able to overflow the section border when
+mgt-hover-scale is in use" — is left unconstrained by design:
+the Toggle's wrapping `<div style={{marginTop: 8}}>` in
+`ShiftFormModal.jsx` has no overflow rule, and the modal
+Overlay sheet's `overflow: auto` clips only when content actually
+exceeds 80vh — a slim Toggle row at the top of the Assignee Fld
+doesn't reach that threshold, so the scaled card lifts freely
+within the modal sheet.
+
+`src/App.jsx`: `sha` "hover-rounded-toggle-padding" →
+"field-only-scale-pattern".
+
+Files touched: `src/App.jsx`, `src/components/atoms.jsx`,
+`src/components/Settings.jsx`, `src/components/ShiftFormModal.jsx`,
+`src/components/RequestFormModal.jsx`, plus doc updates in
+`CLAUDE.md` and this log entry. Bundle delta in noise range
+(className strings moved between elements; Toggle padding string
+4 chars longer).
+
+### Ninth commit — Employee/Assignee selects + modal sheet overflow:visible
+
+Two follow-ups from the eighth-commit review:
+
+1. **`<select>` dropdowns weren't included in the field-only-
+   scale pattern.** Added `className="mgt-hover-scale"` to the
+   Employee select in `RequestFormModal.jsx` (edit + add modes
+   share the component) and the Assignee select in
+   `ShiftFormModal.jsx`. Now the editable surface lifts on hover
+   to match the time / date / notes inputs done in the
+   eighth commit.
+
+2. **Notes textarea (and other modal-resident scaled elements)
+   couldn't visibly lift past the modal sheet's border** —
+   `overflow: auto` clipped any transform-scaled child at the
+   sheet boundary. Changed the desktop sheet's `overflow` from
+   `auto` to `visible` in `src/components/atoms.jsx` Overlay.
+   Mobile sheet keeps `auto` since it fills the full viewport
+   and tall content needs internal scrolling there. Trade-off
+   accepted: long desktop modal content (taller than `maxHeight:
+   80vh`) extends past the sheet boundary into the backdrop;
+   typical forms stay well under 80vh so this rarely happens.
+
+`src/App.jsx`: `sha` "field-only-scale-pattern" →
+"selects-scale-modal-overflow".
+
+Files touched: `src/App.jsx`, `src/components/atoms.jsx`,
+`src/components/RequestFormModal.jsx`,
+`src/components/ShiftFormModal.jsx`, plus doc updates in
+`CLAUDE.md` and this log entry.
+
+### Locked decisions (session 15)
+
+| Q | A |
+|---|---|
+| Day-OFF generator behaviour | **Keep HARD block.** Generator never auto-assigns over a covering Day-OFF (unchanged). Only the quota-decrement is removed. Patryk left this open; chose the smaller-blast-radius option that stays consistent with the picker's hide-by-default behaviour. |
+| Day-OFF picker behaviour | **Hidden-by-default stays.** Picker keeps the existing toggle ("Show staff on day off / holiday"). Only the WeeklyShiftSummary pill and the generator's quota gate are affected. |
+| PDF override format | **Name on first line, time on second line.** Two-line cell at `fontSize: 8` (one step below the autotable body default of 9). Inline single-line with `·` separator was the runner-up; the two-line form was picked for legibility on a printed sheet. |
+
+### Side-effects / things to know
+
+- **A 5-day employee with one Day-OFF in the visible week now shows
+  `0/5` on the pill instead of `0/4`.** Working as intended. The Day-OFF
+  still HARD-blocks its date in the picker dropdown and in the
+  generator — only the cap math changed.
+- **The generator can now reach a 5-day quota when one date in the
+  week is Day-OFF-blocked (was capped at 4 before).** Working as
+  intended — the cap matches "how many days the employee said they
+  can work", not "how many days they have left after preference
+  filtering."
+- **A cell with both a different role AND different time on an evening
+  slot — only the time difference shows in the PDF.** Row identity in
+  the PDF is per-slot (one row per slot key), so the role is implicit
+  from the row label by v0.8.0's default-role policy. Acceptable: the
+  manager reading the print can cross-reference role from the row
+  header. If this becomes confusing in practice, add an explicit
+  `· Role` suffix on overridden cells.
+- **WeeklyRequestsPreview hover affordance** is real CSS `:hover`
+  inside an inline `<style>` block (mirrors the v1.7.0 swap-pulse
+  keyframes approach in ScheduleGrid). React inline-style doesn't
+  get `:hover` for free; the alternative (onMouseEnter /
+  onMouseLeave handlers mutating `e.currentTarget.style`) was
+  rejected as heavier than necessary for a purely cosmetic effect
+  and harder to keep in sync across hover states.
+
+### Verification
+
+- DEV smoke test: created an evening cell with override start `18:00`
+  (template `17:00`). Export PDF → cell shows "Mary\n18:00–23:00" in
+  smaller font; surrounding cells show plain names.
+- DEV smoke test: set Wednesday evening closed in Settings → Operating
+  time, Wednesday day open. Export PDF → Wednesday day-row cells
+  render normally; Wednesday evening rows render "Closed" in muted
+  italic.
+- DEV smoke test: 5-day employee with one Day-OFF (Tuesday) in the
+  visible week → pill shows `0/5` (was `0/4` pre-v1.9.0). Same
+  employee with Tuesday changed to Holiday → pill shows `0/4`.
+- DEV smoke test: Generate run with the same employee + Day-OFF →
+  generator schedules them on up to 5 dates this week, never Tuesday
+  (Details modal shows Tuesday Mary candidates rejected with reason
+  `request-conflict`).
+- DEV smoke test: hover the type pill on any chip in "Requests
+  this week" → the pill scales up ~8%. The row itself shows NO
+  border / NO scale change. Click the pill → read-only preview
+  modal opens with employee + type + full date range. For
+  shift-preference requests, the modal additionally shows the
+  preferred dayPart + recurring weekday list. Requests with notes
+  show the notes block at the bottom. Close button + backdrop
+  click both dismiss the modal.
+- DEV smoke test: open the Requests tab and click any existing
+  row → RequestFormModal opens in edit mode (regression check —
+  RequestsList wasn't touched substantively; only className
+  additions in the third commit).
+- DEV smoke test (third commit hover-scale):
+  - Schedule nav: hover each of Prev / Today / Next / Generate /
+    Swap / Clear / Export PDF → all scale by 8%. With an
+    incomplete week, Export PDF is disabled and does NOT scale.
+  - Schedule grid: hover any cell → scales. Hover the swap-source
+    cell during swap mode → still pulses AND scales together.
+  - "Shifts assigned": hover any pill → scales. Selected
+    (green-fill) pill still scales on hover.
+  - Top tab nav: hover each of Schedule / Employees / Requests /
+    Settings → scales. Active tab still scales (its tinted
+    background follows the transform).
+  - Employees tab: hover any employee row card → scales. Hover
+    Add Employee → scales. Hover Show archived → scales.
+  - Requests tab: hover any request row card → scales. Hover
+    Add Request → scales. Hover Show past → scales.
+  - Settings tab: hover Save changes → scales. Hover Reset to
+    defaults → scales. Accordion headers and Toggle atoms do NOT
+    scale (deliberately out of scope).
+- Regression: v1.8.2 recurring shift-preference, v1.8.1 preserve-
+  overrides on Regenerate, v1.7.0 Swap mechanic, dark mode, mobile
+  day-cards. App loads cleanly on DEV + Vercel (no stuck splash).
+  No console errors. No write-guard banners.
+
+### Bundle delta
+
+TBD on `npm run build` — recorded in the commit body.
+
+### Line delta (cumulative across all three v1.9.0 commits)
+
+- `index.html`                          +24 / -1  (NEW .mgt-hover-scale rule)
+- `src/lib/pdf-export.js`              +30 / -7
+- `src/lib/schedule-logic.js`          +14 / -10  (rename + doc rewrite)
+- `src/components/WeeklyShiftSummary.jsx`  +11 / -7  (+1 className)
+- `src/lib/generator.js`               +20 / -15  (rename + gate doc)
+- `src/components/WeeklyRequestsPreview.jsx` +70 / -25  (pill via shared class, inline <style> block removed)
+- `src/components/RequestPreviewModal.jsx` +175 / 0  (NEW)
+- `src/components/ScheduleGrid.jsx`    +4 / -1   (1 cell className + 3 nav-button classNames)
+- `src/components/GenerateButton.jsx`  +1 / 0
+- `src/components/SwapButton.jsx`      +1 / 0
+- `src/components/ClearButton.jsx`     +1 / 0
+- `src/components/ExportButton.jsx`    +1 / 0
+- `src/components/EmployeesList.jsx`   +4 / 0   (row + Show archived + 2 Add buttons)
+- `src/components/RequestsList.jsx`    +4 / 0   (row + Show past + 2 Add buttons)
+- `src/components/Settings.jsx`        +2 / 0   (Save + Reset)
+- `src/components/AppShell.jsx`        +1 / 0   (tab nav)
+- `src/App.jsx`                        +3 / -3
+
+---
+
 ## v1.8.2 — Recurring shift-preference patterns
 
 **Date:** 2026-05-19

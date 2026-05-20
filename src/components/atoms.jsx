@@ -64,8 +64,18 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
         borderRadius: 16,
         padding: 20,
         boxShadow: "var(--shadow-overlay)",
+        // v1.9.0 (perslot+ commit, fourth round): overflow changed from
+        // `auto` to `visible` so transform-scaled inputs inside the modal
+        // (Notes textareas, time/date inputs, selects, Toggles) can lift
+        // visibly past the sheet's border on hover. Trade-off: long
+        // modal content (taller than maxHeight) extends past the sheet
+        // boundary into the backdrop. Typical form heights stay well
+        // under 80vh (the longest is RequestFormModal at ~620 px max),
+        // so this rarely happens in practice. Mobile sheet keeps
+        // overflow:auto since it fills the full viewport and tall
+        // content needs internal scrolling there.
         maxHeight: "80vh",
-        overflow: "auto",
+        overflow: "visible",
       };
 
   return (
@@ -87,9 +97,11 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
 
 // ── Fld ──────────────────────────────────────────────────────────────────
 // Labelled field wrapper. Pass the input/select/etc. as the single child.
-export function Fld({ label, children }) {
+// v1.9.0: optional `className` lands on the wrapper div — used by Settings
+// to opt individual rows into the `.mgt-hover-scale` utility.
+export function Fld({ label, children, className }) {
   return (
-    <div style={S.fldRow}>
+    <div style={S.fldRow} className={className}>
       {label ? <label style={S.fldLabel}>{label}</label> : null}
       {children}
     </div>
@@ -114,18 +126,38 @@ export function Section({ title, children, style }) {
 // when `open === true`. Parent owns the open state — pass `open` + `onToggle`.
 //
 // Props:
-//   title      (str)  — header text
-//   open       (bool) — controlled; parent manages single-open-at-a-time
-//   onToggle   (fn)   — fired on header click (no args)
-//   dirty      (bool) — show a small blue dot in the header when true
-//   children   (node) — body content, only rendered when open
+//   title            (str)  — header text
+//   open             (bool) — controlled; parent manages single-open-at-a-time
+//   onToggle         (fn)   — fired on header click (no args)
+//   dirty            (bool) — show a small blue dot in the header when true
+//   className        (str)  — v1.9.0; lands on the OUTER wrapper div. Used
+//                             by Settings to apply `.mgt-hover-scale` so
+//                             the whole section scales when the cursor
+//                             enters anywhere inside it. Inner rows that
+//                             also carry the class compound the effect on
+//                             top — hovering a specific row scales the
+//                             wrapper AND the row visually.
+//   headerClassName  (str)  — v1.9.0; lands on the clickable header div
+//                             (used to opt-in to .mgt-hover-scale)
+//   children         (node) — body content, only rendered when open
+//
+// v1.9.0: overflow changed from `hidden` → `visible` so transform-scaled
+// inner rows can break out of the section border on hover (matches the
+// row-card behaviour in Employees / Requests tabs). Side-effect: the body
+// `borderTop` hairline now extends to the wrapper's box edge rather than
+// being clipped at the rounded corner — a 1-2px cosmetic exposure, but
+// the trade-off is the scaled rows no longer get cut at the section
+// boundary. The Open days popover (Settings v1.3.0) was originally
+// anchored ABOVE its pill row specifically to dodge the old
+// `overflow: hidden`; the comment in Settings.jsx still references that
+// historical reason and the positioning stays unchanged.
 //
 // No new backdropFilter — sits inside the existing card blur.
-export function Collapsible({ title, open, onToggle, dirty, children }) {
+export function Collapsible({ title, open, onToggle, dirty, className, headerClassName, children }) {
   const wrapStyle = {
     ...S.surfaceSoft,
     padding: 0,
-    overflow: "hidden",
+    overflow: "visible",
   };
   const headerStyle = {
     display: "flex",
@@ -158,15 +190,23 @@ export function Collapsible({ title, open, onToggle, dirty, children }) {
     textAlign: "center",
   };
   const bodyStyle = {
-    padding: "0 14px 14px 14px",
+    // v1.9.0 (perslot+ commit, second round): horizontal padding bumped
+    // from 14 to 20 so scaled inner Toggle / Fld rows (1.08 + compound
+    // with the wrapper's own 1.08 = up to 1.166x effective) have
+    // breathing room inside the section card before they visually
+    // overflow its right edge. Matches the schedule-grid clipping fix
+    // (padding on the overflow wrapper) applied to surfaces that host
+    // Toggle atoms. Vertical padding unchanged.
+    padding: "0 20px 14px 20px",
     borderTop: "1px solid var(--hairline)",
     paddingTop: 12,
   };
 
   return (
-    <div style={wrapStyle}>
+    <div style={wrapStyle} className={className}>
       <div
         style={headerStyle}
+        className={headerClassName}
         onClick={onToggle}
         role="button"
         tabIndex={0}
@@ -198,13 +238,22 @@ export function Collapsible({ title, open, onToggle, dirty, children }) {
 //   label      (str)             — main row label
 //   helper     (str|null)        — smaller helper text below the label
 //   disabled   (bool, default false)
-export function Toggle({ checked, onChange, label, helper, disabled }) {
+//   className  (str)             — v1.9.0; lands on the clickable row div
+//                                   (used to opt-in to .mgt-hover-scale)
+export function Toggle({ checked, onChange, label, helper, disabled, className }) {
   const off = disabled ? 0.5 : 1;
   const rowStyle = {
     display: "flex",
     alignItems: "center",
     gap: 12,
-    padding: "6px 0",
+    // v1.9.0 (perslot+ commit, third round): row padding bumped from
+    // "6px 0" to "10px 12px" so the hover background (added in the
+    // sixth v1.9.0 commit) has visible breathing room around the
+    // label / switch instead of hugging them tight. Vertical 10 keeps
+    // multi-line helper text legible; horizontal 12 inset matches the
+    // app's general button / pill padding so the lifted card reads
+    // as a coherent surface.
+    padding: "10px 12px",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: off,
     userSelect: "none",
@@ -251,6 +300,7 @@ export function Toggle({ checked, onChange, label, helper, disabled }) {
   return (
     <div
       style={rowStyle}
+      className={className}
       onClick={handleClick}
       role="switch"
       aria-checked={checked ? "true" : "false"}

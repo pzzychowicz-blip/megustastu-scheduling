@@ -77,8 +77,51 @@ import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 // avoids any chance of mutating the constant by reference, AND gives us a
 // clean break from the live `shiftTemplate` prop (we don't want the form
 // to snap back to Firebase state mid-edit if onValue fires).
+// v1.9.0: materializes each (section, dayPart) block into the per-slot
+// shape — `{count, times: [{start, end}, ...]}`. Legacy v0.5.0 docs with
+// the single start/end/secondPersonStart shape are migrated lazily here
+// (form-state-only; the Firebase doc is rewritten on the next save).
 function cloneTemplate(src) {
-  return JSON.parse(JSON.stringify(src));
+  return {
+    foh: {
+      day: materializeBlock(src.foh.day, "foh", "day"),
+      evening: materializeBlock(src.foh.evening, "foh", "evening"),
+    },
+    kitchen: {
+      day: materializeBlock(src.kitchen.day, "kitchen", "day"),
+      evening: materializeBlock(src.kitchen.evening, "kitchen", "evening"),
+    },
+  };
+}
+
+// v1.9.0: build a normalized block with a per-slot `times` array of length
+// `count`. Preserves entries already in `block.times`; for missing entries
+// falls back to (a) v0.8.0 FoH-evening `secondPersonStart` for slot 1+,
+// (b) the block's single `start`/`end`, (c) the operating window defaults.
+// Returned object is a fresh deep copy.
+function materializeBlock(block, sectionKey, dayPart) {
+  if (!block || typeof block !== "object") {
+    return { count: 1, times: [{ start: OPERATING_HOURS.start, end: OPERATING_HOURS.end }] };
+  }
+  const rawCount = block.count;
+  const count = Number.isFinite(rawCount) && rawCount >= 1 ? Math.round(rawCount) : 1;
+  const existing = Array.isArray(block.times) ? block.times : [];
+  const fallbackStart = block.start || OPERATING_HOURS.start;
+  const fallbackEnd = block.end || OPERATING_HOURS.end;
+  const fohEveningSecondStart = sectionKey === "foh" && dayPart === "evening" && block.secondPersonStart
+    ? block.secondPersonStart
+    : null;
+  const times = [];
+  for (let i = 0; i < count; i++) {
+    const t = existing[i];
+    if (t && t.start && t.end) {
+      times.push({ start: t.start, end: t.end });
+      continue;
+    }
+    const legacyStart = i > 0 && fohEveningSecondStart ? fohEveningSecondStart : fallbackStart;
+    times.push({ start: legacyStart, end: fallbackEnd });
+  }
+  return { count: count, times: times };
 }
 
 // ── Per-block validation ─────────────────────────────────────────────────
@@ -90,22 +133,32 @@ function cloneTemplate(src) {
 // the operating window. `hours` may be omitted by callers that haven't
 // loaded the operating-hours form yet — in that case the constraint is
 // skipped rather than failing closed.
+// v1.9.0: validates each slot's start/end independently. Errors surface
+// the offending slot index (1-based for the manager) so the message is
+// actionable when one of many slots is invalid.
 function blockError(block, hours) {
   if (typeof block.count !== "number" || !Number.isFinite(block.count) || block.count < 1) {
     return "Count must be at least 1.";
   }
-  if (!block.start || !block.end) {
-    return "Start and end times required.";
+  if (!Array.isArray(block.times) || block.times.length !== block.count) {
+    return "Each shift needs its own start and end times.";
   }
-  if (block.start >= block.end) {
-    return "End time must be after start.";
-  }
-  if (hours && hours.operatingStart && hours.operatingEnd) {
-    if (block.start < hours.operatingStart) {
-      return "Start cannot be earlier than operating start (" + hours.operatingStart + ").";
+  for (let i = 0; i < block.times.length; i++) {
+    const t = block.times[i];
+    const prefix = block.times.length > 1 ? "Shift " + (i + 1) + ": " : "";
+    if (!t || !t.start || !t.end) {
+      return prefix + "start and end times required.";
     }
-    if (block.end > hours.operatingEnd) {
-      return "End cannot be later than operating end (" + hours.operatingEnd + ").";
+    if (t.start >= t.end) {
+      return prefix + "end time must be after start.";
+    }
+    if (hours && hours.operatingStart && hours.operatingEnd) {
+      if (t.start < hours.operatingStart) {
+        return prefix + "start cannot be earlier than operating start (" + hours.operatingStart + ").";
+      }
+      if (t.end > hours.operatingEnd) {
+        return prefix + "end cannot be later than operating end (" + hours.operatingEnd + ").";
+      }
     }
   }
   return null;
@@ -158,12 +211,22 @@ function openingDaysDirty(form, saved) {
 // header dots. Compares only the fields we know about; if either side is
 // missing (shouldn't happen given DEFAULT_SHIFT_TEMPLATE fallback) we
 // treat it as not-dirty rather than always-dirty.
+// v1.9.0: compares the per-slot `times` arrays. `b` (the saved template)
+// can be in either the new or legacy shape — we materialize it before the
+// comparison so legacy docs don't register as permanently dirty.
 function blockDirty(a, b) {
   if (!a || !b) return false;
-  if (a.start !== b.start) return true;
-  if (a.end !== b.end) return true;
   if (a.count !== b.count) return true;
-  if ((a.secondPersonStart || null) !== (b.secondPersonStart || null)) return true;
+  // a is always the form's materialized shape; b may be legacy — normalize.
+  const bMat = Array.isArray(b.times) && b.times.length === b.count
+    ? b
+    : materializeBlock(b, "_", "_");
+  if (!Array.isArray(a.times) || !Array.isArray(bMat.times)) return true;
+  if (a.times.length !== bMat.times.length) return true;
+  for (let i = 0; i < a.times.length; i++) {
+    if ((a.times[i] && a.times[i].start) !== (bMat.times[i] && bMat.times[i].start)) return true;
+    if ((a.times[i] && a.times[i].end) !== (bMat.times[i] && bMat.times[i].end)) return true;
+  }
   return false;
 }
 
@@ -282,11 +345,60 @@ export default function Settings({
     const raw = e.target.value;
     // Allow the input to be temporarily empty during typing; coerce on save.
     // parseInt("", 10) is NaN, which blockError() flags as invalid.
-    const n = raw === "" ? NaN : parseInt(raw, 10);
-    updateField(section, dayPart, "count", n);
+    const parsed = raw === "" ? NaN : parseInt(raw, 10);
+    setForm(function (prev) {
+      const block = prev[section][dayPart];
+      const oldTimes = Array.isArray(block.times) ? block.times : [];
+      // v1.9.0: grow/truncate the times array in lockstep with count. When
+      // the manager bumps count up, new slots inherit the last slot's times
+      // (most common intent: "add another person at the same hours"). When
+      // they shrink count, trailing entries drop. NaN count (mid-typing
+      // empty input) leaves the array intact so the manager can finish
+      // typing without losing per-slot data.
+      let newTimes = oldTimes;
+      if (Number.isFinite(parsed) && parsed >= 1) {
+        const targetLen = parsed;
+        if (oldTimes.length === targetLen) {
+          newTimes = oldTimes;
+        } else if (oldTimes.length > targetLen) {
+          newTimes = oldTimes.slice(0, targetLen);
+        } else {
+          const fallback = oldTimes[oldTimes.length - 1]
+            || { start: OPERATING_HOURS.start, end: OPERATING_HOURS.end };
+          newTimes = oldTimes.slice();
+          while (newTimes.length < targetLen) {
+            newTimes.push({ start: fallback.start, end: fallback.end });
+          }
+        }
+      }
+      return {
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [dayPart]: { ...block, count: parsed, times: newTimes },
+        },
+      };
+    });
   }
-  function onTimeChange(section, dayPart, field, e) {
-    updateField(section, dayPart, field, e.target.value);
+  // v1.9.0: per-slot time setter. Replaces the old per-block onTimeChange
+  // (which set a single shared start/end). `slotIndex` is the position
+  // in the `times` array; `field` is "start" or "end".
+  function onSlotTimeChange(section, dayPart, slotIndex, field, e) {
+    const value = e.target.value;
+    setForm(function (prev) {
+      const block = prev[section][dayPart];
+      const oldTimes = Array.isArray(block.times) ? block.times : [];
+      const newTimes = oldTimes.slice();
+      const cur = newTimes[slotIndex] || { start: OPERATING_HOURS.start, end: OPERATING_HOURS.end };
+      newTimes[slotIndex] = { ...cur, [field]: value };
+      return {
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [dayPart]: { ...block, times: newTimes },
+        },
+      };
+    });
   }
 
   // v0.7.0: operating-hours updater.
@@ -447,62 +559,88 @@ export default function Settings({
   }
 
   // ── Row renderer ───────────────────────────────────────────────────────
-  // On desktop: Count | Start | End | [2nd person] side-by-side.
-  // On mobile:  two columns; the 4th cell wraps to a second row.
-  function renderBlock(section, dayPart, label, withSecondPerson) {
+  // v1.9.0: each shift in the section/dayPart gets its OWN start/end
+  // controls. Count input sits at the top; below it, one row per slot
+  // labelled with the section's role for evening slots (Chef / Plating /
+  // Pot for Kitchen evening, Bar / Floor for FoH evening) or "Shift N"
+  // for day slots (where role is implicit and one person covers all).
+  //
+  // Layout on desktop: [label] | [start] | [end] per slot row.
+  // On mobile: same layout but tighter gap. The first row (Count) stays
+  // separate so the per-slot grid doesn't have a leading "Count" column
+  // it doesn't use.
+  function slotLabelFor(section, dayPart, index, count) {
+    if (dayPart === "day") {
+      return count > 1 ? "Shift " + (index + 1) : "Shift";
+    }
+    // Evening: use the section's role list when available.
+    const roles = SECTIONS[section] && SECTIONS[section].roles;
+    if (Array.isArray(roles) && roles[index]) return roles[index];
+    return "Slot " + (index + 1);
+  }
+
+  function renderBlock(section, dayPart, label) {
     const block = form[section][dayPart];
     const errKey = section + (dayPart === "day" ? "Day" : "Evening");
     const err = errors[errKey];
 
-    const desktopCols = withSecondPerson ? "90px 1fr 1fr 1fr" : "90px 1fr 1fr";
-    const rowStyle = {
+    const slotRowStyle = {
       display: "grid",
-      gridTemplateColumns: isMobile ? "1fr 1fr" : desktopCols,
+      gridTemplateColumns: isMobile ? "90px 1fr 1fr" : "120px 1fr 1fr",
       gap: isMobile ? 8 : 12,
+      alignItems: "end",
+      marginTop: 8,
     };
+
+    const times = Array.isArray(block.times) ? block.times : [];
 
     return (
       <div style={{ marginBottom: 14 }}>
         <div style={{ ...S.fldLabel, marginBottom: 6 }}>{label}</div>
-        <div style={rowStyle}>
-          <Fld label="Count">
-            {mkInp({
-              type: "number",
-              min: 1,
-              step: 1,
-              value: Number.isFinite(block.count) ? block.count : "",
-              onChange: function (e) { onCountChange(section, dayPart, e); },
-            })}
-          </Fld>
-          <Fld label="Start">
-            {mkInp({
-              type: "time",
-              value: block.start,
-              onChange: function (e) { onTimeChange(section, dayPart, "start", e); },
-            })}
-          </Fld>
-          <Fld label="End">
-            {mkInp({
-              type: "time",
-              value: block.end,
-              onChange: function (e) { onTimeChange(section, dayPart, "end", e); },
-            })}
-          </Fld>
-          {withSecondPerson ? (
-            <Fld label="2nd person starts">
-              <select
-                value={block.secondPersonStart || "18:00"}
-                onChange={function (e) {
-                  updateField("foh", "evening", "secondPersonStart", e.target.value);
+        <Fld label="Count">
+          {mkInp({
+            type: "number",
+            min: 1,
+            step: 1,
+            className: "mgt-hover-scale",
+            value: Number.isFinite(block.count) ? block.count : "",
+            onChange: function (e) { onCountChange(section, dayPart, e); },
+            style: { maxWidth: 120 },
+          })}
+        </Fld>
+        {times.map(function (t, i) {
+          return (
+            <div key={"slot-" + i} style={slotRowStyle}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--text-primary)",
+                  alignSelf: "center",
+                  paddingBottom: 6,
                 }}
-                style={S.inputBase}
               >
-                <option value="18:00">18:00</option>
-                <option value="19:00">19:00</option>
-              </select>
-            </Fld>
-          ) : null}
-        </div>
+                {slotLabelFor(section, dayPart, i, block.count)}
+              </div>
+              <Fld label="Start">
+                {mkInp({
+                  type: "time",
+                  className: "mgt-hover-scale",
+                  value: t.start,
+                  onChange: function (e) { onSlotTimeChange(section, dayPart, i, "start", e); },
+                })}
+              </Fld>
+              <Fld label="End">
+                {mkInp({
+                  type: "time",
+                  className: "mgt-hover-scale",
+                  value: t.end,
+                  onChange: function (e) { onSlotTimeChange(section, dayPart, i, "end", e); },
+                })}
+              </Fld>
+            </div>
+          );
+        })}
         {err ? (
           <div style={{ fontSize: 12, color: "var(--text-danger)", marginTop: 4 }}>
             {err}
@@ -555,12 +693,15 @@ export default function Settings({
           open={openSection === "hours"}
           onToggle={function () { toggleSection("hours"); }}
           dirty={operatingDirty}
+          className="mgt-hover-scale"
+          headerClassName="mgt-hover-scale"
         >
           <div style={{ ...S.fldLabel, marginBottom: 6 }}>Restaurant open</div>
           <div style={hoursRowStyle}>
             <Fld label="Start">
               {mkInp({
                 type: "time",
+                className: "mgt-hover-scale",
                 value: hoursForm.operatingStart,
                 onChange: function (e) { onHoursChange("operatingStart", e); },
               })}
@@ -568,6 +709,7 @@ export default function Settings({
             <Fld label="End">
               {mkInp({
                 type: "time",
+                className: "mgt-hover-scale",
                 value: hoursForm.operatingEnd,
                 onChange: function (e) { onHoursChange("operatingEnd", e); },
               })}
@@ -615,6 +757,7 @@ export default function Settings({
                   <div key={d.key} style={{ position: "relative" }}>
                     <button
                       type="button"
+                      className="mgt-hover-scale"
                       onClick={function () {
                         setOpenDayPopover(function (cur) {
                           return cur === d.key ? null : d.key;
@@ -696,6 +839,7 @@ export default function Settings({
                             <button
                               key={opt.key}
                               type="button"
+                              className="mgt-hover-scale"
                               onClick={function () {
                                 setOpeningDayPart(d.key, opt.key, !opt.on);
                               }}
@@ -747,12 +891,15 @@ export default function Settings({
           title="Display"
           open={openSection === "display"}
           onToggle={function () { toggleSection("display"); }}
+          className="mgt-hover-scale"
+          headerClassName="mgt-hover-scale"
         >
           <Toggle
             checked={showRolePills}
             onChange={onShowRolePillsChange}
             label="Show role pills on schedule cells"
             helper="The small coloured tag (Bar / Floor / Chef / Plating / Pot) next to each assignee's name in the schedule grid. Off hides them; the Employees tab badges are unaffected."
+            className="mgt-hover-scale"
           />
           {/* v0.11.0: dark mode. First-time default follows OS preference;
               flipping the toggle saves an explicit boolean that overrides
@@ -764,6 +911,7 @@ export default function Settings({
             helper={darkModeFollowingSystem
               ? "Following your system preference. Tap to override."
               : null}
+            className="mgt-hover-scale"
           />
         </Collapsible>
 
@@ -775,6 +923,8 @@ export default function Settings({
           title="Auto-generator"
           open={openSection === "generator"}
           onToggle={function () { toggleSection("generator"); }}
+          className="mgt-hover-scale"
+          headerClassName="mgt-hover-scale"
         >
           <Toggle
             checked={strictPreference === true}
@@ -783,6 +933,7 @@ export default function Settings({
             helper={strictPreference
               ? "Hard — generator only assigns preference-matching employees. May leave cells empty when no preferred candidate is available."
               : "Soft mode (default) — generator tries preferred employees first, falls back if no one fits."}
+            className="mgt-hover-scale"
           />
         </Collapsible>
 
@@ -791,9 +942,11 @@ export default function Settings({
           open={openSection === "foh"}
           onToggle={function () { toggleSection("foh"); }}
           dirty={fohDirty}
+          className="mgt-hover-scale"
+          headerClassName="mgt-hover-scale"
         >
-          {renderBlock("foh", "day", "Day shift", false)}
-          {renderBlock("foh", "evening", "Evening shift", true)}
+          {renderBlock("foh", "day", "Day shift")}
+          {renderBlock("foh", "evening", "Evening shift")}
         </Collapsible>
 
         <Collapsible
@@ -801,9 +954,11 @@ export default function Settings({
           open={openSection === "kitchen"}
           onToggle={function () { toggleSection("kitchen"); }}
           dirty={kitchenDirty}
+          className="mgt-hover-scale"
+          headerClassName="mgt-hover-scale"
         >
-          {renderBlock("kitchen", "day", "Day shift", false)}
-          {renderBlock("kitchen", "evening", "Evening shift", false)}
+          {renderBlock("kitchen", "day", "Day shift")}
+          {renderBlock("kitchen", "evening", "Evening shift")}
         </Collapsible>
       </div>
 
@@ -818,11 +973,13 @@ export default function Settings({
       >
         {mkBtn({
           variant: "ghost",
+          className: "mgt-hover-scale",
           onClick: handleReset,
           children: "Reset to defaults",
         })}
         {mkBtn({
           variant: "primary",
+          className: "mgt-hover-scale",
           onClick: handleSave,
           disabled: saveDisabled,
           style: saveStyle,

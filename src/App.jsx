@@ -21,9 +21,9 @@ import AppShell from "./components/AppShell.jsx";
 
 // ── App signature ────────────────────────────────────────────────────────
 export const __APP_SIGNATURE__ = Object.freeze({
-  version: "1.8.2",
-  build: "2026-05-19",
-  sha: "recurring-shift-preference",
+  version: "1.9.0",
+  build: "2026-05-20",
+  sha: "selects-scale-modal-overflow",
 });
 
 // Expose for DevTools / debugging.

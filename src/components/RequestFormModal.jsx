@@ -192,6 +192,7 @@ export default function RequestFormModal({
           <button
             key={t.key}
             type="button"
+            className="mgt-hover-scale"
             onClick={function () { setField("type", t.key); }}
             style={{
               ...BTN.base,
@@ -235,6 +236,7 @@ export default function RequestFormModal({
               <button
                 key={opt.key}
                 type="button"
+                className="mgt-hover-scale"
                 onClick={function () { setField("preferredDayPart", opt.key); }}
                 style={{
                   ...BTN.base,
@@ -273,6 +275,7 @@ export default function RequestFormModal({
               <button
                 key={w.key}
                 type="button"
+                className="mgt-hover-scale"
                 onClick={function () { toggleRecurringDay(w.key); }}
                 style={{
                   ...BTN.base,
@@ -306,7 +309,7 @@ export default function RequestFormModal({
     : null;
 
   const deleteButton = isEdit
-    ? mkBtn({ type: "button", variant: "danger", onClick: handleDelete, children: "Delete" })
+    ? mkBtn({ type: "button", className: "mgt-hover-scale", variant: "danger", onClick: handleDelete, children: "Delete" })
     : null;
 
   // ── Render ───────────────────────────────────────────────────────────
@@ -319,6 +322,7 @@ export default function RequestFormModal({
     >
       <Fld label="Employee">
         <select
+          className="mgt-hover-scale"
           value={form.employeeId}
           onChange={function (e) { setField("employeeId", e.target.value); }}
           style={{ ...S.inputBase, paddingRight: 28 }}
@@ -340,6 +344,7 @@ export default function RequestFormModal({
           <Fld label="From">
             {mkInp({
               type: "date",
+              className: "mgt-hover-scale",
               value: form.dateFrom,
               onChange: function (e) { setDateFrom(e.target.value); },
             })}
@@ -349,6 +354,7 @@ export default function RequestFormModal({
           <Fld label="To">
             {mkInp({
               type: "date",
+              className: "mgt-hover-scale",
               value: form.dateTo,
               min: form.dateFrom || undefined,
               onChange: function (e) { setField("dateTo", e.target.value); },
@@ -361,6 +367,7 @@ export default function RequestFormModal({
 
       <Fld label="Notes (optional)">
         <textarea
+          className="mgt-hover-scale"
           value={form.notes}
           onChange={function (e) { setField("notes", e.target.value); }}
           rows={2}
@@ -382,9 +389,10 @@ export default function RequestFormModal({
           {deleteButton}
         </div>
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-          {mkBtn({ type: "button", variant: "ghost", onClick: onClose, children: "Cancel" })}
+          {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "ghost", onClick: onClose, children: "Cancel" })}
           {mkBtn({
             type: "button",
+            className: "mgt-hover-scale",
             variant: "primary",
             onClick: handleSave,
             disabled: !valid,

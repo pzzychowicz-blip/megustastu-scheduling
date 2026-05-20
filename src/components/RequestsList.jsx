@@ -106,6 +106,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
       <button
         key={req.id}
         type="button"
+        className="mgt-hover-scale"
         onClick={function () { openEdit(req); }}
         style={{
           display: "block",
@@ -173,6 +174,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
         <p style={{ ...S.body, marginBottom: 12 }}>No requests yet.</p>
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: "primary",
           onClick: openAdd,
           children: "Add your first request",
@@ -205,6 +207,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
         </span>
         <button
           type="button"
+          className="mgt-hover-scale"
           onClick={function () { setShowPast(function (v) { return !v; }); }}
           style={{ ...BTN.base, ...BTN.ghost, padding: "4px 10px", fontSize: 12 }}
         >
@@ -233,6 +236,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
         </span>
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: "primary",
           onClick: openAdd,
           children: "+ Add request",

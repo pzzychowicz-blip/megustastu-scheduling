@@ -540,6 +540,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       <button
         key={slot.key + "-" + dIso}
         type="button"
+        className="mgt-hover-scale"
         onClick={function () { cellClick(dIso, slot, existing); }}
         style={{
           width: "100%",
@@ -637,9 +638,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       }}
     >
       <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={goPrev}  style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>‹ Prev</button>
-        <button onClick={goToday} style={{ ...BTN.base, ...BTN.secondary, padding: "6px 12px", fontSize: 13 }}>Today</button>
-        <button onClick={goNext}  style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>Next ›</button>
+        <button onClick={goPrev}  className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>‹ Prev</button>
+        <button onClick={goToday} className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.secondary, padding: "6px 12px", fontSize: 13 }}>Today</button>
+        <button onClick={goNext}  className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>Next ›</button>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
@@ -695,14 +696,23 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   const todayIndex = dates.findIndex(function (d) { return isoDate(d) === todayIso; });
 
   const desktopGrid = (
-    <div style={{ overflowX: "auto" }}>
+    // v1.9.0 (hover-scale fix): the wrapper's `overflowX: auto` clips
+    // transformed children at its box boundary — browsers force overflow-y
+    // to behave like auto whenever overflow-x is non-visible. Without
+    // padding, a Sunday-column cell scaling to 1.08 on hover gets its
+    // right edge clipped by the wrapper / surrounding card border.
+    // The 8px padding gives every edge cell room to scale (≈5px each
+    // direction for a 60px cell) before the clip kicks in. The grid's
+    // minWidth is also reduced by the horizontal padding so the
+    // horizontal scrollbar threshold is unchanged for narrow viewports.
+    <div style={{ overflowX: "auto", padding: 8 }}>
       <div
         style={{
           display: "grid",
           gridTemplateColumns:
             "120px repeat(" + dates.length + ", minmax(120px, 1fr))",
           gap: 6,
-          minWidth: 120 + dates.length * 120,
+          minWidth: 120 + dates.length * 120 - 16,
           // v1.4.0 fixup: containing block for the absolutely-positioned
           // tint + column-rule underlays below. Without this, the underlays
           // would resolve their `gridColumn` against the nearest positioned
@@ -1034,6 +1044,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         {swapMode || swapBanner.tone !== "info" ? (
           <button
             type="button"
+            className="mgt-hover-scale"
             onClick={swapMode ? exitSwapMode : function () { setSwapBanner(null); }}
             aria-label={swapMode ? "Cancel" : "Dismiss"}
             style={{

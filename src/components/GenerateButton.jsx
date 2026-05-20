@@ -140,6 +140,7 @@ export default function GenerateButton({
     <>
       <button
         type="button"
+        className="mgt-hover-scale"
         onClick={handleClick}
         disabled={disabled}
         style={style}

@@ -61,6 +61,7 @@ export default function ClearConfirmModal({
     return (
       <button
         type="button"
+        className="mgt-hover-scale"
         onClick={onClick}
         disabled={busy}
         style={{
@@ -145,6 +146,7 @@ export default function ClearConfirmModal({
       >
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: "ghost",
           onClick: onClose,
           disabled: busy,
@@ -153,6 +155,7 @@ export default function ClearConfirmModal({
         })}
         {mkBtn({
           type: "button",
+          className: "mgt-hover-scale",
           variant: "danger",
           onClick: function () { if (scope) onConfirm(scope); },
           disabled: busy || !scope || willClear === 0,

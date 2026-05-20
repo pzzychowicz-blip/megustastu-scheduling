@@ -171,19 +171,40 @@ function defaultRoleForSlot(section, dayPart, index) {
   return roles[index] || null;
 }
 
+// v1.9.0: pull per-slot default times from a block. Reads from the new
+// `times` array when present; falls back to the legacy v0.5.0 shape
+// (single `start`/`end` per block, plus FoH-evening `secondPersonStart`
+// for slot 1+) when the saved doc predates the per-slot model. Settings
+// migrates on save, so legacy reads should be rare — but `slotsForDay`
+// is the read path for every consumer (grid, modal, generator, PDF
+// export) so the fallback has to live here, not just in Settings.
+function slotTimeFor(block, sectionKey, dayPart, index) {
+  if (Array.isArray(block.times)) {
+    const t = block.times[index];
+    if (t && t.start && t.end) return { start: t.start, end: t.end };
+  }
+  // Legacy fallback. FoH evening slot 1+ honours secondPersonStart.
+  let start = block.start;
+  if (sectionKey === "foh" && dayPart === "evening" && index > 0 && block.secondPersonStart) {
+    start = block.secondPersonStart;
+  }
+  return { start: start, end: block.end };
+}
+
 export function slotsForDay(template) {
   const slots = [];
 
   // Kitchen day
   const kitDay = template.kitchen.day;
   for (let i = 0; i < kitDay.count; i++) {
+    const t = slotTimeFor(kitDay, "kitchen", "day", i);
     slots.push({
       key: "kitchen-day-" + i,
       section: "kitchen",
       dayPart: "day",
       slotIndex: i,
-      defaultStart: kitDay.start,
-      defaultEnd: kitDay.end,
+      defaultStart: t.start,
+      defaultEnd: t.end,
       defaultRole: null,
       sectionLabel: SECTIONS.kitchen.label,
       dayPartLabel: "Day",
@@ -204,13 +225,14 @@ export function slotsForDay(template) {
   // Kitchen evening
   const kitEve = template.kitchen.evening;
   for (let i = 0; i < kitEve.count; i++) {
+    const t = slotTimeFor(kitEve, "kitchen", "evening", i);
     slots.push({
       key: "kitchen-evening-" + i,
       section: "kitchen",
       dayPart: "evening",
       slotIndex: i,
-      defaultStart: kitEve.start,
-      defaultEnd: kitEve.end,
+      defaultStart: t.start,
+      defaultEnd: t.end,
       defaultRole: defaultRoleForSlot("kitchen", "evening", i),
       sectionLabel: SECTIONS.kitchen.label,
       dayPartLabel: "Evening",
@@ -223,13 +245,14 @@ export function slotsForDay(template) {
   // FoH day
   const fohDay = template.foh.day;
   for (let i = 0; i < fohDay.count; i++) {
+    const t = slotTimeFor(fohDay, "foh", "day", i);
     slots.push({
       key: "foh-day-" + i,
       section: "foh",
       dayPart: "day",
       slotIndex: i,
-      defaultStart: fohDay.start,
-      defaultEnd: fohDay.end,
+      defaultStart: t.start,
+      defaultEnd: t.end,
       defaultRole: null,
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Day",
@@ -242,17 +265,18 @@ export function slotsForDay(template) {
     });
   }
 
-  // FoH evening (position 0 starts at evening.start; position 1+ at secondPersonStart)
+  // FoH evening. v1.9.0: per-slot times via slotTimeFor (legacy
+  // secondPersonStart still honoured for backward-compat reads).
   const fohEve = template.foh.evening;
   for (let i = 0; i < fohEve.count; i++) {
-    const start = i === 0 ? fohEve.start : (fohEve.secondPersonStart || fohEve.start);
+    const t = slotTimeFor(fohEve, "foh", "evening", i);
     slots.push({
       key: "foh-evening-" + i,
       section: "foh",
       dayPart: "evening",
       slotIndex: i,
-      defaultStart: start,
-      defaultEnd: fohEve.end,
+      defaultStart: t.start,
+      defaultEnd: t.end,
       defaultRole: defaultRoleForSlot("foh", "evening", i),
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Evening",
@@ -440,25 +464,34 @@ export function findShiftPreferenceMismatch(requestsMap, employeeId, dateIso, da
   return null;
 }
 
-// ── Days off in week (v1.6.0; lifted v1.6.1) ─────────────────────────────
+// ── Holiday days in week (v1.6.0 as daysOffInWeekByEmployee; renamed v1.9.0) ─
 // Per-employee count of distinct dates in `dates` that are covered by a
-// `dayoff` or `holiday` request. Two consumers:
+// `holiday` request. Two consumers:
 //   - WeeklyShiftSummary — drives the effective-quota number on the
 //     "Shifts assigned" pill (raw workingDaysPerWeek − this count).
-//   - generator.js (v1.6.1) — applies the same effective cap in the
-//     candidate quota gate and the Regenerate over-quota clear pass.
+//   - generator.js — applies the same effective cap in the candidate
+//     quota gate so the algorithm and the UI agree on the cap.
 //
-// `shift-preference` requests are intentionally skipped — they
-// constrain which dayPart the employee can work, not whether they
-// work that day. Closed weekdays are already absent from `dates`
-// (callers pass the post-filter `visibleWeekDates(...)` list), so
-// requests covering closed days don't inflate the count.
+// v1.9.0 scope narrowing: `dayoff` requests are intentionally NOT
+// counted any more. The semantic shift: holiday = "I'm away, don't
+// schedule me at all" (subtract from the weekly cap); dayoff = "I'd
+// prefer this specific date off" (still HARD-blocks that date via
+// findRequestConflict, but the employee remains available for their
+// full quota across the remaining open dates). The WeeklyRequestsPreview
+// panel still surfaces every dayoff request so the manager retains full
+// visibility into the "why" without the math being wrong.
+//
+// `shift-preference` requests are also skipped — they constrain which
+// dayPart the employee can work, not whether they work that day.
+// Closed weekdays are already absent from `dates` (callers pass the
+// post-filter `visibleWeekDates(...)` list), so requests covering
+// closed days don't inflate the count.
 //
 // Returns { [employeeId]: count }. Employees with no matching dates
 // are absent from the map (callers treat missing as 0). `dates` is a
 // JS Date[]; we ISO-format internally for the YYYY-MM-DD string
 // compare against `dateFrom` / `dateTo`.
-export function daysOffInWeekByEmployee(requestsMap, dates) {
+export function holidayDaysInWeekByEmployee(requestsMap, dates) {
   const out = {};
   if (!requestsMap) return out;
   const dateIsos = [];
@@ -467,7 +500,7 @@ export function daysOffInWeekByEmployee(requestsMap, dates) {
   for (let i = 0; i < all.length; i++) {
     const r = all[i];
     if (!r || !r.employeeId || !r.dateFrom) continue;
-    if (r.type !== "dayoff" && r.type !== "holiday") continue;
+    if (r.type !== "holiday") continue;
     const from = r.dateFrom;
     const to = r.dateTo || r.dateFrom;
     let hits = out[r.employeeId];

@@ -80,6 +80,7 @@ export default function ClearButton({
     <>
       <button
         type="button"
+        className="mgt-hover-scale"
         onClick={handleClick}
         disabled={disabled}
         style={style}

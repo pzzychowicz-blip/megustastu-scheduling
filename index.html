@@ -269,6 +269,55 @@
         color: var(--color-body);
         -webkit-font-smoothing: antialiased;
       }
+
+      /* ── v1.9.0: unified hover-scale utility ────────────────────────────
+         Single reusable hover affordance, applied to every primary
+         interactive surface (schedule cells, nav buttons, list rows,
+         pills, top-tab nav, Settings rows, modal actions). Originally
+         introduced in v1.9.0 as `.mgt-req-pill` inside
+         WeeklyRequestsPreview; lifted here so every consumer reads
+         from one rule.
+
+         `:not(:disabled)` keeps gated buttons (e.g. Export PDF before
+         the week is complete) from reacting to hover — browsers DO
+         apply :hover to disabled buttons by default, so the guard is
+         load-bearing.
+
+         transform is paint-only: no layout reflow on adjacent cells /
+         buttons. A hovered grid cell visually lifts over its neighbours
+         while their positions stay put — matches the iOS-tappable feel.
+
+         v1.9.0 (perslot+ commit): added `background-color` + `box-shadow`
+         + `position: relative` + `z-index` on hover so transparent rows
+         (Toggle atoms in ShiftFormModal / Settings, Collapsible section
+         headers, Fld-wrapped rows in Settings) get an opaque card-like
+         surface when hovered instead of bleeding text into the row
+         below. Elements that already have an inline `background:` style
+         (mkBtn variant buttons, palette pills, schedule cells, row
+         cards) keep their existing colour because inline styles beat
+         CSS rules at the same level — the new `background-color`
+         declaration only fills in the gap for elements that had none.
+      ────────────────────────────────────────────────────────────────── */
+      .mgt-hover-scale {
+        transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease, border-radius 120ms ease;
+      }
+      .mgt-hover-scale:hover:not(:disabled) {
+        transform: scale(1.08);
+        background-color: var(--bg-overlay-sheet);
+        box-shadow: var(--shadow-soft);
+        /* v1.9.0 (perslot+ commit, second round): rounded corners on the
+           hover card so transparent rows (Toggle atoms, Collapsible
+           headers, Fld-wrapped rows) match the rounded-card aesthetic of
+           the rest of the app when their hover background paints.
+           Elements that already have inline border-radius (most buttons
+           via BTN.base, pills via 999, schedule cells via 10) keep their
+           inline value because inline styles beat CSS at the same level.
+           12px matches S.surfaceSoft / S.card / BTN.base in
+           src/lib/constants.js. */
+        border-radius: 12px;
+        position: relative;
+        z-index: 2;
+      }
     </style>
   </head>
   <body>

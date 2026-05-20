@@ -126,6 +126,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         <p style={S.muted}>v{appVersion} · {user.email}</p>
       </div>
       <button
+        className="mgt-hover-scale"
         style={{ ...BTN.base, ...BTN.ghost }}
         onClick={signOut}
       >
@@ -153,6 +154,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
           <button
             key={t.key}
             type="button"
+            className="mgt-hover-scale"
             onClick={function () { setTab(t.key); }}
             style={{
               ...BTN.base,
