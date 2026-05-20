@@ -322,6 +322,7 @@ export default function RequestFormModal({
     >
       <Fld label="Employee">
         <select
+          className="mgt-hover-scale"
           value={form.employeeId}
           onChange={function (e) { setField("employeeId", e.target.value); }}
           style={{ ...S.inputBase, paddingRight: 28 }}

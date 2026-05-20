@@ -64,8 +64,18 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
         borderRadius: 16,
         padding: 20,
         boxShadow: "var(--shadow-overlay)",
+        // v1.9.0 (perslot+ commit, fourth round): overflow changed from
+        // `auto` to `visible` so transform-scaled inputs inside the modal
+        // (Notes textareas, time/date inputs, selects, Toggles) can lift
+        // visibly past the sheet's border on hover. Trade-off: long
+        // modal content (taller than maxHeight) extends past the sheet
+        // boundary into the backdrop. Typical form heights stay well
+        // under 80vh (the longest is RequestFormModal at ~620 px max),
+        // so this rarely happens in practice. Mobile sheet keeps
+        // overflow:auto since it fills the full viewport and tall
+        // content needs internal scrolling there.
         maxHeight: "80vh",
-        overflow: "auto",
+        overflow: "visible",
       };
 
   return (

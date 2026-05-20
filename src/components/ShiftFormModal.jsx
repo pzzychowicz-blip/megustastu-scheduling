@@ -505,6 +505,7 @@ export default function ShiftFormModal({
     <Overlay open={open} isMobile={isMobile} onClose={onClose} title={headerTitle}>
       <Fld label="Assignee">
         <select
+          className="mgt-hover-scale"
           value={form.employeeId}
           onChange={function (e) { setField("employeeId", e.target.value); }}
           style={{ ...S.inputBase, paddingRight: 28 }}

@@ -500,6 +500,37 @@ Files touched: `src/App.jsx`, `src/components/atoms.jsx`,
 (className strings moved between elements; Toggle padding string
 4 chars longer).
 
+### Ninth commit — Employee/Assignee selects + modal sheet overflow:visible
+
+Two follow-ups from the eighth-commit review:
+
+1. **`<select>` dropdowns weren't included in the field-only-
+   scale pattern.** Added `className="mgt-hover-scale"` to the
+   Employee select in `RequestFormModal.jsx` (edit + add modes
+   share the component) and the Assignee select in
+   `ShiftFormModal.jsx`. Now the editable surface lifts on hover
+   to match the time / date / notes inputs done in the
+   eighth commit.
+
+2. **Notes textarea (and other modal-resident scaled elements)
+   couldn't visibly lift past the modal sheet's border** —
+   `overflow: auto` clipped any transform-scaled child at the
+   sheet boundary. Changed the desktop sheet's `overflow` from
+   `auto` to `visible` in `src/components/atoms.jsx` Overlay.
+   Mobile sheet keeps `auto` since it fills the full viewport
+   and tall content needs internal scrolling there. Trade-off
+   accepted: long desktop modal content (taller than `maxHeight:
+   80vh`) extends past the sheet boundary into the backdrop;
+   typical forms stay well under 80vh so this rarely happens.
+
+`src/App.jsx`: `sha` "field-only-scale-pattern" →
+"selects-scale-modal-overflow".
+
+Files touched: `src/App.jsx`, `src/components/atoms.jsx`,
+`src/components/RequestFormModal.jsx`,
+`src/components/ShiftFormModal.jsx`, plus doc updates in
+`CLAUDE.md` and this log entry.
+
 ### Locked decisions (session 15)
 
 | Q | A |

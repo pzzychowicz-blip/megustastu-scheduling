@@ -610,6 +610,29 @@ separate Firebase project, same UI conventions).
   switch instead of hugging them tight — fixes the "squashed"
   appearance reported in the seventh-commit screenshots.
 
+  **Select dropdowns + modal sheet overflow (ninth v1.9.0
+  commit):** the field-only-scale pattern extends to the two
+  `<select>` dropdowns flagged in the eighth-commit review —
+  `RequestFormModal`'s Employee picker and `ShiftFormModal`'s
+  Assignee picker. Both gain `className="mgt-hover-scale"` on
+  the `<select>` element so the editable surface lifts when
+  hovered, matching the time / date / notes inputs.
+  
+  In parallel, the `Overlay` atom's desktop sheet `overflow`
+  changed from `auto` to `visible` so transform-scaled inputs
+  inside any modal (Notes textareas, time / date inputs,
+  selects, Toggles) can lift visibly past the sheet's border
+  on hover. The previous `overflow: auto` clipped transforms at
+  the sheet boundary, which the user reported as "limiting the
+  overflow" on the Notes field specifically. Trade-off: long
+  modal content (taller than `maxHeight: 80vh`) extends past
+  the sheet boundary into the backdrop. Typical form heights
+  stay under 80vh (the longest is `RequestFormModal` at ≈620 px
+  max in the shift-preference + recurring weekdays + notes
+  configuration), so this rarely happens in practice. Mobile
+  sheet keeps `overflow: auto` since it fills the full viewport
+  and tall content needs internal scrolling there.
+
 - **Requests-this-week type pills preview the request (v1.9.0):**
   in `<WeeklyRequestsPreview>` the colored type pill of each chip
   row became a `<button type="button">` with `className="mgt-req-pill"`.
@@ -734,7 +757,7 @@ megustastu-scheduling/
     │                                 v1.8.2: → 1.8.2, sha
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
-    │                                 "field-only-scale-pattern".
+    │                                 "selects-scale-modal-overflow".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut

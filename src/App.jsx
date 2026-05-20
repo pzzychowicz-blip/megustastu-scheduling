@@ -23,7 +23,7 @@ import AppShell from "./components/AppShell.jsx";
 export const __APP_SIGNATURE__ = Object.freeze({
   version: "1.9.0",
   build: "2026-05-20",
-  sha: "field-only-scale-pattern",
+  sha: "selects-scale-modal-overflow",
 });
 
 // Expose for DevTools / debugging.
