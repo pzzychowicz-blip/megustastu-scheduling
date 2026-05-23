@@ -5,6 +5,143 @@ an entry. Newest first.
 
 ---
 
+## v1.9.3 — Jump-to-cell from GenerateResultsModal
+
+**Date:** 2026-05-23
+**Behavioural change:** New interaction in the generator-details modal.
+Every unfilled-cell row and (for Regenerate) every cleared-shift row is
+now a clickable button. Click takes the manager directly to the cell
+on the schedule grid: if the date is outside the visible week, the
+grid first navigates to the right week; the modal closes; and the cell
+one-shot pulses with the v1.7.0 green highlight palette plus a 1.6-s
+scale-bounce animation so the eye lands on it immediately. The cell-
+key highlight auto-clears 1.7 s after firing. Esc cancels an in-flight
+jump-target highlight (priority order in the keydown handler:
+swap-mode → jump-target → sticky pill-highlight).
+
+The visual at-rest is intentionally identical to the v1.7.0 pill-click
+highlight (same `--bg-active-on` / `--border-active-on` tokens) — the
+mgt-jump-pulse animation is the only distinguishing cue. Single visual
+identity for "this cell is the focus right now," regardless of how the
+manager got there (clicking a pill OR clicking a results-modal row).
+
+This completes a deferred polish thread from sessions 12–14 listed in
+session 15's thread summary as "GenerateResultsModal → jump-to-cell."
+
+### What landed
+
+1. **`src/components/GenerateResultsModal.jsx`** — new optional
+   `onJumpToCell(dateIso, slotKey)` prop. `ReasonGroup` extended with
+   an `onItemClick` prop; when provided, each row renders as a button
+   wrapped inside the existing `<li>` (button is `display:block`,
+   `width:100%`, transparent, inherits font, gets the
+   `.mgt-hover-scale` utility class so it lifts + paints a soft hover
+   background on pointer). When omitted, rows fall back to plain
+   text (v1.4.0 behaviour). The default export wires two per-list
+   handlers — unfilled rows read `item.dateIso`, cleared rows read
+   `item.date` (the underlying shape mismatch from the v1.4.0
+   summary, captured at run-time in `generator.js`).
+
+2. **`src/components/ScheduleGrid.jsx`** — three additions:
+   - **`highlightedCellKey` state** (composite `${dateIso}|${slotKey}`)
+     with a `useEffect` that auto-clears it 1.7 s after set. Distinct
+     axis from the v1.7.0 `highlightedEmployeeId` because unfilled
+     and cleared cells have no assignee to key by.
+   - **`jumpToCell(dateIso, slotKey)` helper** — auto-navigates
+     `weekStart` to the week containing the target date (via
+     `parseIsoDate` + `startOfWeek` + an `isoDate(start)` equality
+     compare so the no-op case is cheap), closes the results modal,
+     sets the cell-key. Defensive: no-ops on falsy args; try/catch
+     around the date parse falls through to the highlight set.
+   - **`renderCell` styling extended** — new `isJumpTarget` boolean +
+     `isAnyHighlight = isHighlighted || isJumpTarget`. The existing
+     `isHighlighted` references in `baseBg` / `baseBorder` /
+     `baseBorderWidth` / `ringShadow` were rewritten to use
+     `isAnyHighlight` so the jump target picks up the same green
+     ring tokens. New `cellAnimation` local layers the one-shot
+     `"mgt-jump-pulse 1.6s ease-out 1"` value when `isJumpTarget`;
+     swap-source still wins (its infinite yellow pulse is mutually
+     exclusive with jump anyway since swap-source needs an existing
+     shift).
+   - **Inline `<style>` block** at the component root extended with
+     `@keyframes mgt-jump-pulse` (transform scale bounce: 1 → 1.12
+     → 0.98 → 1.04 → 1).
+   - **Esc-handler `useEffect`** priority order extended to clear
+     `highlightedCellKey` between swap-mode and the pill-highlight.
+   - **Modal mount** now passes `onJumpToCell={jumpToCell}`.
+
+3. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.9.2 → 1.9.3,
+   `sha` "mobile-today-card-tint" → "jump-to-cell-from-results".
+
+4. **`CLAUDE.md`** — v1.4.0 GenerateResultsModal locked-decision
+   block expanded with a v1.9.3 sub-block describing the jump-to-cell
+   wiring + animation + Esc priority. App.jsx, ScheduleGrid.jsx, and
+   GenerateResultsModal.jsx file-structure entries each gain a v1.9.3
+   line.
+
+### Why the same green palette as v1.7.0 pill-highlight
+
+Two distinct user actions land on the same visual at rest (sticky
+green ring on a cell). The pill-click highlight is sticky (toggles
+on/off); the jump-target is a one-shot (auto-clears after 1.7s). If
+they used different tokens, a manager who'd just clicked Details →
+jumped → then clicked a pill would see TWO different greens on
+different cells, which is noise. Sharing the palette makes the
+visual identity "this is the focused cell" consistent across the
+two entry points.
+
+The animation does the distinguishing work: pill-click sets a
+steady ring; jump fires a brief scale bounce. The bounce is what
+draws the eye to the target cell.
+
+### Edge cases
+
+- **Date outside visible week** — auto-navigates the week. Manager
+  who navigated away after a generator run can still jump back.
+- **Date in a closed weekday** — `visibleWeekDates` filters closed
+  days out of `dates`, so the cell isn't rendered. The highlight is
+  set but has no visible effect; auto-clears 1.7s later. Acceptable
+  (rare: would require closing a day Settings-side between the
+  generator run and the click).
+- **Slot removed from template** — same outcome as closed-day:
+  highlight set, no cell to flash. Harmless.
+- **Compound state** — if `highlightedEmployeeId` is also set (a pill
+  is sticky-lit AND the manager clicks a results-modal row), both
+  cells get the green ring. The jump target gets the bounce animation
+  on top. No conflict; reads correctly.
+
+### Bundle delta
+
+Main bundle 164.68 → 164.99 kB gz (+0.31 kB). HTML 4.15 (unchanged).
+Modules 320 → 320 (no new file).
+
+### Verification
+
+- `npm run build` succeeded (above).
+- `npm run dev` (DEV Firebase). Sign in, populate a few shifts and
+  requests, then:
+  - **Generate on a week with multiple conflicts** so the result
+    banner shows unfilled cells. Click Details → click any row →
+    modal closes, cell scale-bounces and gets a green ring for ~1.6s,
+    then settles back to base. Repeat with a Regenerate run to test
+    the "Cleared" rows.
+  - **Navigate to a different week** before clicking Details → click
+    a row → grid auto-navigates back to the run's week + flashes the
+    cell.
+  - **Esc during the 1.6s pulse** — cell-key state clears
+    immediately, animation aborts, cell returns to base. Press Esc
+    again with a sticky pill-highlight set → pill-highlight clears.
+  - **Modal in read-only mode** — pass `onJumpToCell={undefined}`
+    (rendered by deleting that prop temporarily for a sanity check)
+    → rows render as plain non-interactive text (v1.4.0 fallback).
+  - **Mobile width** — same flow, day-card stack: cell flash should
+    still play because the cell is rendered (just in a different
+    layout).
+  - **Dark mode** — green ring tokens flip via CSS vars; visual
+    holds in both themes.
+
+---
+
 ## v1.9.2 — Mobile today-card tint (desktop v1.4.0 catch-up)
 
 **Date:** 2026-05-23

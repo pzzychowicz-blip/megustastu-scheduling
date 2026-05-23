@@ -701,22 +701,43 @@ separate Firebase project, same UI conventions).
     via `visibleWeekDates`). Cell-level visuals stack above the
     tinted card (v1.7.0 green pill highlight + yellow swap pulse
     still read correctly inside today's card).
-- **Generator result details (v1.4.0):** the result banner gains a
-  "Details" button (only visible when `summary.unfilledCells` or
-  `summary.clearedReasons` is non-empty). Click opens
-  `GenerateResultsModal` listing each unfilled cell and (for
-  Regenerate) each cleared shift grouped by reason. Human-readable
-  labels live in `GENERATOR_REASONS` in `constants.js` — single
-  source of truth keyed by the reason codes the generator emits.
-  The banner's 5-second auto-dismiss is held while the modal is open
-  so the manager can read at leisure; closing the modal resumes the
-  countdown. Dismissing the banner (via ×) also closes the modal as
-  a safety against stale-state rendering. Clear-button results never
-  show "Details" — they carry no reason metadata. Generator's
-  `clearInvalidShifts.clear()` was enriched to capture each cleared
-  shift's date/employeeId/section/dayPart/slotIndex/slotKey at clear
-  time, so the modal can display "Anna — Tue 19, Kitchen Day —
-  archived" rows even after the record has been deleted from Firebase.
+- **Generator result details (v1.4.0, jump-to-cell v1.9.3):** the
+  result banner gains a "Details" button (only visible when
+  `summary.unfilledCells` or `summary.clearedReasons` is non-empty).
+  Click opens `GenerateResultsModal` listing each unfilled cell and
+  (for Regenerate) each cleared shift grouped by reason. Human-
+  readable labels live in `GENERATOR_REASONS` in `constants.js` —
+  single source of truth keyed by the reason codes the generator
+  emits. The banner's 5-second auto-dismiss is held while the modal
+  is open so the manager can read at leisure; closing the modal
+  resumes the countdown. Dismissing the banner (via ×) also closes
+  the modal as a safety against stale-state rendering. Clear-button
+  results never show "Details" — they carry no reason metadata.
+  Generator's `clearInvalidShifts.clear()` was enriched to capture
+  each cleared shift's date/employeeId/section/dayPart/slotIndex/
+  slotKey at clear time, so the modal can display "Anna — Tue 19,
+  Kitchen Day — archived" rows even after the record has been
+  deleted from Firebase.
+  **v1.9.3 jump-to-cell:** every reason-row in the modal is now a
+  clickable button (uses the shared `.mgt-hover-scale` utility).
+  Click fires `onJumpToCell(dateIso, slotKey)` on `ScheduleGrid`,
+  which (a) auto-navigates `weekStart` to the week containing the
+  date if it's outside the visible range — otherwise the cell can't
+  flash because it isn't rendered, (b) closes the results modal,
+  and (c) sets a new `highlightedCellKey` state (composite
+  `${dateIso}|${slotKey}`). The cell renders with the v1.7.0 green
+  highlight palette (same `--bg-active-on` / `--border-active-on`
+  tokens the pill-click highlight uses) AND a one-shot
+  `@keyframes mgt-jump-pulse` scale-bounce animation (transform-
+  only so it composes with the inline box-shadow ring). The cell-
+  key state auto-clears 1.7s later via a `useEffect` watcher; the
+  animation ends at 1.6s so the cell settles back to base without
+  flicker. Esc clears the cell-key highlight too (priority order
+  in the keydown handler: swap-mode → jump-target → sticky pill-
+  highlight). Pill-highlight and jump-target paint identically at
+  rest — the animation is the only distinguishing cue, which keeps
+  the visual identity for "this cell is the focus" consistent
+  regardless of how the manager got there.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -777,6 +798,8 @@ megustastu-scheduling/
     │                                 bundle back to DEV Firebase).
     │                                 v1.9.2: → 1.9.2, sha
     │                                 "mobile-today-card-tint".
+    │                                 v1.9.3: → 1.9.3, sha
+    │                                 "jump-to-cell-from-results".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1279,6 +1302,28 @@ megustastu-scheduling/
         │                           the same across breakpoints. No new
         │                           state, no new memo, no layout change
         │                           — just the inline style overrides.
+        │                           v1.9.3: + highlightedCellKey state
+        │                           (composite "${dateIso}|${slotKey}").
+        │                           Auto-clears 1.7s after set via a
+        │                           useEffect watcher. Esc handler
+        │                           priority extended: swap-mode →
+        │                           jump-target → pill-highlight. + new
+        │                           jumpToCell(dateIso, slotKey) helper:
+        │                           navigates weekStart if the target
+        │                           date isn't visible, closes the
+        │                           results modal, sets the cell-key
+        │                           highlight. Threaded into
+        │                           GenerateResultsModal as onJumpToCell.
+        │                           renderCell gains an isJumpTarget
+        │                           check; isAnyHighlight (isHighlighted
+        │                           || isJumpTarget) drives the shared
+        │                           green ring tokens. cellAnimation
+        │                           gains the one-shot
+        │                           "mgt-jump-pulse 1.6s ease-out 1"
+        │                           branch (transform scale bounce, runs
+        │                           once). Inline <style> block at the
+        │                           component root extended with
+        │                           @keyframes mgt-jump-pulse.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -1593,6 +1638,19 @@ megustastu-scheduling/
                                     grouping logic collapses to one
                                     bucket naturally — only the
                                     file-header comment was updated.
+                                    v1.9.3: + optional onJumpToCell
+                                    prop. When provided, ReasonGroup
+                                    renders each row as a button
+                                    (.mgt-hover-scale) instead of plain
+                                    text; click fires the handler with
+                                    (dateIso, slotKey) so ScheduleGrid
+                                    can navigate + flash the cell.
+                                    Unfilled rows use item.dateIso,
+                                    cleared rows use item.date — both
+                                    carry slotKey. When the prop is
+                                    omitted the rows fall back to
+                                    plain text (read-only). Pure prop
+                                    extension; no state added here.
 ```
 
 ### File structure (target — added in later sessions)

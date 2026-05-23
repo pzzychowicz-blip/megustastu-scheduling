@@ -8,22 +8,32 @@
 // collapses naturally to one bucket; the only change in this file is
 // the title's mode label ("Regenerate" still reads correctly).
 //
+// v1.9.3 — Each reason-group row is now a clickable button. Click
+// fires onJumpToCell(dateIso, slotKey); ScheduleGrid closes the modal,
+// auto-navigates to the week containing the date if it's outside the
+// visible range, and one-shot pulses the cell in v1.7.0 highlight-
+// green for ~1.6s. Click target uses the shared .mgt-hover-scale
+// utility so the row reads as interactive. When onJumpToCell is
+// omitted the rows fall back to plain non-interactive text.
+//
 // Pure presentational — owns no state beyond `open` (controlled by
 // ScheduleGrid). Reads the summary captured at generator-run time.
 //
 // Props:
-//   open       (bool)         — overlay open state
-//   onClose    (fn)           — overlay close handler
-//   summary    (object|null)  — the resultBanner state from ScheduleGrid:
-//                               { mode, filled, unfilled, total, cleared?,
-//                                 unfilledCells: [{dateIso, slotKey, reason}],
-//                                 clearedReasons: [{id, reason, date,
-//                                                   employeeId, section,
-//                                                   dayPart, slotIndex,
-//                                                   slotKey}] }
-//   employees  ({[id]:emp})   — for cleared-reason rows (employee name)
-//   slotsByKey ({[key]:slot}) — for reason rows (slot humanLabel)
-//   isMobile   (bool)
+//   open         (bool)         — overlay open state
+//   onClose      (fn)           — overlay close handler
+//   summary      (object|null)  — the resultBanner state from ScheduleGrid:
+//                                 { mode, filled, unfilled, total, cleared?,
+//                                   unfilledCells: [{dateIso, slotKey, reason}],
+//                                   clearedReasons: [{id, reason, date,
+//                                                     employeeId, section,
+//                                                     dayPart, slotIndex,
+//                                                     slotKey}] }
+//   employees    ({[id]:emp})   — for cleared-reason rows (employee name)
+//   slotsByKey   ({[key]:slot}) — for reason rows (slot humanLabel)
+//   onJumpToCell (fn)           — v1.9.3 — (dateIso, slotKey) => void.
+//                                 Optional; omit for read-only rows.
+//   isMobile     (bool)
 //
 // Reason → human label lives in constants.GENERATOR_REASONS; we don't
 // embed labels here so adding a new code only touches one file.
@@ -95,8 +105,13 @@ const CLEARED_PALETTE = {
   border: "var(--hairline)",
 };
 
-function ReasonGroup({ label, items, paletteVariant, renderItem }) {
+// v1.9.3: onItemClick (optional) makes each row a button. Click fires
+// the handler with the row's `item` payload — caller threads through
+// to onJumpToCell(dateIso, slotKey). When absent the rows render as
+// plain non-interactive text (v1.4.0 behaviour).
+function ReasonGroup({ label, items, paletteVariant, renderItem, onItemClick }) {
   const palette = paletteVariant === "unfilled" ? UNFILLED_PALETTE : CLEARED_PALETTE;
+  const interactive = typeof onItemClick === "function";
   return (
     <div style={{ marginBottom: 12 }}>
       <div
@@ -124,7 +139,39 @@ function ReasonGroup({ label, items, paletteVariant, renderItem }) {
         }}
       >
         {items.map(function (item, i) {
-          return <li key={paletteVariant + "-" + i}>{renderItem(item)}</li>;
+          const key = paletteVariant + "-" + i;
+          if (!interactive) {
+            return <li key={key}>{renderItem(item)}</li>;
+          }
+          // v1.9.3: clickable row. The button mimics inline text — no
+          // border/background of its own — but inherits the shared
+          // .mgt-hover-scale utility so it lifts + paints a soft hover
+          // background, signalling "interactive" consistently with the
+          // rest of the app. textAlign:left so multi-line wraps stay
+          // readable on narrow mobile sheets.
+          return (
+            <li key={key}>
+              <button
+                type="button"
+                className="mgt-hover-scale"
+                onClick={function () { onItemClick(item); }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "2px 6px",
+                  margin: "1px 0",
+                  background: "transparent",
+                  border: "none",
+                  color: "inherit",
+                  font: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                {renderItem(item)}
+              </button>
+            </li>
+          );
         })}
       </ul>
     </div>
@@ -132,7 +179,7 @@ function ReasonGroup({ label, items, paletteVariant, renderItem }) {
 }
 
 export default function GenerateResultsModal({
-  open, onClose, summary, employees, slotsByKey, isMobile,
+  open, onClose, summary, employees, slotsByKey, onJumpToCell, isMobile,
 }) {
   if (!summary) return null;
 
@@ -149,6 +196,18 @@ export default function GenerateResultsModal({
   const hasUnfilled = unfilledGroups.length > 0;
   const hasCleared = clearedGroups.length > 0 && mode === "regenerate";
 
+  // v1.9.3: per-row click handlers. Unfilled cells store the date as
+  // `dateIso`; cleared shifts use `date`. Both carry `slotKey`. The
+  // handlers are no-ops when onJumpToCell is missing — ReasonGroup
+  // also gates interactivity on the callback's presence, so omitting
+  // both keeps the rows non-interactive end-to-end.
+  const onUnfilledClick = onJumpToCell
+    ? function (item) { onJumpToCell(item.dateIso, item.slotKey); }
+    : undefined;
+  const onClearedClick = onJumpToCell
+    ? function (item) { onJumpToCell(item.date, item.slotKey); }
+    : undefined;
+
   return (
     <Overlay open={open} onClose={onClose} title={title} isMobile={isMobile}>
       {hasUnfilled ? (
@@ -160,6 +219,7 @@ export default function GenerateResultsModal({
                 label={g.label}
                 items={g.items}
                 paletteVariant="unfilled"
+                onItemClick={onUnfilledClick}
                 renderItem={function (item) {
                   return shortDate(item.dateIso) + " — " + slotLabel(item.slotKey, slotsByKey);
                 }}
@@ -178,6 +238,7 @@ export default function GenerateResultsModal({
                 label={g.label}
                 items={g.items}
                 paletteVariant="cleared"
+                onItemClick={onClearedClick}
                 renderItem={function (item) {
                   return (
                     employeeName(item.employeeId, employees) +

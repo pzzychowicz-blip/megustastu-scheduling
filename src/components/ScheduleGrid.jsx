@@ -192,7 +192,26 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState(null);
   function onHighlight(empId) { setHighlightedEmployeeId(empId); }
 
+  // ── Jump-to-cell highlight (v1.9.3) ──────────────────────────────────
+  // Lit when the manager clicks an unfilled/cleared row in
+  // GenerateResultsModal. Distinct axis from highlightedEmployeeId
+  // because unfilled cells have no assignee to key by (and cleared
+  // cells' assignee was wiped). Composite `${dateIso}|${slotKey}` keys
+  // a single cell uniquely. One-shot — the effect below auto-clears
+  // the highlight after the mgt-jump-pulse animation finishes. Esc
+  // also clears it (see the keydown handler below).
+  const [highlightedCellKey, setHighlightedCellKey] = useState(null);
+  useEffect(function () {
+    if (!highlightedCellKey) return;
+    const t = setTimeout(function () { setHighlightedCellKey(null); }, 1700);
+    return function () { clearTimeout(t); };
+  }, [highlightedCellKey]);
+
   // ── Esc key: cancel swap or clear highlight ──────────────────────────
+  // Priority order: swap-mode → jump-target → sticky pill-highlight. The
+  // jump-target is a one-shot affordance, so prioritising it over the
+  // pill keeps Esc-to-cancel feeling immediate when the manager has
+  // just clicked a results-modal row.
   useEffect(function () {
     function onKey(e) {
       if (e.key !== "Escape") return;
@@ -200,13 +219,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       if (modalCell) return;
       if (swapMode) {
         exitSwapMode();
+      } else if (highlightedCellKey) {
+        setHighlightedCellKey(null);
       } else if (highlightedEmployeeId) {
         setHighlightedEmployeeId(null);
       }
     }
     document.addEventListener("keydown", onKey);
     return function () { document.removeEventListener("keydown", onKey); };
-  }, [swapMode, highlightedEmployeeId, modalCell]);
+  }, [swapMode, highlightedEmployeeId, highlightedCellKey, modalCell]);
 
   // ── Result banner (v1.0.0 generator + v1.1.0 clear) ──────────────────
   // After a Generate run, GenerateButton fires onResult({filled, unfilled,
@@ -241,6 +262,32 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     // Close the modal too — its summary is gone and rendering against
     // stale state would be a footgun.
     setShowResultsModal(false);
+  }
+
+  // v1.9.3: jump-to-cell from GenerateResultsModal. Called with the
+  // row's (dateIso, slotKey). Three things happen, in order:
+  //   1. If the target date isn't in the visible week, navigate the
+  //      grid to the week containing it. Otherwise the cell can't
+  //      flash because it isn't rendered.
+  //   2. Close the results modal so the cell is visible.
+  //   3. Set the cell-key highlight. The auto-clear effect (above)
+  //      drops it after 1.7s; the @keyframes mgt-jump-pulse animation
+  //      runs once over 1.6s, giving a tiny scale-bounce on top of the
+  //      shared green ring tokens.
+  // No-ops if the row is malformed.
+  function jumpToCell(dateIso, slotKey) {
+    if (!dateIso || !slotKey) return;
+    try {
+      const target = parseIsoDate(dateIso);
+      if (target && !isNaN(target.getTime())) {
+        const targetStart = startOfWeek(target);
+        if (isoDate(targetStart) !== isoDate(weekStart)) {
+          setWeekStart(targetStart);
+        }
+      }
+    } catch (_e) { /* malformed date — fall through to highlight set */ }
+    setShowResultsModal(false);
+    setHighlightedCellKey(dateIso + "|" + slotKey);
   }
 
   function handleSave(payload) {
@@ -517,24 +564,45 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     //                   yellow outline via @keyframes mgt-swap-pulse;
     //                   yellow keeps swap visually distinct from green
     //                   pill-highlights and blue accent surfaces.
+    // v1.9.3 adds:
+    //   isJumpTarget  — this cell is the one-shot focus from a click on
+    //                   a GenerateResultsModal row. Shares the green
+    //                   palette with isHighlighted (combined into the
+    //                   `isAnyHighlight` flag below) — pill-highlight and
+    //                   jump-target are visually identical at rest. The
+    //                   distinguishing cue is the one-shot
+    //                   @keyframes mgt-jump-pulse animation (a tiny
+    //                   scale bounce) that plays once when the jump
+    //                   fires, drawing the eye. The cell-key state
+    //                   auto-clears 1.7s later via the highlight effect.
     const isHighlighted =
       highlightedEmployeeId && existing && existing.employeeId === highlightedEmployeeId;
     const isSwapSource =
       swapMode && swapMode.phase === "target-select" &&
       swapMode.source && existing && existing.id === swapMode.source.shift.id;
+    const isJumpTarget = highlightedCellKey === (dIso + "|" + slot.key);
+    const isAnyHighlight = isHighlighted || isJumpTarget;
 
-    const baseBg = isHighlighted ? "var(--bg-active-on)" : palette.bg;
+    const baseBg = isAnyHighlight ? "var(--bg-active-on)" : palette.bg;
     const baseBorder = isSwapSource
       ? "var(--border-warning-tint)"
-      : isHighlighted
+      : isAnyHighlight
         ? "var(--border-active-on)"
         : palette.border;
-    const baseBorderWidth = (isSwapSource || isHighlighted) ? 2 : 1;
+    const baseBorderWidth = (isSwapSource || isAnyHighlight) ? 2 : 1;
     const ringShadow = isSwapSource
       ? "0 0 0 3px var(--bg-warning-tint), var(--shadow-soft)"
-      : isHighlighted
+      : isAnyHighlight
         ? "0 0 0 3px var(--bg-active-on), var(--shadow-soft)"
         : "var(--shadow-soft)";
+    // v1.9.3: swap pulse takes priority (it's intentionally infinite while
+    // swap-mode is armed). Jump pulse plays once; after it ends the
+    // cell-key state has likely already auto-cleared.
+    const cellAnimation = isSwapSource
+      ? "mgt-swap-pulse 1.6s ease-in-out infinite"
+      : isJumpTarget
+        ? "mgt-jump-pulse 1.6s ease-out 1"
+        : undefined;
 
     return (
       <button
@@ -557,7 +625,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           justifyContent: "space-between",
           gap: 4,
           boxShadow: ringShadow,
-          animation: isSwapSource ? "mgt-swap-pulse 1.6s ease-in-out infinite" : undefined,
+          animation: cellAnimation,
         }}
       >
         <div
@@ -1081,15 +1149,27 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
 
   return (
     <div>
-      {/* v1.7.0: single keyframes block for the swap-source pulse.
-          Inline at the component root so the animation token is in
-          scope wherever renderCell paints a cell. Yellow palette
-          keeps swap visually distinct from accent-blue (pickers,
-          today-tint) and green (pill highlights). */}
+      {/* v1.7.0: keyframes block for the swap-source pulse (yellow,
+          infinite while swap-mode is armed).
+          v1.9.3 adds mgt-jump-pulse — a one-shot scale bounce played
+          on the cell jumped to from GenerateResultsModal. Transform-
+          only so it composes with the box-shadow ring set inline
+          (the green palette is applied separately via baseBg /
+          baseBorder / ringShadow when isJumpTarget is true). 1.6s
+          single iteration so the animation ends just before the
+          1.7s state-auto-clear in the highlight effect — the cell
+          settles back to its base state without flicker. */}
       <style>{
         "@keyframes mgt-swap-pulse {" +
         "  0%,100% { box-shadow: 0 0 0 3px var(--bg-warning-tint), var(--shadow-soft); }" +
         "  50%     { box-shadow: 0 0 0 6px var(--border-warning-tint), var(--shadow-soft); }" +
+        "}" +
+        "@keyframes mgt-jump-pulse {" +
+        "  0%   { transform: scale(1); }" +
+        "  25%  { transform: scale(1.12); }" +
+        "  55%  { transform: scale(0.98); }" +
+        "  80%  { transform: scale(1.04); }" +
+        "  100% { transform: scale(1); }" +
         "}"
       }</style>
       {navBar}
@@ -1150,6 +1230,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         summary={resultBanner}
         employees={employees}
         slotsByKey={slotsByKey}
+        onJumpToCell={jumpToCell}
         isMobile={isMobile}
       />
     </div>
