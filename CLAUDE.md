@@ -683,13 +683,24 @@ separate Firebase project, same UI conventions).
   do NOT re-rank after each greedy pick (problem size ≤49 cells/week;
   pre-sort captures the bulk of the benefit). `clearInvalidShifts`
   and `rankCandidates` are unchanged.
-- **Schedule grid visual polish (v1.4.0):**
-  - **Today-column tint.** A single underlay div with
+- **Schedule grid visual polish (v1.4.0, mobile counterpart v1.9.2):**
+  - **Today-column tint (desktop).** A single underlay div with
     `gridColumn: <todayIndex + 2>`, `gridRow: "1 / -1"`,
     `background: var(--accent-tint-soft)`. Translucent cell
     backgrounds let the tint show through. `todayIndex < 0` (today
-    outside week / closed) → no underlay. No mobile counterpart this
-    round (day-cards stay independent).
+    outside week / closed) → no underlay.
+  - **Today-card tint (mobile, v1.9.2).** Mirror on the mobile
+    day-card stack: when `dIso === todayIso`, the whole card's
+    background flips to `var(--accent-tint-soft)`, its border to
+    `1px solid var(--accent-tint-strong)`, and the date-header
+    text inside flips to `var(--accent-on-tint)`. Same three tokens
+    the desktop column underlay + desktop date pill use, so the
+    visual identity for "today" reads the same across breakpoints.
+    No card gets tinted when today is outside the visible week or
+    today's weekday is closed (in which case it isn't in `dates`
+    via `visibleWeekDates`). Cell-level visuals stack above the
+    tinted card (v1.7.0 green pill highlight + yellow swap pulse
+    still read correctly inside today's card).
 - **Generator result details (v1.4.0):** the result banner gains a
   "Details" button (only visible when `summary.unfilledCells` or
   `summary.clearedReasons` is non-empty). Click opens
@@ -758,6 +769,14 @@ megustastu-scheduling/
     │                                 "recurring-shift-preference".
     │                                 v1.9.0: → 1.9.0, sha
     │                                 "selects-scale-modal-overflow".
+    │                                 v1.9.1: → 1.9.1, sha
+    │                                 "force-prod-build-env" (hotfix —
+    │                                 pinned NODE_ENV=production in the
+    │                                 npm build script so Vercel's
+    │                                 NODE_ENV defaulting can't flip the
+    │                                 bundle back to DEV Firebase).
+    │                                 v1.9.2: → 1.9.2, sha
+    │                                 "mobile-today-card-tint".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1242,6 +1261,24 @@ megustastu-scheduling/
         │                           consecutive-off filter) and into
         │                           <ShiftFormModal> (→ the manual
         │                           picker's yellow rest-warning).
+        │                           v1.9.2: mobile counterpart to the
+        │                           v1.4.0 desktop today-column tint.
+        │                           Inside the mobileStack day-card loop,
+        │                           an isToday boolean derived from
+        │                           todayIso (existing line-118 memo)
+        │                           drives a conditional override on the
+        │                           card style: background flips to
+        │                           var(--accent-tint-soft) + border to
+        │                           1px solid var(--accent-tint-strong)
+        │                           when isToday. The inline date-header
+        │                           div's color token flips to
+        │                           var(--accent-on-tint). Same three
+        │                           tokens the desktop column underlay
+        │                           + desktop date pill already use, so
+        │                           the "today" visual identity reads
+        │                           the same across breakpoints. No new
+        │                           state, no new memo, no layout change
+        │                           — just the inline style overrides.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request

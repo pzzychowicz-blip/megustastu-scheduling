@@ -5,6 +5,95 @@ an entry. Newest first.
 
 ---
 
+## v1.9.2 — Mobile today-card tint (desktop v1.4.0 catch-up)
+
+**Date:** 2026-05-23
+**Behavioural change:** Mobile-only visual addition. On the mobile
+day-card stack of the Schedule grid, today's day-card now gets the same
+three-token accent treatment the desktop already uses for today's
+column underlay + date pill. Card background flips to
+`var(--accent-tint-soft)`, border to `1px solid var(--accent-tint-strong)`,
+and the inline date-header text inside the card flips to
+`var(--accent-on-tint)`. No other surface changes, no data-model change,
+no logic change.
+
+v1.4.0 had introduced the desktop today-column tint and explicitly
+deferred the mobile counterpart with the locked-decision note "*No
+mobile counterpart this round (day-cards stay independent)*". The
+thread summary from session 15 re-surfaced this as a deferred polish
+candidate. This patch completes the v1.4.0 visual story.
+
+### What landed
+
+1. **`src/components/ScheduleGrid.jsx`** — inside the `mobileStack`
+   `dates.map(...)`, added `const isToday = dIso === todayIso;` and
+   spread two conditional overrides into the existing card style
+   block. The card's date-header `<div>` `color` flips to
+   `var(--accent-on-tint)` when `isToday`. Reuses the already-memoised
+   `todayIso` (line 118), the same source the desktop date-pill loop
+   and the desktop today-column underlay (line 732+) read from. No
+   new state, no new memo, no new DOM nodes.
+
+2. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.9.1 → 1.9.2,
+   `build` 2026-05-20 → 2026-05-23, `sha`
+   "force-prod-build-env" → "mobile-today-card-tint".
+
+3. **`CLAUDE.md`** — v1.4.0 locked-decision block updated: the
+   "No mobile counterpart this round" sentence replaced by a v1.9.2
+   sub-block describing the mobile day-card tint with the same
+   three-token treatment. ScheduleGrid.jsx file-structure entry
+   gained a v1.9.2 line documenting the inline-style overrides.
+   App.jsx file-structure entry caught up on v1.9.1 (which the
+   v1.9.1 hotfix never added) and gained the v1.9.2 line.
+
+### Why full-card tint rather than header-only
+
+The desktop tint underlay covers the entire today-column from top to
+bottom. The mobile analogue of "the entire today-column" is "the
+entire today-card". A header-only tint would have mirrored the
+desktop *date pill* — but that's a separate, pre-existing effect, not
+the v1.4.0 column tint we're catching up on. Going full-card keeps
+the desktop ↔ mobile mental model 1:1.
+
+### Compatibility
+
+- v1.7.0 green cell highlight (pill click → cell glow): cells paint
+  their own background; green still reads inside the tinted card.
+- v1.7.0 yellow swap-mode pulse: per-cell keyframes; unaffected.
+- v1.3.0 "Closed" placeholders: not rendered on mobile (the
+  `isSlotOpenOnDate` filter drops closed slots from the per-day
+  visibleSlots list).
+- Dark mode: the three tokens are CSS vars whose dark values live
+  under `[data-theme="dark"]` in `index.html` — no JS-side change
+  needed, the tint flips automatically with the theme.
+- Translucent cell backgrounds let the card tint show through in the
+  6px gap between cells, mirroring desktop behaviour (CLAUDE.md
+  v0.11.0: *"Translucent cell backgrounds let the tint show through"*).
+
+### Bundle delta
+
+Main bundle 164.68 → 164.68 kB gz (zero effective gz delta — the
+override pattern compresses against the existing identical pattern
+in the desktop date-pill loop). HTML 4.16 → 4.15 kB gz (noise).
+Modules 320 → 320.
+
+### Verification
+
+- `npm run build` succeeds (above).
+- `npm run dev`, resize browser <700px, confirm today's day-card has
+  the accent tint + accent header colour. Navigate Prev/Next to a
+  week without today → no card tinted. Today button returns →
+  today's card tinted again.
+- Inside today's card: click a "Shifts assigned" pill for someone
+  working today → cell flips green over the tinted card. Activate
+  Swap mode, click an assignee in today's card → yellow pulse still
+  reads.
+- Dark mode toggle → tint stays correctly contrasted in both themes.
+- Desktop view: no visual regression — the column underlay path is
+  untouched.
+
+---
+
 ## v1.9.1 — Force `NODE_ENV=production` in build script (hotfix)
 
 **Date:** 2026-05-20
