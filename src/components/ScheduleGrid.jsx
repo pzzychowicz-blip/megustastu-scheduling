@@ -827,6 +827,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     <div>
       {dates.map(function (d) {
         const dIso = isoDate(d);
+        // v1.9.2: mobile counterpart to v1.4.0's desktop today-column
+        // tint. When today is the visible day, the whole card gets the
+        // accent tint bg + accent-strong border, and the date-header
+        // text flips to accent-on-tint. Same three tokens the desktop
+        // column underlay + date pill use, so the visual identity for
+        // "today" reads the same across breakpoints. No new tokens,
+        // no new state — todayIso (line 118) is the existing memo
+        // already consumed by the desktop path.
+        const isToday = dIso === todayIso;
         const visibleSlots = slots.filter(function (slot) {
           return isSlotOpenOnDate(d, slot, openingDays);
         });
@@ -835,6 +844,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             key={"dayCard-" + dIso}
             style={{
               ...S.surfaceSoft,
+              ...(isToday ? {
+                background: "var(--accent-tint-soft)",
+                border: "1px solid var(--accent-tint-strong)",
+              } : null),
               marginBottom: 12,
               padding: 12,
             }}
@@ -843,7 +856,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
               style={{
                 fontSize: 14,
                 fontWeight: 700,
-                color: "var(--text-primary)",
+                color: isToday ? "var(--accent-on-tint)" : "var(--text-primary)",
                 marginBottom: 8,
               }}
             >
