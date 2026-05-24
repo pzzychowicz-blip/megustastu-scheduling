@@ -808,69 +808,6 @@ separate Firebase project, same UI conventions).
   managers on a one-off review wanted it to stay visible while
   they thought.
 
-- **Undo stack for multi-cell mutations (v1.10.0):** every
-  Clear / Generate / Move / Swap captures its pre-mutation state
-  into a 5-entry FIFO stack so the manager can roll back the most
-  recent action(s). Bounded depth means typical "oops, undo that"
-  cases work without unbounded growth; oldest drops silently when
-  the cap is hit (no UI surface advertises the cap). Lives entirely
-  in-memory via React state (`src/hooks/useUndoStack.js`) — survives
-  Vite HMR (Fast Refresh preserves useState) but resets on hard
-  refresh / tab close. Intentional: undo scopes to "I just did a
-  thing, oops," not "roll back yesterday." No sessionStorage
-  persistence; restored records use the same ids they had pre-clear
-  (Firebase RTDB accepts writes to any key, even one we just
-  deleted), so a cross-session undo could resurrect ids that
-  another client has since reused. Op shape:
-  `{ id, label, timestamp, restoreShifts: [shift], removeIds: [id] }`.
-  Apply order is restore-first (re-create deleted records) then
-  remove (drop records the original op created); the lists are
-  disjoint in every capture site so the order doesn't matter in
-  practice but stays deterministic. Capture sites:
-  - **ClearButton** snapshots every record about to be deleted into
-    `restoreShifts`; `removeIds = []`. Label: `"Clear week"` /
-    `"Clear day"`.
-  - **GenerateButton** snapshots cleared (deleted by Regenerate)
-    and modified (in-place updated by Regenerate's partial-policy
-    wipe pass) PRE-mutation records into `restoreShifts`; reads
-    each new shift's resolved id off `upsertShift`'s return value
-    (already returned by `usePersistence.upsertCollection` since
-    v0.6.0 — no usePersistence change needed) into `removeIds`.
-    Label: `"Regenerate"` / `"Fill empty"`. Skips pushing an op
-    when nothing actually changed (e.g. fill-empty on a full week).
-  - **ScheduleGrid `attemptSwap`** snapshots `source.shift` and
-    (when present) `target.shift` into `restoreShifts`. Swap
-    branch: `removeIds = []` (both ids stayed, only employeeIds
-    moved). Move branch when target had no prior record: capture
-    `upsertShift`'s return value into `removeIds` so undo deletes
-    the freshly-created record. Move branch when target had a
-    placeholder: id was reused, `removeIds = []`. Labels: `"Swap"`
-    / `"Move"`.
-  Apply lives in `ScheduleGrid.handleUndo()` — loops
-  `actions.upsertShift` over `restoreShifts`, then
-  `actions.deleteShift` over `removeIds`, then sets a result
-  banner `{ kind: "undo", label, restored, removed }`. Banner copy:
-  `"Undid: <label>."`. Auto-dismiss inherits the v1.9.4 settings
-  (`generatorBannerAutoDismiss` / `generatorBannerDurationSec`) —
-  one result-banner state owns all four shapes (clear, generate
-  fill-empty, generate regenerate, undo) so behaviour stays
-  uniform. **UndoButton placement:** Schedule nav-bar between
-  SwapButton and ClearButton. Label adapts: `"Undo"` (disabled,
-  empty stack) vs `"Undo: {top.label}"` (e.g. `"Undo: Regenerate"`).
-  Title tooltip carries the same info for readers who can't see
-  the dynamic label.
-
-- **LoginScreen hover-scale (v1.10.0 companion):** the v1.9.0
-  `.mgt-hover-scale` utility now also applies to the email input,
-  password input, and Sign-in button on the login screen.
-  Three-prop addition via `mkInp({ className: "mgt-hover-scale",
-  ... })` / `mkBtn({ className: "mgt-hover-scale", ... })` — both
-  atoms already pass `className` through via `{...rest}` spread on
-  the underlying element. The `:not(:disabled)` guard in the
-  global CSS rule correctly suppresses the scale when the Sign-in
-  button is disabled (fields empty or busy). Brings the login
-  screen in line with every other interactive surface in the app.
-
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -887,7 +824,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.10.0)
+## File structure (current — v1.9.0)
 
 ```
 megustastu-scheduling/
@@ -936,8 +873,6 @@ megustastu-scheduling/
     │                                 "details-bullet-scroll-banner-config".
     │                                 v1.9.5: → 1.9.5, sha
     │                                 "mobile-closed-placeholder".
-    │                                 v1.10.0: → 1.10.0, sha
-    │                                 "undo-stack-and-login-hover-scale".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -946,14 +881,6 @@ megustastu-scheduling/
     │   │                           explicit boolean (or undefined → follow
     │   │                           system pref live). Writes
     │   │                           `data-theme` on <html>; returns isDark.
-    │   ├── useUndoStack.js         v1.10.0: bounded FIFO undo stack
-    │   │                           (depth 5). { stack, push, pop, clear }.
-    │   │                           In-memory only — survives Vite HMR,
-    │   │                           resets on hard refresh / tab close.
-    │   │                           Stores op shape { id, label,
-    │   │                           timestamp, restoreShifts, removeIds }
-    │   │                           captured by ClearButton, GenerateButton,
-    │   │                           and ScheduleGrid's swap/move handler.
     │   └── useWinW.js              viewport-width listener
     ├── lib/
     │   ├── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
@@ -1276,18 +1203,7 @@ megustastu-scheduling/
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
-        ├── LoginScreen.jsx         email/password sign-in form.
-        │                           v1.10.0: email + password mkInp calls
-        │                           and the Sign-in mkBtn call all carry
-        │                           `className: "mgt-hover-scale"` so the
-        │                           login surface matches the in-app hover
-        │                           treatment (1.08 scale + opaque bg +
-        │                           soft shadow + 12px border-radius). The
-        │                           global rule's `:not(:disabled)` guard
-        │                           keeps the Sign-in button flat when
-        │                           required fields are empty or auth is
-        │                           busy. Both atoms already pass
-        │                           `className` through via {...rest}.
+        ├── LoginScreen.jsx         email/password sign-in form
         ├── AppShell.jsx            authenticated shell + tab nav.
         │                           v1.5.0: tab state persists across
         │                           refresh / Vite HMR within the same
@@ -1517,37 +1433,6 @@ megustastu-scheduling/
         │                           Closed placeholders. Symmetric with
         │                           the desktop pattern at lines
         │                           899–906 and the PDF export (v1.9.0).
-        │                           v1.10.0: + useUndoStack mount at
-        │                           the top of the component. The hook
-        │                           returns { stack, push, pop, clear };
-        │                           push is exposed to ClearButton +
-        │                           GenerateButton via a recordUndoableOp
-        │                           wrapper passed as onUndoableOp.
-        │                           attemptSwap captures pre-mutation
-        │                           snapshots of source.shift and (when
-        │                           present) target.shift via JSON deep-
-        │                           clone before each commit branch
-        │                           fires, then pushes a { label: "Swap"
-        │                           | "Move", restoreShifts, removeIds }
-        │                           op directly. Move branch with no
-        │                           prior target record captures the
-        │                           freshly-minted id from upsertShift's
-        │                           return into removeIds; placeholder-
-        │                           or-swap paths leave removeIds empty
-        │                           (ids stay the same). + handleUndo
-        │                           helper that pops the latest op,
-        │                           loops actions.upsertShift over
-        │                           restoreShifts, then actions.deleteShift
-        │                           over removeIds, then sets a result
-        │                           banner { kind: "undo", label,
-        │                           restored, removed }. + UndoButton
-        │                           mount in the schedule nav-bar
-        │                           between SwapButton and ClearButton.
-        │                           Result-banner copy gained an "undo"
-        │                           kind that reads "Undid: <label>.";
-        │                           the existing v1.9.4 auto-dismiss /
-        │                           duration settings apply to it for
-        │                           uniformity.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -1689,24 +1574,7 @@ megustastu-scheduling/
         │                           wipe-pass partially updated, e.g.
         │                           employee kept while times reset).
         │                           Order: delete cleared → upsert
-        │                           modified → upsert newShifts.
-        │                           v1.10.0: + optional onUndoableOp
-        │                           prop. handleConfirm snapshots cleared
-        │                           (deletion targets) and modified
-        │                           (partial-update targets) PRE-mutation
-        │                           records from weekShifts via JSON
-        │                           deep-clone BEFORE the three mutation
-        │                           loops. Each new shift's resolved id
-        │                           is captured off `upsertShift`'s
-        │                           return value (already returned by
-        │                           usePersistence since v0.6.0; no
-        │                           change needed there). After the
-        │                           loops, fires onUndoableOp({ label:
-        │                           "Regenerate" | "Fill empty",
-        │                           restoreShifts: cleared+modified,
-        │                           removeIds: newIds }). Skips firing
-        │                           on zero-delta runs (e.g. fill-empty
-        │                           on a full week). Fill-
+        │                           modified → upsert newShifts. Fill-
         │                           empty mode ignores the policy
         │                           (only Regenerate consults it).
         ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
@@ -1762,21 +1630,6 @@ megustastu-scheduling/
         │                           fires onToggle on click. Label
         │                           switches between "Swap…" and
         │                           "Swap: cancel" depending on `active`.
-        │                           v1.10.0: physical neighbour changed —
-        │                           SwapButton is now followed by the
-        │                           new UndoButton, then ClearButton.
-        ├── UndoButton.jsx          v1.10.0: NEW. Schedule nav-bar undo
-        │                           affordance. Placed between SwapButton
-        │                           and ClearButton. Props: stack (from
-        │                           useUndoStack), onUndo, isMobile. No
-        │                           internal state — fully driven by the
-        │                           parent. Disabled when stack is
-        │                           empty. Label adapts: "Undo" (empty)
-        │                           vs "Undo: {top.label}" (e.g.
-        │                           "Undo: Regenerate"). The label tells
-        │                           the manager what they're about to
-        │                           undo before they click; tooltip
-        │                           carries the same info for clarity.
         ├── ClearButton.jsx         v1.1.0: NEW. "Clear…" entry point
         │                           in the Schedule nav bar between
         │                           Generate and Export. Owns the
@@ -1785,17 +1638,6 @@ megustastu-scheduling/
         │                           ({cleared, kind}) so the grid
         │                           banner can report "Cleared N
         │                           shifts."
-        │                           v1.10.0: + optional onUndoableOp
-        │                           prop. handleConfirm snapshots every
-        │                           record about to be deleted (deep-
-        │                           cloned via JSON round-trip) BEFORE
-        │                           the delete loop, then fires
-        │                           onUndoableOp({ label: "Clear week"
-        │                           | "Clear day", restoreShifts,
-        │                           removeIds: [] }) AFTER. Skips firing
-        │                           when restoreShifts came out empty
-        │                           (defensive — modal blocks the
-        │                           zero-id path).
         ├── ClearConfirmModal.jsx   v1.1.0: NEW. Scope picker + confirm.
         │                           Buttons for Whole week / one per
         │                           open day, each showing the live

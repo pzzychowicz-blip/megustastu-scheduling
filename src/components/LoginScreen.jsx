@@ -91,7 +91,6 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
               onChange: function (e) { setEmail(e.target.value); },
               placeholder: "you@example.com",
               disabled: busy,
-              className: "mgt-hover-scale",
             })}
           </Fld>
 
@@ -103,7 +102,6 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
               onChange: function (e) { setPassword(e.target.value); },
               placeholder: "••••••••",
               disabled: busy,
-              className: "mgt-hover-scale",
             })}
           </Fld>
 
@@ -111,7 +109,6 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
             type: "submit",
             variant: "primary",
             disabled: submitDisabled,
-            className: "mgt-hover-scale",
             style: {
               width: "100%",
               marginTop: 8,
