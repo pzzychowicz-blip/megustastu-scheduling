@@ -701,22 +701,99 @@ separate Firebase project, same UI conventions).
     via `visibleWeekDates`). Cell-level visuals stack above the
     tinted card (v1.7.0 green pill highlight + yellow swap pulse
     still read correctly inside today's card).
-- **Generator result details (v1.4.0):** the result banner gains a
-  "Details" button (only visible when `summary.unfilledCells` or
-  `summary.clearedReasons` is non-empty). Click opens
-  `GenerateResultsModal` listing each unfilled cell and (for
-  Regenerate) each cleared shift grouped by reason. Human-readable
-  labels live in `GENERATOR_REASONS` in `constants.js` — single
-  source of truth keyed by the reason codes the generator emits.
-  The banner's 5-second auto-dismiss is held while the modal is open
-  so the manager can read at leisure; closing the modal resumes the
-  countdown. Dismissing the banner (via ×) also closes the modal as
-  a safety against stale-state rendering. Clear-button results never
-  show "Details" — they carry no reason metadata. Generator's
-  `clearInvalidShifts.clear()` was enriched to capture each cleared
-  shift's date/employeeId/section/dayPart/slotIndex/slotKey at clear
-  time, so the modal can display "Anna — Tue 19, Kitchen Day —
-  archived" rows even after the record has been deleted from Firebase.
+- **Generator result details (v1.4.0, jump-to-cell v1.9.3, always-on v1.9.4):** the
+  result banner gains a "Details" button. Originally hidden when both
+  `unfilledCells` and `clearedReasons` were empty (v1.4.0 minimalism);
+  **v1.9.4 makes the button always visible on Generate/Regenerate
+  banners** so managers have a stable affordance to inspect any run —
+  even a clean one (clicking on a clean run opens the modal with the
+  existing "Nothing to report — everything fell within the rules"
+  message, which is still useful as confirmation). The predicate
+  switched from "either array is non-empty" to "the banner has a
+  `mode` field" — Clear results carry no `mode` (their summary is
+  `{cleared, kind}`), so Clear banners still skip Details. The
+  v1.4.0 hide-when-empty design surfaced as a "disappeared button"
+  surprise for managers who'd seen Details on prior runs and didn't
+  realise it was conditional.
+  Click opens `GenerateResultsModal` listing each unfilled cell and
+  (for Regenerate) each cleared shift grouped by reason. Human-
+  readable labels live in `GENERATOR_REASONS` in `constants.js` —
+  single source of truth keyed by the reason codes the generator
+  emits. The banner's 5-second auto-dismiss is held while the modal
+  is open so the manager can read at leisure; closing the modal
+  resumes the countdown. Dismissing the banner (via ×) also closes
+  the modal as a safety against stale-state rendering. Clear-button
+  results never show "Details" — they carry no reason metadata.
+  Generator's `clearInvalidShifts.clear()` was enriched to capture
+  each cleared shift's date/employeeId/section/dayPart/slotIndex/
+  slotKey at clear time, so the modal can display "Anna — Tue 19,
+  Kitchen Day — archived" rows even after the record has been
+  deleted from Firebase.
+  **v1.9.3 jump-to-cell:** every reason-row in the modal is now a
+  clickable button (uses the shared `.mgt-hover-scale` utility).
+  Click fires `onJumpToCell(dateIso, slotKey)` on `ScheduleGrid`,
+  which (a) auto-navigates `weekStart` to the week containing the
+  date if it's outside the visible range — otherwise the cell can't
+  flash because it isn't rendered, (b) closes the results modal,
+  and (c) sets a new `highlightedCellKey` state (composite
+  `${dateIso}|${slotKey}`). The cell renders with the v1.7.0 green
+  highlight palette (same `--bg-active-on` / `--border-active-on`
+  tokens the pill-click highlight uses) AND a one-shot
+  `@keyframes mgt-jump-pulse` scale-bounce animation (transform-
+  only so it composes with the inline box-shadow ring). The cell-
+  key state auto-clears 1.7s later via a `useEffect` watcher; the
+  animation ends at 1.6s so the cell settles back to base without
+  flicker. Esc clears the cell-key highlight too (priority order
+  in the keydown handler: swap-mode → jump-target → sticky pill-
+  highlight). Pill-highlight and jump-target paint identically at
+  rest — the animation is the only distinguishing cue, which keeps
+  the visual identity for "this cell is the focus" consistent
+  regardless of how the manager got there.
+  **v1.9.4 polish:** v1.9.3's row-becomes-button refactor left the
+  list bullet on the `<li>` (from `list-style: disc`) — when the
+  inner button hover-scaled, the bullet stayed anchored and read as
+  visually detached. The bullet is now a `<span aria-hidden="true">`
+  rendered INSIDE the button (or inside the flex `<li>` for the
+  non-interactive fallback), so the whole row scales as one unit.
+  `<ul>` lost `list-style: disc`; padding moved off the `<li>` onto
+  the button (`4px 8px`, bumped from v1.9.3's `2px 6px` so the
+  hover background reads as a discrete row card). The Close button
+  also gained `.mgt-hover-scale` (missed in the v1.9.0 second-wave
+  pass). Section blocks now live inside a scrollable inner wrapper
+  (`maxHeight: isMobile ? "55vh" : "min(60vh, 480px)"`, `overflowY:
+  auto`) so long generator outputs (35+ cleared rows on a
+  Regenerate against a busy week) scroll internally instead of
+  spilling off the Overlay sheet — the v1.9.0 `overflow: visible`
+  fix for the sheet (which lets hover-scale transforms lift past
+  the border) had the side effect of making long modal content
+  unreachable. Negative horizontal margin + matching padding on
+  the scroller gives hover-scaled rows 16px of breathing room
+  before the clip kicks in (same pattern as ScheduleGrid's outer
+  wrapper). Summary line + Close button stay outside the scroller,
+  anchored at the modal bottom.
+
+- **Generator-results banner config (v1.9.4):** the auto-dismiss
+  banner that appears above the schedule grid after a Generate /
+  Regenerate / Clear run is now configurable in
+  Settings → Auto-generator. Two new fields on `/settings`:
+  `generatorBannerAutoDismiss` (bool, default true) and
+  `generatorBannerDurationSec` (number 1..60, default 5). The
+  toggle hides the duration field when off — duration has no
+  effect with auto-dismiss disabled. Both knobs auto-save on flip
+  / valid edit (same pattern as the existing strict-preference
+  toggle); duration onChange ignores empty / NaN / out-of-range
+  inputs so the saved value remains the last valid number while
+  the manager edits. ScheduleGrid reads both on every render via
+  the same defensive-fallback pattern as strict-preference; the
+  auto-dismiss `useEffect` re-runs on either value's change.
+  When auto-dismiss is OFF the banner stays until the manager
+  ×-closes it or another run replaces it — useful for slow-paced
+  weekly reviews where the manager may want to inspect results
+  longer than the default 5s. Reason for moving from a hard-coded
+  5s constant: managers iterating heavily on a busy week's
+  schedule kept missing the banner before they could read it, and
+  managers on a one-off review wanted it to stay visible while
+  they thought.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -777,6 +854,10 @@ megustastu-scheduling/
     │                                 bundle back to DEV Firebase).
     │                                 v1.9.2: → 1.9.2, sha
     │                                 "mobile-today-card-tint".
+    │                                 v1.9.3: → 1.9.3, sha
+    │                                 "jump-to-cell-from-results".
+    │                                 v1.9.4: → 1.9.4, sha
+    │                                 "details-bullet-scroll-banner-config".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -842,6 +923,13 @@ megustastu-scheduling/
     │   │                           exceed the 5-day cap of the new
     │   │                           withinMaxConsecutiveWorkingDays
     │   │                           filter at buildCandidates step 6.5.
+    │   │                           v1.9.4: + DEFAULT_GENERATOR_BANNER_AUTO_DISMISS
+    │   │                           (true) + DEFAULT_GENERATOR_BANNER_DURATION_SEC
+    │   │                           (5) + GENERATOR_BANNER_DURATION_MIN/MAX
+    │   │                           (1/60). Drive the result-banner
+    │   │                           configurability in Settings → Auto-
+    │   │                           generator and ScheduleGrid's auto-
+    │   │                           dismiss effect.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -1279,6 +1367,40 @@ megustastu-scheduling/
         │                           the same across breakpoints. No new
         │                           state, no new memo, no layout change
         │                           — just the inline style overrides.
+        │                           v1.9.3: + highlightedCellKey state
+        │                           (composite "${dateIso}|${slotKey}").
+        │                           Auto-clears 1.7s after set via a
+        │                           useEffect watcher. Esc handler
+        │                           priority extended: swap-mode →
+        │                           jump-target → pill-highlight. + new
+        │                           jumpToCell(dateIso, slotKey) helper:
+        │                           navigates weekStart if the target
+        │                           date isn't visible, closes the
+        │                           results modal, sets the cell-key
+        │                           highlight. Threaded into
+        │                           GenerateResultsModal as onJumpToCell.
+        │                           renderCell gains an isJumpTarget
+        │                           check; isAnyHighlight (isHighlighted
+        │                           || isJumpTarget) drives the shared
+        │                           green ring tokens. cellAnimation
+        │                           gains the one-shot
+        │                           "mgt-jump-pulse 1.6s ease-out 1"
+        │                           branch (transform scale bounce, runs
+        │                           once). Inline <style> block at the
+        │                           component root extended with
+        │                           @keyframes mgt-jump-pulse.
+        │                           v1.9.4: result-banner auto-dismiss
+        │                           effect now reads
+        │                           settings.generatorBannerAutoDismiss
+        │                           (when false, no setTimeout — banner
+        │                           stays) and
+        │                           settings.generatorBannerDurationSec
+        │                           (clamped to GENERATOR_BANNER_DURATION_
+        │                           MIN/MAX; multiplied by 1000 at the
+        │                           setTimeout call). Both values read
+        │                           via the existing defensive-fallback
+        │                           pattern; effect deps array grew to
+        │                           include both.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -1374,6 +1496,19 @@ megustastu-scheduling/
         │                           for all-collapsed. Defensive read
         │                           validates against the known section
         │                           set; falls back to "hours".
+        │                           v1.9.4: Auto-generator section gains
+        │                           a second Toggle ("Auto-dismiss
+        │                           results banner") and a conditional
+        │                           Fld-wrapped number input ("Banner
+        │                           duration (1–60 seconds)"). Both
+        │                           auto-save on flip / valid edit;
+        │                           duration onChange ignores empty /
+        │                           NaN / out-of-range so the saved
+        │                           value remains the last valid number
+        │                           while the manager edits. Reset to
+        │                           defaults now includes
+        │                           generatorBannerAutoDismiss (true)
+        │                           and generatorBannerDurationSec (5).
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
@@ -1593,6 +1728,40 @@ megustastu-scheduling/
                                     grouping logic collapses to one
                                     bucket naturally — only the
                                     file-header comment was updated.
+                                    v1.9.3: + optional onJumpToCell
+                                    prop. When provided, ReasonGroup
+                                    renders each row as a button
+                                    (.mgt-hover-scale) instead of plain
+                                    text; click fires the handler with
+                                    (dateIso, slotKey) so ScheduleGrid
+                                    can navigate + flash the cell.
+                                    Unfilled rows use item.dateIso,
+                                    cleared rows use item.date — both
+                                    carry slotKey. When the prop is
+                                    omitted the rows fall back to
+                                    plain text (read-only). Pure prop
+                                    extension; no state added here.
+                                    v1.9.4: bullet integrated into the
+                                    row (rendered as a `<span aria-
+                                    hidden>` INSIDE the button or the
+                                    flex `<li>`, not on the `<li>` via
+                                    list-style:disc). `<ul>` lost
+                                    list-style; padding moved off the
+                                    `<li>` onto the button (4px 8px,
+                                    bumped from 2px 6px). Section
+                                    blocks now wrapped in an inner
+                                    scroll container (maxHeight 55vh
+                                    mobile / min(60vh, 480px) desktop,
+                                    overflowY:auto, negative-margin +
+                                    matching-padding pattern for
+                                    hover-scale clipping breathing
+                                    room) so long lists scroll
+                                    internally instead of spilling off
+                                    the Overlay sheet. Summary line +
+                                    Close button stay outside the
+                                    scroller. Close button gained
+                                    `.mgt-hover-scale` (missed in the
+                                    v1.9.0 second wave).
 ```
 
 ### File structure (target — added in later sessions)
@@ -1658,9 +1827,16 @@ src/
       },
       showRolePills?: boolean,
       darkMode?: boolean,
-      generatorStrictPreference?: boolean }          // v1.0.0 — true = Hard
+      generatorStrictPreference?: boolean,           // v1.0.0 — true = Hard
                                                      // preference matching;
                                                      // default false (Soft)
+      generatorBannerAutoDismiss?: boolean,          // v1.9.4 — default true.
+                                                     // When false, the result
+                                                     // banner stays until the
+                                                     // manager dismisses it.
+      generatorBannerDurationSec?: number }          // v1.9.4 — 1..60; default 5.
+                                                     // Only consulted when
+                                                     // auto-dismiss is on.
 ```
 
 ---

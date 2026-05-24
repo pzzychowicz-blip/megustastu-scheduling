@@ -5,6 +5,325 @@ an entry. Newest first.
 
 ---
 
+## v1.9.4 — Generator-details polish + banner config
+
+**Date:** 2026-05-23
+**Post-push fix (same branch):** The initial v1.9.4 push had a crash
+bug — the new banner-duration `<input>` used
+`style={{ ...mkInp(), maxWidth: 120 }}`, spreading a JSX element
+returned by `mkInp()` into a style object. React tried to apply
+`$$typeof` / `type` / `props` as CSS properties, which crashed on
+render the moment the Auto-generator section opened (white screen;
+refresh recovered but next click crashed again). Fixed by switching
+to the canonical `{mkInp({ ...props, style: { maxWidth: 120 } })}`
+call form used by every other call site in the codebase. App.jsx
+sha bumped to `"details-banner-config-mkinp-fix"`; version still
+v1.9.4 (the buggy v1.9.4 push never reached main — only the in-
+flight PR branch).
+
+**Post-push polish (same branch):** the banner-duration row's
+`<Fld>` wrapper had no horizontal padding (`S.fldRow` is just
+`{marginBottom: 12}`), so the row sat 12px further left than the
+Toggle rows above (which carry `padding: "10px 12px"` via
+`Toggle`'s internal `rowStyle`). Replaced the `<Fld>` with an
+inline Toggle-shaped flex row — label/helper on the left, input
+on the right — so all three Auto-generator rows (strict
+preference, auto-dismiss, banner duration) share the same
+horizontal inset and visual rhythm. Helper text ("1–60 seconds")
+moved off the label parenthetical into a Toggle-style sub-helper
+beneath the label. Field-only hover-scale preserved (className on
+the input, not the row). Sha bumped to
+`"details-banner-row-alignment"`.
+
+**Post-push polish (same branch):** the v1.4.0 "Details" button on
+the results banner was hidden when both `unfilledCells` and
+`clearedReasons` arrays were empty — a minimalism choice that
+became a "disappeared button" surprise for managers who'd seen
+Details on prior runs and didn't realise it was conditional.
+Predicate switched from "either array is non-empty" to "the banner
+has a `mode` field." Effect: Details is now always available on
+Generate (fill-empty) and Regenerate banners, even on clean runs.
+Clicking on a clean run opens the modal with the existing "Nothing
+to report — everything fell within the rules" message, useful as
+confirmation. Clear results still skip Details (their summary is
+`{cleared, kind}` with no `mode` field — no detail metadata
+exists). Sha bumped to `"details-always-on-generate-banner"`.
+
+**Behavioural change:** Two strands. (a) UI fixes to the
+GenerateResultsModal rows reported by Patryk after the v1.9.3 PR
+preview: the list bullet was rendered outside the row's button via
+`list-style: disc` on the `<li>`, so when the inner button hover-
+scaled, the bullet stayed put and read as visually detached; long
+generator outputs (35+ cleared rows on a Regenerate against a busy
+week) also spilled past the Overlay sheet bottom because v1.9.0's
+`overflow: visible` sheet (needed for hover-scale transforms to lift
+past the border) meant the Close button became unreachable. (b)
+Manager-configurable result banner: a new Auto-generator Settings
+section toggle for "Auto-dismiss results banner" and a paired
+duration field (1–60 seconds) — the previous hard-coded 5-second
+fade is now both disable-able and tunable, addressing the recurring
+"I missed the banner before I could read it" / "I want to inspect
+this longer" feedback.
+
+v1.9.3's "shipped" state never actually reached production — this PR
+extends v1.9.3's branch with the polish + new settings, bumping the
+version label so the merge commit ships as v1.9.4 with all four
+threads (jump-to-cell + bullet integration + scrollable details +
+configurable banner) at once. The v1.9.3 entry below documents the
+underlying jump-to-cell work that landed in commit `b3c6359`; the
+combined feature ships under the v1.9.4 label.
+
+### What landed
+
+1. **`src/components/GenerateResultsModal.jsx`** — bullet integration
+   + scroll wrapper:
+   - `ReasonGroup` `<ul>` loses `list-style: disc`; padding zeroed.
+     Each `<li>` becomes a flex container (non-interactive) or
+     wraps a flex button (interactive). The bullet is now a
+     `<span aria-hidden="true">` rendered INSIDE the row, so the
+     bullet and text scale together on hover.
+   - Interactive button padding bumped from `2px 6px` to `4px 8px`
+     so the hover background reads as a discrete row card rather
+     than hugging the text edge.
+   - Default-export wraps the two `<Section>` blocks in a
+     scrollable inner `<div>`: `maxHeight: isMobile ? "55vh" :
+     "min(60vh, 480px)"`, `overflowY: auto`, with the
+     negative-margin + matching-padding pattern (`padding: "4px
+     16px"`, `margin: "0 -16px"`) giving hover-scaled rows 16px
+     of horizontal breathing room before the scroll container
+     clips them. Same pattern as ScheduleGrid's outer wrapper
+     (v1.9.0 hover-scale fix). The empty-state ("Nothing to
+     report") falls outside the scroller — no list to scroll when
+     there's nothing in it. Summary line + Close button stay
+     outside the scroller, anchored at the modal bottom.
+   - Close button gained `className="mgt-hover-scale"` (missed in
+     the v1.9.0 second-wave broad-application pass).
+
+2. **`src/lib/constants.js`** — four new exports:
+   - `DEFAULT_GENERATOR_BANNER_AUTO_DISMISS` (true)
+   - `DEFAULT_GENERATOR_BANNER_DURATION_SEC` (5)
+   - `GENERATOR_BANNER_DURATION_MIN` (1)
+   - `GENERATOR_BANNER_DURATION_MAX` (60)
+
+3. **`src/components/Settings.jsx`** — Auto-generator section gains
+   a second Toggle ("Auto-dismiss results banner") and a conditional
+   `<Fld>`-wrapped number `<input>` (`min=1 max=60 step=1`,
+   `mkInp()` styling, capped at 120px width). Both auto-save on
+   flip / valid edit (same pattern as strict-preference); duration
+   onChange ignores empty / NaN / out-of-range so the saved value
+   remains the last valid number while the manager edits. The
+   duration row is hidden when auto-dismiss is OFF (no effect to
+   tune). Reset-to-defaults now includes both new fields. Imports
+   pulled in the four new constants.
+
+4. **`src/components/ScheduleGrid.jsx`** — banner auto-dismiss
+   effect now reads `settings.generatorBannerAutoDismiss` (when
+   false, no `setTimeout` is scheduled — banner stays until
+   manually dismissed) and `settings.generatorBannerDurationSec`
+   (clamped to MIN/MAX, multiplied by 1000 at the setTimeout
+   call). Both values read via the existing defensive-fallback
+   pattern; effect deps array grew to include both so flipping
+   the toggle or editing duration re-runs the effect immediately
+   if a banner is already showing.
+
+5. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.9.3 → 1.9.4,
+   `sha` "jump-to-cell-from-results" →
+   "details-bullet-scroll-banner-config".
+
+6. **`CLAUDE.md`** — v1.4.0/v1.9.3 GenerateResultsModal locked-
+   decision block extended with v1.9.4 polish sub-block. New
+   "Generator-results banner config (v1.9.4)" locked-decision
+   block. `/settings` data-model entry gained the two new fields.
+   App.jsx, constants.js, Settings.jsx, ScheduleGrid.jsx, and
+   GenerateResultsModal.jsx file-structure entries each gained
+   v1.9.4 lines.
+
+### Why combine into one PR rather than two
+
+The v1.9.3 work (jump-to-cell) had a regression on the bullet/scroll
+front that Patryk caught in PR review. Splitting "fix the regression"
+into a separate PR would force the regression briefly through main
+(and onto Vercel preview) before the fix landed. Layering the polish
+on the same branch keeps the regression off main entirely — the merge
+ships a clean v1.9.4 with all four threads at once. The "one version
+per branch" rule is honoured by relabelling the branch to v1.9.4 in
+this PR (the v1.9.3 label only lived on the in-flight branch, never
+on main). REFACTOR_LOG keeps both entries for posterity since they
+document distinct decisions.
+
+### Bundle delta
+
+Main bundle 164.68 → 165.51 kB gz over the v1.9.2 baseline (+0.83
+kB total for v1.9.3 + v1.9.4 combined). The v1.9.4-only step is
++0.52 kB on top of v1.9.3's +0.31 kB. HTML 4.15 (unchanged).
+Modules 320 → 320 (no new file).
+
+### Verification
+
+- `npm run build` succeeds.
+- `npm run dev`. Generate against a busy week (say 30+ unfilled
+  cells); open Details. Confirm:
+  - Each row's bullet sits inline with the name/date/slot text;
+    hovering scales the whole row including the bullet (no
+    detachment).
+  - The list scrolls inside the modal — Close button stays
+    visible at the bottom regardless of scroll position.
+  - Clicking a row still triggers v1.9.3's jump-to-cell flow
+    (modal closes, cell pulses).
+- Open Settings → Auto-generator. Confirm:
+  - New "Auto-dismiss results banner" toggle visible (default ON).
+  - New "Banner duration (1–60 seconds)" number input visible
+    below the toggle (default 5).
+  - Flip the toggle OFF → duration row hides.
+  - Flip ON → duration row reappears at last value.
+  - Edit duration to e.g. 15 → run Generate → banner now stays
+    15s before fading.
+  - Toggle OFF → run Generate → banner stays until × or another
+    run.
+  - Type an out-of-range value (e.g. 999) or empty → no save;
+    last valid value persists.
+- Reset to defaults → both banner fields revert to true / 5.
+- Dark mode → no visual regression in the modal or Settings.
+
+---
+
+## v1.9.3 — Jump-to-cell from GenerateResultsModal
+
+**Date:** 2026-05-23
+**Behavioural change:** New interaction in the generator-details modal.
+Every unfilled-cell row and (for Regenerate) every cleared-shift row is
+now a clickable button. Click takes the manager directly to the cell
+on the schedule grid: if the date is outside the visible week, the
+grid first navigates to the right week; the modal closes; and the cell
+one-shot pulses with the v1.7.0 green highlight palette plus a 1.6-s
+scale-bounce animation so the eye lands on it immediately. The cell-
+key highlight auto-clears 1.7 s after firing. Esc cancels an in-flight
+jump-target highlight (priority order in the keydown handler:
+swap-mode → jump-target → sticky pill-highlight).
+
+The visual at-rest is intentionally identical to the v1.7.0 pill-click
+highlight (same `--bg-active-on` / `--border-active-on` tokens) — the
+mgt-jump-pulse animation is the only distinguishing cue. Single visual
+identity for "this cell is the focus right now," regardless of how the
+manager got there (clicking a pill OR clicking a results-modal row).
+
+This completes a deferred polish thread from sessions 12–14 listed in
+session 15's thread summary as "GenerateResultsModal → jump-to-cell."
+
+### What landed
+
+1. **`src/components/GenerateResultsModal.jsx`** — new optional
+   `onJumpToCell(dateIso, slotKey)` prop. `ReasonGroup` extended with
+   an `onItemClick` prop; when provided, each row renders as a button
+   wrapped inside the existing `<li>` (button is `display:block`,
+   `width:100%`, transparent, inherits font, gets the
+   `.mgt-hover-scale` utility class so it lifts + paints a soft hover
+   background on pointer). When omitted, rows fall back to plain
+   text (v1.4.0 behaviour). The default export wires two per-list
+   handlers — unfilled rows read `item.dateIso`, cleared rows read
+   `item.date` (the underlying shape mismatch from the v1.4.0
+   summary, captured at run-time in `generator.js`).
+
+2. **`src/components/ScheduleGrid.jsx`** — three additions:
+   - **`highlightedCellKey` state** (composite `${dateIso}|${slotKey}`)
+     with a `useEffect` that auto-clears it 1.7 s after set. Distinct
+     axis from the v1.7.0 `highlightedEmployeeId` because unfilled
+     and cleared cells have no assignee to key by.
+   - **`jumpToCell(dateIso, slotKey)` helper** — auto-navigates
+     `weekStart` to the week containing the target date (via
+     `parseIsoDate` + `startOfWeek` + an `isoDate(start)` equality
+     compare so the no-op case is cheap), closes the results modal,
+     sets the cell-key. Defensive: no-ops on falsy args; try/catch
+     around the date parse falls through to the highlight set.
+   - **`renderCell` styling extended** — new `isJumpTarget` boolean +
+     `isAnyHighlight = isHighlighted || isJumpTarget`. The existing
+     `isHighlighted` references in `baseBg` / `baseBorder` /
+     `baseBorderWidth` / `ringShadow` were rewritten to use
+     `isAnyHighlight` so the jump target picks up the same green
+     ring tokens. New `cellAnimation` local layers the one-shot
+     `"mgt-jump-pulse 1.6s ease-out 1"` value when `isJumpTarget`;
+     swap-source still wins (its infinite yellow pulse is mutually
+     exclusive with jump anyway since swap-source needs an existing
+     shift).
+   - **Inline `<style>` block** at the component root extended with
+     `@keyframes mgt-jump-pulse` (transform scale bounce: 1 → 1.12
+     → 0.98 → 1.04 → 1).
+   - **Esc-handler `useEffect`** priority order extended to clear
+     `highlightedCellKey` between swap-mode and the pill-highlight.
+   - **Modal mount** now passes `onJumpToCell={jumpToCell}`.
+
+3. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.9.2 → 1.9.3,
+   `sha` "mobile-today-card-tint" → "jump-to-cell-from-results".
+
+4. **`CLAUDE.md`** — v1.4.0 GenerateResultsModal locked-decision
+   block expanded with a v1.9.3 sub-block describing the jump-to-cell
+   wiring + animation + Esc priority. App.jsx, ScheduleGrid.jsx, and
+   GenerateResultsModal.jsx file-structure entries each gain a v1.9.3
+   line.
+
+### Why the same green palette as v1.7.0 pill-highlight
+
+Two distinct user actions land on the same visual at rest (sticky
+green ring on a cell). The pill-click highlight is sticky (toggles
+on/off); the jump-target is a one-shot (auto-clears after 1.7s). If
+they used different tokens, a manager who'd just clicked Details →
+jumped → then clicked a pill would see TWO different greens on
+different cells, which is noise. Sharing the palette makes the
+visual identity "this is the focused cell" consistent across the
+two entry points.
+
+The animation does the distinguishing work: pill-click sets a
+steady ring; jump fires a brief scale bounce. The bounce is what
+draws the eye to the target cell.
+
+### Edge cases
+
+- **Date outside visible week** — auto-navigates the week. Manager
+  who navigated away after a generator run can still jump back.
+- **Date in a closed weekday** — `visibleWeekDates` filters closed
+  days out of `dates`, so the cell isn't rendered. The highlight is
+  set but has no visible effect; auto-clears 1.7s later. Acceptable
+  (rare: would require closing a day Settings-side between the
+  generator run and the click).
+- **Slot removed from template** — same outcome as closed-day:
+  highlight set, no cell to flash. Harmless.
+- **Compound state** — if `highlightedEmployeeId` is also set (a pill
+  is sticky-lit AND the manager clicks a results-modal row), both
+  cells get the green ring. The jump target gets the bounce animation
+  on top. No conflict; reads correctly.
+
+### Bundle delta
+
+Main bundle 164.68 → 164.99 kB gz (+0.31 kB). HTML 4.15 (unchanged).
+Modules 320 → 320 (no new file).
+
+### Verification
+
+- `npm run build` succeeded (above).
+- `npm run dev` (DEV Firebase). Sign in, populate a few shifts and
+  requests, then:
+  - **Generate on a week with multiple conflicts** so the result
+    banner shows unfilled cells. Click Details → click any row →
+    modal closes, cell scale-bounces and gets a green ring for ~1.6s,
+    then settles back to base. Repeat with a Regenerate run to test
+    the "Cleared" rows.
+  - **Navigate to a different week** before clicking Details → click
+    a row → grid auto-navigates back to the run's week + flashes the
+    cell.
+  - **Esc during the 1.6s pulse** — cell-key state clears
+    immediately, animation aborts, cell returns to base. Press Esc
+    again with a sticky pill-highlight set → pill-highlight clears.
+  - **Modal in read-only mode** — pass `onJumpToCell={undefined}`
+    (rendered by deleting that prop temporarily for a sanity check)
+    → rows render as plain non-interactive text (v1.4.0 fallback).
+  - **Mobile width** — same flow, day-card stack: cell flash should
+    still play because the cell is rendered (just in a different
+    layout).
+  - **Dark mode** — green ring tokens flip via CSS vars; visual
+    holds in both themes.
+
+---
+
 ## v1.9.2 — Mobile today-card tint (desktop v1.4.0 catch-up)
 
 **Date:** 2026-05-23

@@ -127,6 +127,18 @@ export const DEFAULT_WORKING_DAYS = 5;
 // the manager has carefully tuned preferences and wants them respected.
 export const DEFAULT_GENERATOR_STRICT_PREFERENCE = false;
 
+// v1.9.4: generator-results banner auto-dismiss + duration. The banner
+// appears above the schedule grid after a Generate/Regenerate/Clear run
+// summarizing the outcome. By default it auto-dismisses 5s after
+// appearing; the manager can disable auto-dismiss entirely (banner
+// stays until they ×-close it or another run replaces it) or tune the
+// duration (1–60s). ScheduleGrid reads these settings on every render;
+// the auto-dismiss effect re-runs when either value changes.
+export const DEFAULT_GENERATOR_BANNER_AUTO_DISMISS = true;
+export const DEFAULT_GENERATOR_BANNER_DURATION_SEC = 5;
+export const GENERATOR_BANNER_DURATION_MIN = 1;
+export const GENERATOR_BANNER_DURATION_MAX = 60;
+
 // ── Status colours (alpha-tinted, matches Bookings pattern) ──────────────
 // v0.11.0: each entry references CSS vars that flip on dark mode.
 export const STATUS_COLORS = Object.freeze({
