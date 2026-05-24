@@ -10,12 +10,16 @@
 // button stays disabled.
 //
 // Props:
-//   weekStart    (Date)             — current Monday
-//   weekDates    (Array<Date>)      — visibleWeekDates output (open days only)
-//   weekShifts   ({ [id]: shift })  — narrowed to current week
-//   isMobile     (bool)
-//   actions      (object)           — usePersistence().actions; uses deleteShift
-//   onResult     (fn({ cleared }))  — fires after a run; grid renders banner
+//   weekStart      (Date)             — current Monday
+//   weekDates      (Array<Date>)      — visibleWeekDates output (open days only)
+//   weekShifts     ({ [id]: shift })  — narrowed to current week
+//   isMobile       (bool)
+//   actions        (object)           — usePersistence().actions; uses deleteShift
+//   onResult       (fn({ cleared }))  — fires after a run; grid renders banner
+//   onUndoableOp   (fn(op))           — v1.10.0; fires after a successful run
+//                                        with the op record for the undo stack.
+//                                        Optional — caller controls whether
+//                                        Clear is undoable.
 
 import { useState } from "react";
 import { BTN } from "../lib/constants.js";
@@ -23,7 +27,7 @@ import { formatWeekRange, isoDate } from "../lib/schedule-logic.js";
 import ClearConfirmModal from "./ClearConfirmModal.jsx";
 
 export default function ClearButton({
-  weekStart, weekDates, weekShifts, isMobile, actions, onResult,
+  weekStart, weekDates, weekShifts, isMobile, actions, onResult, onUndoableOp,
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -56,12 +60,36 @@ export default function ClearButton({
       return;
     }
 
+    // v1.10.0: snapshot the records BEFORE deletion so the undo stack can
+    // re-upsert them later. JSON round-trip is enough for plain shift
+    // records (no Date / Map / cycles in our schema). Records that don't
+    // resolve from weekShifts (out-of-band id) are filtered out — they
+    // shouldn't exist but we'd rather skip than push undefineds.
+    const restoreShifts = ids
+      .map(function (id) {
+        const rec = weekShifts ? weekShifts[id] : null;
+        return rec ? JSON.parse(JSON.stringify(rec)) : null;
+      })
+      .filter(function (r) { return r !== null; });
+
     setBusy(true);
     Promise.resolve().then(function () {
       for (let i = 0; i < ids.length; i++) {
         actions.deleteShift(ids[i]);
       }
       if (onResult) onResult({ cleared: ids.length, kind: scope.kind });
+      if (onUndoableOp && restoreShifts.length > 0) {
+        // Label distinguishes whole-week vs single-day so the Undo button
+        // can advertise the scope before the manager clicks.
+        const label = scope.kind === "week"
+          ? "Clear week"
+          : "Clear day";
+        onUndoableOp({
+          label: label,
+          restoreShifts: restoreShifts,
+          removeIds: [],
+        });
+      }
       setBusy(false);
       setOpen(false);
     });
