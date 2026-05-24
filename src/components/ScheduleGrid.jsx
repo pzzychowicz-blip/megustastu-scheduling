@@ -46,11 +46,13 @@ import {
   findShiftPreferenceMismatch,
   findSameDayShift,
 } from "../lib/schedule-logic.js";
+import { useUndoStack } from "../hooks/useUndoStack.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import ExportButton from "./ExportButton.jsx";
 import GenerateButton from "./GenerateButton.jsx";
 import ClearButton from "./ClearButton.jsx";
 import SwapButton from "./SwapButton.jsx";
+import UndoButton from "./UndoButton.jsx";
 import WeeklyShiftSummary from "./WeeklyShiftSummary.jsx";
 import WeeklyRequestsPreview from "./WeeklyRequestsPreview.jsx";
 import GenerateResultsModal from "./GenerateResultsModal.jsx";
@@ -289,6 +291,44 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     setShowResultsModal(false);
   }
 
+  // ── Undo stack (v1.10.0) ─────────────────────────────────────────────
+  // Captures every Clear / Generate / Move / Swap so the manager can roll
+  // back a mis-clicked action. Bounded to 5 ops; oldest drops silently
+  // once the cap is hit. See useUndoStack.js for the op shape.
+  //
+  // Capture flow:
+  //   - ClearButton + GenerateButton fire onUndoableOp(op) after a
+  //     successful mutation.
+  //   - The Move + Swap branches in attemptSwap() push directly below
+  //     (no intermediate component owns those — they live in this file).
+  //
+  // Apply flow: handleUndo() pops the latest op, re-upserts restoreShifts
+  // (Firebase RTDB accepts writes to any key, even one we just deleted),
+  // then deletes removeIds. A banner reports the result.
+  const { stack: undoStack, push: pushUndo, pop: popUndo } = useUndoStack();
+  function recordUndoableOp(op) { pushUndo(op); }
+  function handleUndo() {
+    const op = popUndo();
+    if (!op) return;
+    // Restore first (re-create deleted records), then remove (drop
+    // records the original op created). Order matters if any id appears
+    // in both lists — shouldn't happen in practice (Move's removeIds is
+    // the post-mutation target id; its restoreShifts contains the
+    // pre-mutation source + target placeholder, all with disjoint ids).
+    for (let i = 0; i < op.restoreShifts.length; i++) {
+      actions.upsertShift(op.restoreShifts[i]);
+    }
+    for (let i = 0; i < op.removeIds.length; i++) {
+      actions.deleteShift(op.removeIds[i]);
+    }
+    setResultBanner({
+      kind: "undo",
+      label: op.label,
+      restored: op.restoreShifts.length,
+      removed: op.removeIds.length,
+    });
+  }
+
   // v1.9.3: jump-to-cell from GenerateResultsModal. Called with the
   // row's (dateIso, slotKey). Three things happen, in order:
   //   1. If the target date isn't in the visible week, navigate the
@@ -427,6 +467,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     }
 
     // Commit.
+    // v1.10.0: snapshot pre-mutation records before each branch fires so
+    // the undo stack can restore them. Deep-clone via JSON round-trip —
+    // shift records are plain data, so this is sufficient and avoids
+    // any aliasing with the in-flight render's weekShifts.
+    const sourceSnap = source.shift
+      ? JSON.parse(JSON.stringify(source.shift))
+      : null;
+    const targetSnap = target.shift
+      ? JSON.parse(JSON.stringify(target.shift))
+      : null;
     if (targetEmp) {
       // Swap two assignments. Each cell keeps its own role/start/end.
       actions.upsertShift({ ...source.shift, employeeId: targetEmp.id });
@@ -435,6 +485,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         tone: "success",
         text: "Swapped " + sourceEmp.name + " ↔ " + targetEmp.name + ".",
       });
+      // v1.10.0: undo restores both employees to their original cells
+      // (the cells themselves keep their ids — only employeeId moved).
+      // No removeIds: nothing was deleted or freshly created.
+      const restore = [];
+      if (sourceSnap) restore.push(sourceSnap);
+      if (targetSnap) restore.push(targetSnap);
+      if (restore.length > 0) {
+        recordUndoableOp({ label: "Swap", restoreShifts: restore, removeIds: [] });
+      }
     } else {
       // Move: delete source, upsert target with source's employee.
       // Reuse target's existing record id if there is one (unassigned
@@ -453,11 +512,31 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       };
       if (target.shift && target.shift.id) targetPayload.id = target.shift.id;
       actions.deleteShift(source.shift.id);
-      actions.upsertShift(targetPayload);
+      // v1.10.0: capture the resolved target id so undo can drop a
+      // freshly-created record. upsertShift returns:
+      //   - target.shift.id when the placeholder branch supplied one
+      //   - a fresh push key when there was no placeholder
+      //   - null when the write-guard refused (initial load incomplete)
+      const newTargetId = actions.upsertShift(targetPayload);
       setSwapBanner({
         tone: "success",
         text: "Moved " + sourceEmp.name + " to " + target.slotDef.humanLabel + ".",
       });
+      // v1.10.0: undo logic depends on whether target had an existing
+      // record before the move.
+      //   - Placeholder existed: restore both snapshots (re-upserting
+      //     the target placeholder overwrites the move's payload back
+      //     to its original employeeId: null / template times). No
+      //     removeIds — the id stayed the same throughout.
+      //   - No placeholder: restore source; delete the freshly-created
+      //     target record. The cell returns to truly empty.
+      const restore = [];
+      if (sourceSnap) restore.push(sourceSnap);
+      if (targetSnap) restore.push(targetSnap);
+      const removeIds = (!targetSnap && newTargetId) ? [newTargetId] : [];
+      if (restore.length > 0 || removeIds.length > 0) {
+        recordUndoableOp({ label: "Move", restoreShifts: restore, removeIds: removeIds });
+      }
     }
     setSwapMode(null);
   }
@@ -752,12 +831,18 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           isMobile={isMobile}
           actions={actions}
           onResult={handleGenerateResult}
+          onUndoableOp={recordUndoableOp}
         />
         <SwapButton
           active={Boolean(swapMode)}
           phase={swapMode ? swapMode.phase : undefined}
           isMobile={isMobile}
           onToggle={toggleSwapMode}
+        />
+        <UndoButton
+          stack={undoStack}
+          onUndo={handleUndo}
+          isMobile={isMobile}
         />
         <ClearButton
           weekStart={weekStart}
@@ -766,6 +851,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           isMobile={isMobile}
           actions={actions}
           onResult={handleClearResult}
+          onUndoableOp={recordUndoableOp}
         />
         <ExportButton
           weekStart={weekStart}
@@ -1011,16 +1097,21 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     )
     : null;
 
-  // v1.0.0 + v1.1.0: result banner copy. Three shapes:
+  // v1.0.0 + v1.1.0 + v1.10.0: result banner copy. Four shapes:
   //   - Clear result: { cleared, kind } → "Cleared N shifts (week / day)."
   //   - Generator fill-empty: "Filled X cells, Y left empty for <range>."
   //   - Generator regenerate: "Cleared X stale, filled Y, Z left empty for <range>."
+  //   - Undo result: { kind: "undo", label, restored, removed } → "Undid: <label>."
   // "Nothing to fill" reads better than "Filled 0, left 0" when the week
   // was already complete on a generator run.
   let bannerCopy = "";
   if (resultBanner) {
     const r = resultBanner;
-    if (r.kind === "week" || r.kind === "day") {
+    if (r.kind === "undo") {
+      // Undo result. Single-line confirmation; the cell-level effect
+      // is already visible in the grid.
+      bannerCopy = "Undid: " + r.label + ".";
+    } else if (r.kind === "week" || r.kind === "day") {
       // Clear result.
       bannerCopy = "Cleared " + r.cleared + " shift" +
         (r.cleared === 1 ? "" : "s") +
