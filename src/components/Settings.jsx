@@ -988,16 +988,24 @@ export default function Settings({
           />
           {bannerAutoDismiss ? (
             <Fld label={"Banner duration (" + GENERATOR_BANNER_DURATION_MIN + "–" + GENERATOR_BANNER_DURATION_MAX + " seconds)"} className="mgt-hover-scale">
-              <input
-                type="number"
-                min={GENERATOR_BANNER_DURATION_MIN}
-                max={GENERATOR_BANNER_DURATION_MAX}
-                step="1"
-                value={bannerDurationSec}
-                onChange={function (e) { onBannerDurationChange(e.target.value); }}
-                className="mgt-hover-scale"
-                style={{ ...mkInp(), maxWidth: 120 }}
-              />
+              {/* v1.9.4 fix: use mkInp the way every other call site
+                  does — pass all props in one call; the helper returns
+                  the JSX <input> with S.inputBase merged in. The
+                  initial v1.9.4 push wrote `style={{...mkInp(), ...}}`
+                  which spreads a JSX element into a style object —
+                  React tries to apply $$typeof / type / props as CSS
+                  properties, which crashes on render the moment the
+                  Auto-generator section opens. */}
+              {mkInp({
+                type: "number",
+                min: GENERATOR_BANNER_DURATION_MIN,
+                max: GENERATOR_BANNER_DURATION_MAX,
+                step: 1,
+                className: "mgt-hover-scale",
+                value: bannerDurationSec,
+                onChange: function (e) { onBannerDurationChange(e.target.value); },
+                style: { maxWidth: 120 },
+              })}
             </Fld>
           ) : null}
         </Collapsible>

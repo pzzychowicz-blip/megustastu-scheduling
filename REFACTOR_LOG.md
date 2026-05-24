@@ -8,6 +8,19 @@ an entry. Newest first.
 ## v1.9.4 — Generator-details polish + banner config
 
 **Date:** 2026-05-23
+**Post-push fix (same branch):** The initial v1.9.4 push had a crash
+bug — the new banner-duration `<input>` used
+`style={{ ...mkInp(), maxWidth: 120 }}`, spreading a JSX element
+returned by `mkInp()` into a style object. React tried to apply
+`$$typeof` / `type` / `props` as CSS properties, which crashed on
+render the moment the Auto-generator section opened (white screen;
+refresh recovered but next click crashed again). Fixed by switching
+to the canonical `{mkInp({ ...props, style: { maxWidth: 120 } })}`
+call form used by every other call site in the codebase. App.jsx
+sha bumped to `"details-banner-config-mkinp-fix"`; version still
+v1.9.4 (the buggy v1.9.4 push never reached main — only the in-
+flight PR branch).
+
 **Behavioural change:** Two strands. (a) UI fixes to the
 GenerateResultsModal rows reported by Patryk after the v1.9.3 PR
 preview: the list bullet was rendered outside the row's button via

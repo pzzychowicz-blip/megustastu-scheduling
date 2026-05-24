@@ -23,7 +23,7 @@ import AppShell from "./components/AppShell.jsx";
 export const __APP_SIGNATURE__ = Object.freeze({
   version: "1.9.4",
   build: "2026-05-23",
-  sha: "details-bullet-scroll-banner-config",
+  sha: "details-banner-config-mkinp-fix",
 });
 
 // Expose for DevTools / debugging.
