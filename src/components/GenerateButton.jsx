@@ -24,10 +24,6 @@
 //   actions          (object)           — usePersistence().actions; uses upsertShift
 //   onResult         (fn(summary))      — fires after a run with the summary;
 //                                          parent renders the banner. Optional.
-//   onUndoableOp     (fn(op))           — v1.10.0; fires after a successful run
-//                                          with the op record for the undo stack.
-//                                          Optional — caller controls whether
-//                                          Generate / Regenerate is undoable.
 //
 // Disabled when shiftTemplate is null (data not ready) or there are no
 // employees.
@@ -41,7 +37,6 @@ import GenerateConfirmModal from "./GenerateConfirmModal.jsx";
 export default function GenerateButton({
   weekStart, weekShifts, priorWeekShifts, nextWeekShifts, employees, requests,
   shiftTemplate, openingDays, strictPreference, isMobile, actions, onResult,
-  onUndoableOp,
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -96,25 +91,6 @@ export default function GenerateButton({
           preserveTimes: policy ? policy.preserveTimes : true,
           preserveAssignments: policy ? policy.preserveAssignments : true,
         });
-        // v1.10.0: snapshot PRE-mutation records so the undo stack can
-        // restore them. Cleared = full record was deleted (re-upsert by
-        // id on undo). Modified = record updated in place (we capture the
-        // pre-update version from weekShifts so undo restores the
-        // original employee / times). Re-upserting a previously-deleted
-        // id is safe — Firebase RTDB writes to any key.
-        const restoreCleared = (result.clearedShiftIds || [])
-          .map(function (id) {
-            const rec = weekShifts ? weekShifts[id] : null;
-            return rec ? JSON.parse(JSON.stringify(rec)) : null;
-          })
-          .filter(function (r) { return r !== null; });
-        const restoreModified = (result.modifiedShifts || [])
-          .map(function (m) {
-            const rec = weekShifts && m ? weekShifts[m.id] : null;
-            return rec ? JSON.parse(JSON.stringify(rec)) : null;
-          })
-          .filter(function (r) { return r !== null; });
-
         // v1.1.0: regenerate mode returns clearedShiftIds — delete first so
         // the subsequent upserts see clean cells (the local fill-empty pass
         // already worked against a filtered map, but the Firebase store
@@ -134,34 +110,13 @@ export default function GenerateButton({
             actions.upsertShift(result.modifiedShifts[i]);
           }
         }
-        // v1.10.0: track the ids of the new records as we write them so
-        // undo can delete them. upsertShift returns the resolved id
-        // (existing record.id if set, otherwise a fresh push key) or
-        // null when the write-guard refused. We skip refused writes —
-        // there's nothing to undo for a write that never happened.
-        const newIds = [];
         for (let i = 0; i < result.newShifts.length; i++) {
-          const newId = actions.upsertShift(result.newShifts[i]);
-          if (newId) newIds.push(newId);
+          actions.upsertShift(result.newShifts[i]);
         }
         if (onResult) {
           // Hand the mode through to the banner so it can phrase the copy
           // appropriately (regenerate runs include a "Cleared N" prefix).
           onResult({ ...result.summary, mode: mode });
-        }
-        if (onUndoableOp) {
-          const label = mode === "regenerate" ? "Regenerate" : "Fill empty";
-          const restoreShifts = restoreCleared.concat(restoreModified);
-          // No-op when nothing actually changed — fill-empty on a full
-          // week or a regenerate that produced zero deltas shouldn't
-          // pollute the stack with an empty undo entry.
-          if (restoreShifts.length > 0 || newIds.length > 0) {
-            onUndoableOp({
-              label: label,
-              restoreShifts: restoreShifts,
-              removeIds: newIds,
-            });
-          }
         }
       } catch (err) {
         console.error("[GenerateButton] generator run failed", err);
