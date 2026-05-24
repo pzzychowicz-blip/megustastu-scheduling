@@ -23,6 +23,10 @@ import {
   DEFAULT_SHIFT_TEMPLATE,
   DEFAULT_OPENING_DAYS,
   DEFAULT_GENERATOR_STRICT_PREFERENCE,
+  DEFAULT_GENERATOR_BANNER_AUTO_DISMISS,
+  DEFAULT_GENERATOR_BANNER_DURATION_SEC,
+  GENERATOR_BANNER_DURATION_MIN,
+  GENERATOR_BANNER_DURATION_MAX,
 } from "../lib/constants.js";
 import {
   startOfWeek,
@@ -77,6 +81,23 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     settings && typeof settings.generatorStrictPreference === "boolean"
       ? settings.generatorStrictPreference
       : DEFAULT_GENERATOR_STRICT_PREFERENCE;
+
+  // v1.9.4: result-banner auto-dismiss + duration. Consumed by the
+  // useEffect below that schedules the setTimeout. Both fields default
+  // to the constants when /settings is missing / wrong shape.
+  // Duration is clamped to the constants' min/max range so a bad value
+  // in /settings can't drive a 0-ms (instant) or 30-min timeout.
+  const bannerAutoDismiss =
+    settings && typeof settings.generatorBannerAutoDismiss === "boolean"
+      ? settings.generatorBannerAutoDismiss
+      : DEFAULT_GENERATOR_BANNER_AUTO_DISMISS;
+  const bannerDurationSec =
+    settings && Number.isFinite(settings.generatorBannerDurationSec)
+      ? Math.max(
+          GENERATOR_BANNER_DURATION_MIN,
+          Math.min(GENERATOR_BANNER_DURATION_MAX, settings.generatorBannerDurationSec)
+        )
+      : DEFAULT_GENERATOR_BANNER_DURATION_SEC;
 
   // Slot definitions for the week (same every day until per-day overrides land).
   const slots = useMemo(function () { return slotsForDay(template); }, [template]);
@@ -252,9 +273,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     // the details modal. Otherwise opening "Details", reading the list,
     // and closing the modal would find the banner gone — confusing.
     if (showResultsModal) return undefined;
-    const t = setTimeout(function () { setResultBanner(null); }, 5000);
+    // v1.9.4: manager can disable auto-dismiss entirely in
+    // Settings → Auto-generator. When OFF the banner stays until they
+    // ×-close it or another run replaces it.
+    if (!bannerAutoDismiss) return undefined;
+    const t = setTimeout(function () { setResultBanner(null); }, bannerDurationSec * 1000);
     return function () { clearTimeout(t); };
-  }, [resultBanner, showResultsModal]);
+  }, [resultBanner, showResultsModal, bannerAutoDismiss, bannerDurationSec]);
   function handleGenerateResult(summary) { setResultBanner(summary); }
   function handleClearResult(summary)    { setResultBanner(summary); }
   function dismissResultBanner() {

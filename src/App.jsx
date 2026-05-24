@@ -21,9 +21,9 @@ import AppShell from "./components/AppShell.jsx";
 
 // ── App signature ────────────────────────────────────────────────────────
 export const __APP_SIGNATURE__ = Object.freeze({
-  version: "1.9.3",
+  version: "1.9.4",
   build: "2026-05-23",
-  sha: "jump-to-cell-from-results",
+  sha: "details-bullet-scroll-banner-config",
 });
 
 // Expose for DevTools / debugging.

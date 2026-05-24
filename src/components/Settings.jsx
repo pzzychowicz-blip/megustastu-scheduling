@@ -67,6 +67,10 @@ import {
   OPERATING_HOURS,
   DEFAULT_OPENING_DAYS,
   DEFAULT_GENERATOR_STRICT_PREFERENCE,
+  DEFAULT_GENERATOR_BANNER_AUTO_DISMISS,
+  DEFAULT_GENERATOR_BANNER_DURATION_SEC,
+  GENERATOR_BANNER_DURATION_MIN,
+  GENERATOR_BANNER_DURATION_MAX,
   WEEKDAYS,
 } from "../lib/constants.js";
 import { normalizeOpeningDays } from "../lib/schedule-logic.js";
@@ -449,6 +453,38 @@ export default function Settings({
       ? settings.generatorStrictPreference
       : DEFAULT_GENERATOR_STRICT_PREFERENCE;
 
+  // v1.9.4: Generator-results banner auto-dismiss + duration. Same
+  // auto-save / no-Save-button pattern as the strict-preference toggle
+  // above. ScheduleGrid reads these on every render — flipping the
+  // toggle or editing the duration takes effect on the NEXT generator
+  // run (or, if a banner is already showing, on the next render that
+  // re-runs the auto-dismiss effect).
+  function onBannerAutoDismissChange(nextValue) {
+    saveSettings({ ...(settings || {}), generatorBannerAutoDismiss: nextValue });
+  }
+  const bannerAutoDismiss =
+    settings && typeof settings.generatorBannerAutoDismiss === "boolean"
+      ? settings.generatorBannerAutoDismiss
+      : DEFAULT_GENERATOR_BANNER_AUTO_DISMISS;
+  const bannerDurationSec =
+    settings && Number.isFinite(settings.generatorBannerDurationSec)
+      ? Math.max(
+          GENERATOR_BANNER_DURATION_MIN,
+          Math.min(GENERATOR_BANNER_DURATION_MAX, settings.generatorBannerDurationSec)
+        )
+      : DEFAULT_GENERATOR_BANNER_DURATION_SEC;
+  // Saves only when the user finishes typing a valid integer in the
+  // allowed range. Empty / NaN / out-of-range → no save (preserves the
+  // last valid value while the user edits). Click-step + arrow keys
+  // on <input type="number"> also fire onChange with a valid integer
+  // so the stepper UX still saves on every step.
+  function onBannerDurationChange(rawValue) {
+    const n = parseInt(rawValue, 10);
+    if (!Number.isFinite(n)) return;
+    if (n < GENERATOR_BANNER_DURATION_MIN || n > GENERATOR_BANNER_DURATION_MAX) return;
+    saveSettings({ ...(settings || {}), generatorBannerDurationSec: n });
+  }
+
   // ── Validation snapshot ────────────────────────────────────────────────
   // v0.7.0: template-row checks now also enforce the operating window.
   // Pass hoursForm only when it's valid on its own — otherwise the
@@ -553,7 +589,9 @@ export default function Settings({
       operatingEnd:   OPERATING_HOURS.end,
       openingDays:    defaultOpenDays,
       showRolePills:  true,   // v0.9.0 default
-      generatorStrictPreference: DEFAULT_GENERATOR_STRICT_PREFERENCE, // v1.0.0
+      generatorStrictPreference:    DEFAULT_GENERATOR_STRICT_PREFERENCE,    // v1.0.0
+      generatorBannerAutoDismiss:   DEFAULT_GENERATOR_BANNER_AUTO_DISMISS,  // v1.9.4
+      generatorBannerDurationSec:   DEFAULT_GENERATOR_BANNER_DURATION_SEC,  // v1.9.4
     });
     setHoursDirty(false);
   }
@@ -918,7 +956,10 @@ export default function Settings({
         {/* v1.0.0: Auto-generator config. Auto-saves on flip like the
             Display section — config-not-edit, no validation. The
             generator (Schedule grid's Generate button) reads this on
-            each click. */}
+            each click.
+            v1.9.4: + banner auto-dismiss toggle + duration field.
+            Duration row is hidden when auto-dismiss is off — the
+            number wouldn't have any effect. */}
         <Collapsible
           title="Auto-generator"
           open={openSection === "generator"}
@@ -935,6 +976,30 @@ export default function Settings({
               : "Soft mode (default) — generator tries preferred employees first, falls back if no one fits."}
             className="mgt-hover-scale"
           />
+          <Toggle
+            checked={bannerAutoDismiss === true}
+            onChange={onBannerAutoDismissChange}
+            label="Auto-dismiss results banner"
+            helper={bannerAutoDismiss
+              ? "Banner appearing above the schedule fades after " + bannerDurationSec +
+                "s. Adjust the duration below."
+              : "Banner stays visible until you close it (×) or run the generator again."}
+            className="mgt-hover-scale"
+          />
+          {bannerAutoDismiss ? (
+            <Fld label={"Banner duration (" + GENERATOR_BANNER_DURATION_MIN + "–" + GENERATOR_BANNER_DURATION_MAX + " seconds)"} className="mgt-hover-scale">
+              <input
+                type="number"
+                min={GENERATOR_BANNER_DURATION_MIN}
+                max={GENERATOR_BANNER_DURATION_MAX}
+                step="1"
+                value={bannerDurationSec}
+                onChange={function (e) { onBannerDurationChange(e.target.value); }}
+                className="mgt-hover-scale"
+                style={{ ...mkInp(), maxWidth: 120 }}
+              />
+            </Fld>
+          ) : null}
         </Collapsible>
 
         <Collapsible

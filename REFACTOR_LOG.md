@@ -5,6 +5,147 @@ an entry. Newest first.
 
 ---
 
+## v1.9.4 — Generator-details polish + banner config
+
+**Date:** 2026-05-23
+**Behavioural change:** Two strands. (a) UI fixes to the
+GenerateResultsModal rows reported by Patryk after the v1.9.3 PR
+preview: the list bullet was rendered outside the row's button via
+`list-style: disc` on the `<li>`, so when the inner button hover-
+scaled, the bullet stayed put and read as visually detached; long
+generator outputs (35+ cleared rows on a Regenerate against a busy
+week) also spilled past the Overlay sheet bottom because v1.9.0's
+`overflow: visible` sheet (needed for hover-scale transforms to lift
+past the border) meant the Close button became unreachable. (b)
+Manager-configurable result banner: a new Auto-generator Settings
+section toggle for "Auto-dismiss results banner" and a paired
+duration field (1–60 seconds) — the previous hard-coded 5-second
+fade is now both disable-able and tunable, addressing the recurring
+"I missed the banner before I could read it" / "I want to inspect
+this longer" feedback.
+
+v1.9.3's "shipped" state never actually reached production — this PR
+extends v1.9.3's branch with the polish + new settings, bumping the
+version label so the merge commit ships as v1.9.4 with all four
+threads (jump-to-cell + bullet integration + scrollable details +
+configurable banner) at once. The v1.9.3 entry below documents the
+underlying jump-to-cell work that landed in commit `b3c6359`; the
+combined feature ships under the v1.9.4 label.
+
+### What landed
+
+1. **`src/components/GenerateResultsModal.jsx`** — bullet integration
+   + scroll wrapper:
+   - `ReasonGroup` `<ul>` loses `list-style: disc`; padding zeroed.
+     Each `<li>` becomes a flex container (non-interactive) or
+     wraps a flex button (interactive). The bullet is now a
+     `<span aria-hidden="true">` rendered INSIDE the row, so the
+     bullet and text scale together on hover.
+   - Interactive button padding bumped from `2px 6px` to `4px 8px`
+     so the hover background reads as a discrete row card rather
+     than hugging the text edge.
+   - Default-export wraps the two `<Section>` blocks in a
+     scrollable inner `<div>`: `maxHeight: isMobile ? "55vh" :
+     "min(60vh, 480px)"`, `overflowY: auto`, with the
+     negative-margin + matching-padding pattern (`padding: "4px
+     16px"`, `margin: "0 -16px"`) giving hover-scaled rows 16px
+     of horizontal breathing room before the scroll container
+     clips them. Same pattern as ScheduleGrid's outer wrapper
+     (v1.9.0 hover-scale fix). The empty-state ("Nothing to
+     report") falls outside the scroller — no list to scroll when
+     there's nothing in it. Summary line + Close button stay
+     outside the scroller, anchored at the modal bottom.
+   - Close button gained `className="mgt-hover-scale"` (missed in
+     the v1.9.0 second-wave broad-application pass).
+
+2. **`src/lib/constants.js`** — four new exports:
+   - `DEFAULT_GENERATOR_BANNER_AUTO_DISMISS` (true)
+   - `DEFAULT_GENERATOR_BANNER_DURATION_SEC` (5)
+   - `GENERATOR_BANNER_DURATION_MIN` (1)
+   - `GENERATOR_BANNER_DURATION_MAX` (60)
+
+3. **`src/components/Settings.jsx`** — Auto-generator section gains
+   a second Toggle ("Auto-dismiss results banner") and a conditional
+   `<Fld>`-wrapped number `<input>` (`min=1 max=60 step=1`,
+   `mkInp()` styling, capped at 120px width). Both auto-save on
+   flip / valid edit (same pattern as strict-preference); duration
+   onChange ignores empty / NaN / out-of-range so the saved value
+   remains the last valid number while the manager edits. The
+   duration row is hidden when auto-dismiss is OFF (no effect to
+   tune). Reset-to-defaults now includes both new fields. Imports
+   pulled in the four new constants.
+
+4. **`src/components/ScheduleGrid.jsx`** — banner auto-dismiss
+   effect now reads `settings.generatorBannerAutoDismiss` (when
+   false, no `setTimeout` is scheduled — banner stays until
+   manually dismissed) and `settings.generatorBannerDurationSec`
+   (clamped to MIN/MAX, multiplied by 1000 at the setTimeout
+   call). Both values read via the existing defensive-fallback
+   pattern; effect deps array grew to include both so flipping
+   the toggle or editing duration re-runs the effect immediately
+   if a banner is already showing.
+
+5. **`src/App.jsx`** — `__APP_SIGNATURE__.version` 1.9.3 → 1.9.4,
+   `sha` "jump-to-cell-from-results" →
+   "details-bullet-scroll-banner-config".
+
+6. **`CLAUDE.md`** — v1.4.0/v1.9.3 GenerateResultsModal locked-
+   decision block extended with v1.9.4 polish sub-block. New
+   "Generator-results banner config (v1.9.4)" locked-decision
+   block. `/settings` data-model entry gained the two new fields.
+   App.jsx, constants.js, Settings.jsx, ScheduleGrid.jsx, and
+   GenerateResultsModal.jsx file-structure entries each gained
+   v1.9.4 lines.
+
+### Why combine into one PR rather than two
+
+The v1.9.3 work (jump-to-cell) had a regression on the bullet/scroll
+front that Patryk caught in PR review. Splitting "fix the regression"
+into a separate PR would force the regression briefly through main
+(and onto Vercel preview) before the fix landed. Layering the polish
+on the same branch keeps the regression off main entirely — the merge
+ships a clean v1.9.4 with all four threads at once. The "one version
+per branch" rule is honoured by relabelling the branch to v1.9.4 in
+this PR (the v1.9.3 label only lived on the in-flight branch, never
+on main). REFACTOR_LOG keeps both entries for posterity since they
+document distinct decisions.
+
+### Bundle delta
+
+Main bundle 164.68 → 165.51 kB gz over the v1.9.2 baseline (+0.83
+kB total for v1.9.3 + v1.9.4 combined). The v1.9.4-only step is
++0.52 kB on top of v1.9.3's +0.31 kB. HTML 4.15 (unchanged).
+Modules 320 → 320 (no new file).
+
+### Verification
+
+- `npm run build` succeeds.
+- `npm run dev`. Generate against a busy week (say 30+ unfilled
+  cells); open Details. Confirm:
+  - Each row's bullet sits inline with the name/date/slot text;
+    hovering scales the whole row including the bullet (no
+    detachment).
+  - The list scrolls inside the modal — Close button stays
+    visible at the bottom regardless of scroll position.
+  - Clicking a row still triggers v1.9.3's jump-to-cell flow
+    (modal closes, cell pulses).
+- Open Settings → Auto-generator. Confirm:
+  - New "Auto-dismiss results banner" toggle visible (default ON).
+  - New "Banner duration (1–60 seconds)" number input visible
+    below the toggle (default 5).
+  - Flip the toggle OFF → duration row hides.
+  - Flip ON → duration row reappears at last value.
+  - Edit duration to e.g. 15 → run Generate → banner now stays
+    15s before fading.
+  - Toggle OFF → run Generate → banner stays until × or another
+    run.
+  - Type an out-of-range value (e.g. 999) or empty → no save;
+    last valid value persists.
+- Reset to defaults → both banner fields revert to true / 5.
+- Dark mode → no visual regression in the modal or Settings.
+
+---
+
 ## v1.9.3 — Jump-to-cell from GenerateResultsModal
 
 **Date:** 2026-05-23

@@ -109,6 +109,13 @@ const CLEARED_PALETTE = {
 // the handler with the row's `item` payload — caller threads through
 // to onJumpToCell(dateIso, slotKey). When absent the rows render as
 // plain non-interactive text (v1.4.0 behaviour).
+//
+// v1.9.4: bullet integrated into the row. v1.9.3 left the bullet on
+// the wrapping `<li>` via list-style:disc — when the inner button
+// scaled on hover, the bullet stayed anchored and visually detached
+// from the rest of the row. The bullet is now a `<span>` INSIDE the
+// button (interactive) or inside a flex `<li>` (non-interactive), so
+// the whole row reads as one element regardless of state.
 function ReasonGroup({ label, items, paletteVariant, renderItem, onItemClick }) {
   const palette = paletteVariant === "unfilled" ? UNFILLED_PALETTE : CLEARED_PALETTE;
   const interactive = typeof onItemClick === "function";
@@ -131,8 +138,8 @@ function ReasonGroup({ label, items, paletteVariant, renderItem, onItemClick }) 
       <ul
         style={{
           margin: 0,
-          padding: "0 0 0 16px",
-          listStyle: "disc",
+          padding: 0,
+          listStyle: "none",
           color: "var(--text-primary)",
           fontSize: 13,
           lineHeight: 1.55,
@@ -141,14 +148,30 @@ function ReasonGroup({ label, items, paletteVariant, renderItem, onItemClick }) 
         {items.map(function (item, i) {
           const key = paletteVariant + "-" + i;
           if (!interactive) {
-            return <li key={key}>{renderItem(item)}</li>;
+            // v1.9.4: even the non-interactive fallback uses the
+            // bullet-inside-row layout for visual consistency.
+            return (
+              <li
+                key={key}
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  padding: "2px 0",
+                }}
+              >
+                <span aria-hidden="true" style={{ color: "var(--text-muted)", flexShrink: 0 }}>•</span>
+                <span>{renderItem(item)}</span>
+              </li>
+            );
           }
-          // v1.9.3: clickable row. The button mimics inline text — no
-          // border/background of its own — but inherits the shared
-          // .mgt-hover-scale utility so it lifts + paints a soft hover
-          // background, signalling "interactive" consistently with the
-          // rest of the app. textAlign:left so multi-line wraps stay
-          // readable on narrow mobile sheets.
+          // v1.9.3 + v1.9.4: clickable row. The button is a flex
+          // container with the bullet first, then the text — so the
+          // whole row scales together on hover. .mgt-hover-scale gives
+          // the lift + soft hover background; cursor:pointer signals
+          // interactivity. Padding bumped from v1.9.3's "2px 6px" to
+          // "4px 8px" so the hover background reads as a discrete
+          // row card rather than hugging the text edge.
           return (
             <li key={key}>
               <button
@@ -156,19 +179,21 @@ function ReasonGroup({ label, items, paletteVariant, renderItem, onItemClick }) 
                 className="mgt-hover-scale"
                 onClick={function () { onItemClick(item); }}
                 style={{
-                  display: "block",
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
                   width: "100%",
-                  textAlign: "left",
-                  padding: "2px 6px",
-                  margin: "1px 0",
+                  padding: "4px 8px",
                   background: "transparent",
                   border: "none",
                   color: "inherit",
                   font: "inherit",
+                  textAlign: "left",
                   cursor: "pointer",
                 }}
               >
-                {renderItem(item)}
+                <span aria-hidden="true" style={{ color: "var(--text-muted)", flexShrink: 0 }}>•</span>
+                <span>{renderItem(item)}</span>
               </button>
             </li>
           );
@@ -210,55 +235,82 @@ export default function GenerateResultsModal({
 
   return (
     <Overlay open={open} onClose={onClose} title={title} isMobile={isMobile}>
-      {hasUnfilled ? (
-        <Section title={"Left empty (" + unfilledCells.length + ")"} style={{ marginBottom: 12 }}>
-          {unfilledGroups.map(function (g) {
-            return (
-              <ReasonGroup
-                key={"unf-" + g.reason}
-                label={g.label}
-                items={g.items}
-                paletteVariant="unfilled"
-                onItemClick={onUnfilledClick}
-                renderItem={function (item) {
-                  return shortDate(item.dateIso) + " — " + slotLabel(item.slotKey, slotsByKey);
-                }}
-              />
-            );
-          })}
-        </Section>
-      ) : null}
+      {/* v1.9.4: scrollable list area. The Overlay desktop sheet uses
+          overflow:visible (v1.9.0 hover-scale fix) so hover-scaled
+          rows can lift past the sheet border — but that means long
+          generator outputs (35+ cleared rows on a Regenerate against
+          a busy week) spill off-screen and the Close button below
+          becomes unreachable. This inner scroller caps the list height
+          and re-introduces internal scroll for the section blocks
+          only. The summary line + Close button stay outside the
+          scroller, anchored at the modal bottom.
+          The negative horizontal margin pulls the box back to the
+          Overlay's content edge; the matching padding gives hover-
+          scaled rows 16px of breathing room before the scroll
+          container clips them (same pattern as ScheduleGrid's outer
+          wrapper). max-height adapts to viewport: mobile sheets get
+          a percentage; desktop caps at 480px so the dialog fits on
+          a typical laptop without filling the whole height.
+          The empty-state ("Nothing to report") falls outside the
+          scroller — no list to scroll when there's nothing in it. */}
+      {(hasUnfilled || hasCleared) ? (
+        <div
+          style={{
+            maxHeight: isMobile ? "55vh" : "min(60vh, 480px)",
+            overflowY: "auto",
+            padding: "4px 16px",
+            margin: "0 -16px",
+          }}
+        >
+          {hasUnfilled ? (
+            <Section title={"Left empty (" + unfilledCells.length + ")"} style={{ marginBottom: 12 }}>
+              {unfilledGroups.map(function (g) {
+                return (
+                  <ReasonGroup
+                    key={"unf-" + g.reason}
+                    label={g.label}
+                    items={g.items}
+                    paletteVariant="unfilled"
+                    onItemClick={onUnfilledClick}
+                    renderItem={function (item) {
+                      return shortDate(item.dateIso) + " — " + slotLabel(item.slotKey, slotsByKey);
+                    }}
+                  />
+                );
+              })}
+            </Section>
+          ) : null}
 
-      {hasCleared ? (
-        <Section title={"Cleared (" + clearedReasons.length + ")"} style={{ marginBottom: 12 }}>
-          {clearedGroups.map(function (g) {
-            return (
-              <ReasonGroup
-                key={"clr-" + g.reason}
-                label={g.label}
-                items={g.items}
-                paletteVariant="cleared"
-                onItemClick={onClearedClick}
-                renderItem={function (item) {
-                  return (
-                    employeeName(item.employeeId, employees) +
-                    " — " +
-                    shortDate(item.date) +
-                    " — " +
-                    slotLabel(item.slotKey, slotsByKey)
-                  );
-                }}
-              />
-            );
-          })}
-        </Section>
-      ) : null}
-
-      {!hasUnfilled && !hasCleared ? (
+          {hasCleared ? (
+            <Section title={"Cleared (" + clearedReasons.length + ")"} style={{ marginBottom: 12 }}>
+              {clearedGroups.map(function (g) {
+                return (
+                  <ReasonGroup
+                    key={"clr-" + g.reason}
+                    label={g.label}
+                    items={g.items}
+                    paletteVariant="cleared"
+                    onItemClick={onClearedClick}
+                    renderItem={function (item) {
+                      return (
+                        employeeName(item.employeeId, employees) +
+                        " — " +
+                        shortDate(item.date) +
+                        " — " +
+                        slotLabel(item.slotKey, slotsByKey)
+                      );
+                    }}
+                  />
+                );
+              })}
+            </Section>
+          ) : null}
+        </div>
+      ) : (
         <p style={{ ...S.body, marginTop: 0 }}>
           Nothing to report — everything fell within the rules.
         </p>
-      ) : null}
+      )}
 
       <p style={{ ...S.muted, marginTop: 8 }}>
         Filled {summary.filled || 0} new shift{(summary.filled || 0) === 1 ? "" : "s"}
@@ -271,6 +323,7 @@ export default function GenerateResultsModal({
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
         <button
           type="button"
+          className="mgt-hover-scale"
           onClick={onClose}
           style={{ ...BTN.base, ...BTN.secondary, padding: "8px 14px", fontSize: 13 }}
         >
