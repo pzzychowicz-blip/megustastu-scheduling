@@ -987,15 +987,33 @@ export default function Settings({
             className="mgt-hover-scale"
           />
           {bannerAutoDismiss ? (
-            <Fld label={"Banner duration (" + GENERATOR_BANNER_DURATION_MIN + "–" + GENERATOR_BANNER_DURATION_MAX + " seconds)"} className="mgt-hover-scale">
-              {/* v1.9.4 fix: use mkInp the way every other call site
-                  does — pass all props in one call; the helper returns
-                  the JSX <input> with S.inputBase merged in. The
-                  initial v1.9.4 push wrote `style={{...mkInp(), ...}}`
-                  which spreads a JSX element into a style object —
-                  React tries to apply $$typeof / type / props as CSS
-                  properties, which crashes on render the moment the
-                  Auto-generator section opens. */}
+            // v1.9.4 (alignment fix): the previous <Fld> wrapper had no
+            // horizontal padding, so the duration row sat 12px further
+            // left than the Toggle rows above (which carry padding:
+            // "10px 12px" via Toggle's internal rowStyle). The row
+            // below mirrors Toggle's flex-row layout — label/helper
+            // on the left, control on the right — so the three rows
+            // (strict preference, auto-dismiss, banner duration)
+            // share the same horizontal inset and visual rhythm.
+            // Field-only hover-scale per v1.9.0: className lives on
+            // the input, not the wrapping row, so the label stays
+            // anchored while the editable surface lifts on hover.
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 12px",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
+                  Banner duration
+                </div>
+                <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
+                  {GENERATOR_BANNER_DURATION_MIN + "–" + GENERATOR_BANNER_DURATION_MAX + " seconds"}
+                </div>
+              </div>
               {mkInp({
                 type: "number",
                 min: GENERATOR_BANNER_DURATION_MIN,
@@ -1004,9 +1022,9 @@ export default function Settings({
                 className: "mgt-hover-scale",
                 value: bannerDurationSec,
                 onChange: function (e) { onBannerDurationChange(e.target.value); },
-                style: { maxWidth: 120 },
+                style: { width: 120, flexShrink: 0 },
               })}
-            </Fld>
+            </div>
           ) : null}
         </Collapsible>
 

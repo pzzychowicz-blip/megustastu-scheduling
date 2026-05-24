@@ -21,6 +21,20 @@ sha bumped to `"details-banner-config-mkinp-fix"`; version still
 v1.9.4 (the buggy v1.9.4 push never reached main — only the in-
 flight PR branch).
 
+**Post-push polish (same branch):** the banner-duration row's
+`<Fld>` wrapper had no horizontal padding (`S.fldRow` is just
+`{marginBottom: 12}`), so the row sat 12px further left than the
+Toggle rows above (which carry `padding: "10px 12px"` via
+`Toggle`'s internal `rowStyle`). Replaced the `<Fld>` with an
+inline Toggle-shaped flex row — label/helper on the left, input
+on the right — so all three Auto-generator rows (strict
+preference, auto-dismiss, banner duration) share the same
+horizontal inset and visual rhythm. Helper text ("1–60 seconds")
+moved off the label parenthetical into a Toggle-style sub-helper
+beneath the label. Field-only hover-scale preserved (className on
+the input, not the row). Sha bumped to
+`"details-banner-row-alignment"`.
+
 **Behavioural change:** Two strands. (a) UI fixes to the
 GenerateResultsModal rows reported by Patryk after the v1.9.3 PR
 preview: the list bullet was rendered outside the row's button via
