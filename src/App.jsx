@@ -23,7 +23,7 @@ import AppShell from "./components/AppShell.jsx";
 export const __APP_SIGNATURE__ = Object.freeze({
   version: "1.9.4",
   build: "2026-05-23",
-  sha: "details-banner-row-alignment",
+  sha: "details-always-on-generate-banner",
 });
 
 // Expose for DevTools / debugging.

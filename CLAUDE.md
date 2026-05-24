@@ -701,9 +701,20 @@ separate Firebase project, same UI conventions).
     via `visibleWeekDates`). Cell-level visuals stack above the
     tinted card (v1.7.0 green pill highlight + yellow swap pulse
     still read correctly inside today's card).
-- **Generator result details (v1.4.0, jump-to-cell v1.9.3):** the
-  result banner gains a "Details" button (only visible when
-  `summary.unfilledCells` or `summary.clearedReasons` is non-empty).
+- **Generator result details (v1.4.0, jump-to-cell v1.9.3, always-on v1.9.4):** the
+  result banner gains a "Details" button. Originally hidden when both
+  `unfilledCells` and `clearedReasons` were empty (v1.4.0 minimalism);
+  **v1.9.4 makes the button always visible on Generate/Regenerate
+  banners** so managers have a stable affordance to inspect any run —
+  even a clean one (clicking on a clean run opens the modal with the
+  existing "Nothing to report — everything fell within the rules"
+  message, which is still useful as confirmation). The predicate
+  switched from "either array is non-empty" to "the banner has a
+  `mode` field" — Clear results carry no `mode` (their summary is
+  `{cleared, kind}`), so Clear banners still skip Details. The
+  v1.4.0 hide-when-empty design surfaced as a "disappeared button"
+  surprise for managers who'd seen Details on prior runs and didn't
+  realise it was conditional.
   Click opens `GenerateResultsModal` listing each unfilled cell and
   (for Regenerate) each cleared shift grouped by reason. Human-
   readable labels live in `GENERATOR_REASONS` in `constants.js` —

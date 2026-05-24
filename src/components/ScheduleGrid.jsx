@@ -1041,15 +1041,17 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           " for " + formatWeekRange(weekStart) + ".";
     }
   }
-  // v1.4.0: a "Details" affordance shows only when there's something
-  // actionable to inspect — unfilled cells or cleared shifts from a
-  // Regenerate run. A clean run (everything filled, nothing cleared) gets
-  // no Details button — there's nothing to show. Clear results don't
-  // carry reason metadata so they skip Details entirely.
-  const bannerHasDetails = resultBanner && (
-    (Array.isArray(resultBanner.unfilledCells) && resultBanner.unfilledCells.length > 0) ||
-    (Array.isArray(resultBanner.clearedReasons) && resultBanner.clearedReasons.length > 0)
-  );
+  // v1.4.0 → v1.9.4: a "Details" affordance shows for every Generate
+  // and Regenerate banner — even clean runs (everything filled, nothing
+  // cleared). v1.4.0's original predicate hid the button when both
+  // arrays were empty, but the disappearing affordance confused
+  // managers who expected a stable entry point to the results modal.
+  // For a clean run the modal renders "Nothing to report — everything
+  // fell within the rules", which is still useful as confirmation.
+  // Clear results still skip Details: their summary carries no
+  // unfilledCells / clearedReasons / mode field — they're a different
+  // shape entirely ({cleared, kind}), with no detail metadata to show.
+  const bannerHasDetails = Boolean(resultBanner && resultBanner.mode);
   const generateBanner = resultBanner
     ? (
       <div

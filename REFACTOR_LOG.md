@@ -35,6 +35,20 @@ beneath the label. Field-only hover-scale preserved (className on
 the input, not the row). Sha bumped to
 `"details-banner-row-alignment"`.
 
+**Post-push polish (same branch):** the v1.4.0 "Details" button on
+the results banner was hidden when both `unfilledCells` and
+`clearedReasons` arrays were empty — a minimalism choice that
+became a "disappeared button" surprise for managers who'd seen
+Details on prior runs and didn't realise it was conditional.
+Predicate switched from "either array is non-empty" to "the banner
+has a `mode` field." Effect: Details is now always available on
+Generate (fill-empty) and Regenerate banners, even on clean runs.
+Clicking on a clean run opens the modal with the existing "Nothing
+to report — everything fell within the rules" message, useful as
+confirmation. Clear results still skip Details (their summary is
+`{cleared, kind}` with no `mode` field — no detail metadata
+exists). Sha bumped to `"details-always-on-generate-banner"`.
+
 **Behavioural change:** Two strands. (a) UI fixes to the
 GenerateResultsModal rows reported by Patryk after the v1.9.3 PR
 preview: the list bullet was rendered outside the row's button via
