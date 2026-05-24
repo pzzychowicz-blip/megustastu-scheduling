@@ -916,6 +916,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // v1.3.0: per-date, drop slots whose dayPart is closed that day, then
   // re-derive section-boundary flags from the filtered list. A section
   // header doesn't render if its only slots for the day were filtered out.
+  // v1.9.5: stop filtering — closed-dayPart slots now render as inert
+  // "Closed" placeholders via the shared renderClosedCell helper, mirroring
+  // the desktop pattern (lines 899–906). Section headers iterate over the
+  // full slots array so partial-closure days keep their canonical slot
+  // ladder (e.g. "FoH · Day" header above a Closed placeholder, then the
+  // evening section beneath as normal).
   const mobileStack = (
     <div>
       {dates.map(function (d) {
@@ -929,9 +935,6 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         // no new state — todayIso (line 118) is the existing memo
         // already consumed by the desktop path.
         const isToday = dIso === todayIso;
-        const visibleSlots = slots.filter(function (slot) {
-          return isSlotOpenOnDate(d, slot, openingDays);
-        });
         return (
           <div
             key={"dayCard-" + dIso}
@@ -956,9 +959,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
               {formatDayHeader(d)}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {visibleSlots.map(function (slot, i) {
-                const prev = i > 0 ? visibleSlots[i - 1] : null;
+              {slots.map(function (slot, i) {
+                const prev = i > 0 ? slots[i - 1] : null;
                 const showHeader = i === 0 || isSectionBoundary(prev, slot);
+                const slotOpen = isSlotOpenOnDate(d, slot, openingDays);
                 return (
                   <div key={slot.key + "-" + dIso} style={{ display: "contents" }}>
                     {showHeader
@@ -982,7 +986,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                         </div>
                       )
                       : null}
-                    {renderCell(d, slot)}
+                    {slotOpen ? renderCell(d, slot) : renderClosedCell(d, slot)}
                   </div>
                 );
               })}

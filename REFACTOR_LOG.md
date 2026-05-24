@@ -5,6 +5,64 @@ an entry. Newest first.
 
 ---
 
+## v1.9.5 — Mobile "Closed" placeholder + scope tidy
+
+**Date:** 2026-05-24
+
+**Behavioural change:** Two strands. (a) The mobile day-card stack on
+ScheduleGrid now renders inert "Closed" placeholders for closed-dayPart
+slots, mirroring the desktop v1.3.0 pattern and the PDF v1.9.0 "Closed"
+italic cell. Pre-v1.9.5 the mobile path filtered closed slots out
+entirely (`slots.filter(isSlotOpenOnDate)`) — on a partial-closure day
+(e.g. FoH Day off, FoH Evening on), the missing slot rows just vanished
+from the mobile UI, which read as "this day has fewer rows than the
+others" rather than "this slot is closed today." (b) `useNowMins.js`
+permanently dropped from CLAUDE.md's "File structure (target)" block.
+The 15-second clock tick + "current shift in progress" affordance had
+lingered as deferred polish since sessions 12–14; Patryk's call this
+session is that it's out of v1 scope altogether — the app is for
+*making* schedules, not for following shifts in real time. The
+historical REFACTOR_LOG entry under v1.5.0's "What did NOT land" stays
+as-is (it's a frozen account, not a forward promise).
+
+**Files:**
+- `src/components/ScheduleGrid.jsx` — `mobileStack` block. Removed
+  the `visibleSlots = slots.filter(isSlotOpenOnDate)` precomputation
+  and the subsequent `visibleSlots.map`. Replaced with a direct
+  `slots.map((slot, i) => ...)` that computes `slotOpen` per slot and
+  renders either `renderCell(d, slot)` or the shared
+  `renderClosedCell(d, slot)`. Section-header logic
+  (`prev = slots[i-1]`, `showHeader = i === 0 || isSectionBoundary(...)`)
+  now operates on the full slots array so partial-closure days keep
+  their canonical "FoH · Day" / "FoH · Evening" / "Kitchen · Day" /
+  "Kitchen · Evening" ladder above the (now possibly Closed) cells.
+- `src/App.jsx` — version `1.9.4` → `1.9.5`, sha
+  `"details-always-on-generate-banner"` →
+  `"mobile-closed-placeholder"`, build `2026-05-23` → `2026-05-24`.
+- `CLAUDE.md` — schedule-grid visual polish locked-decision block
+  extended with a v1.9.5 sub-bullet; ScheduleGrid.jsx + App.jsx
+  file-structure entries gained v1.9.5 lines; the entire "File
+  structure (target — added in later sessions)" block + its
+  footnote removed.
+- `REFACTOR_LOG.md` — this entry.
+
+**Scope:** No new tokens, no new constants, no new state, no data-model
+change. Single component touched; `renderClosedCell` reused without
+modification. The PDF export path is unaffected (already symmetric since
+v1.9.0).
+
+**Verification target:** On a partial-closure day, the mobile day-card
+shows the section banner above a "Closed" placeholder for the closed
+dayPart, and the open dayPart sections render normally beneath. On a
+fully-open day, the mobile day-card is byte-identical to v1.9.4. On a
+fully-closed day, the day-card is filtered out upstream by
+`visibleWeekDates` (unchanged behaviour).
+
+**Bundle:** 165.51 → 165.49 kB gz main (−0.02 kB). 320 modules
+unchanged. HTML unchanged.
+
+---
+
 ## v1.9.4 — Generator-details polish + banner config
 
 **Date:** 2026-05-23
