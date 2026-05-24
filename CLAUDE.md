@@ -683,7 +683,7 @@ separate Firebase project, same UI conventions).
   do NOT re-rank after each greedy pick (problem size ≤49 cells/week;
   pre-sort captures the bulk of the benefit). `clearInvalidShifts`
   and `rankCandidates` are unchanged.
-- **Schedule grid visual polish (v1.4.0, mobile counterpart v1.9.2):**
+- **Schedule grid visual polish (v1.4.0, mobile counterpart v1.9.2, mobile Closed v1.9.5):**
   - **Today-column tint (desktop).** A single underlay div with
     `gridColumn: <todayIndex + 2>`, `gridRow: "1 / -1"`,
     `background: var(--accent-tint-soft)`. Translucent cell
@@ -701,6 +701,19 @@ separate Firebase project, same UI conventions).
     via `visibleWeekDates`). Cell-level visuals stack above the
     tinted card (v1.7.0 green pill highlight + yellow swap pulse
     still read correctly inside today's card).
+  - **Mobile "Closed" placeholder (v1.9.5).** Mobile day-card slot
+    list now renders inert "Closed" placeholders for closed-dayPart
+    slots (pre-v1.9.5: filtered out entirely via
+    `slots.filter(isSlotOpenOnDate)`). Mirrors the desktop v1.3.0
+    pattern through the shared `renderClosedCell` helper; section
+    headers iterate over the full `slots` array so partial-closure
+    days keep their canonical slot ladder (e.g. "FoH · Day" header
+    above a Closed placeholder, then "FoH · Evening" header + cells
+    beneath as normal). Fully-closed days are still dropped upstream
+    via `visibleWeekDates`, so the day card simply doesn't render
+    when nothing is open — only partial closure benefits from the
+    new visibility. Brings desktop/mobile/PDF (v1.9.0) to a single
+    visual model for closed cells.
 - **Generator result details (v1.4.0, jump-to-cell v1.9.3, always-on v1.9.4):** the
   result banner gains a "Details" button. Originally hidden when both
   `unfilledCells` and `clearedReasons` were empty (v1.4.0 minimalism);
@@ -858,6 +871,8 @@ megustastu-scheduling/
     │                                 "jump-to-cell-from-results".
     │                                 v1.9.4: → 1.9.4, sha
     │                                 "details-bullet-scroll-banner-config".
+    │                                 v1.9.5: → 1.9.5, sha
+    │                                 "mobile-closed-placeholder".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1401,6 +1416,23 @@ megustastu-scheduling/
         │                           via the existing defensive-fallback
         │                           pattern; effect deps array grew to
         │                           include both.
+        │                           v1.9.5: mobile day-card slot list
+        │                           switched from filter to render-as-
+        │                           Closed conditional. mobileStack's
+        │                           `slots.map((slot,i) => ...)` no
+        │                           longer pre-filters via
+        │                           `slots.filter(isSlotOpenOnDate)`;
+        │                           per-slot it checks `slotOpen` and
+        │                           renders either `renderCell(d,slot)`
+        │                           or the shared `renderClosedCell(d,
+        │                           slot)`. Section-header logic
+        │                           (`prev = slots[i-1]`, `showHeader`)
+        │                           reads from the full slots array so
+        │                           partial-closure days keep the
+        │                           canonical section ladder above
+        │                           Closed placeholders. Symmetric with
+        │                           the desktop pattern at lines
+        │                           899–906 and the PDF export (v1.9.0).
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -1763,17 +1795,6 @@ megustastu-scheduling/
                                     `.mgt-hover-scale` (missed in the
                                     v1.9.0 second wave).
 ```
-
-### File structure (target — added in later sessions)
-
-```
-src/
-└── hooks/
-    └── useNowMins.js               15s clock tick
-```
-
-> File list is a **target**, not gospel. Adjust as features land. Update
-> this section in the same commit that creates / removes / renames files.
 
 ---
 
