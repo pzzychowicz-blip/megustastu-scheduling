@@ -281,8 +281,35 @@ function slotTimeFor(block, sectionKey, dayPart, index) {
   return { start: start, end: block.end };
 }
 
-export function slotsForDay(template) {
+// v1.11.0: optional second arg `dayRequiredRolesOverride` lets callers pass
+// a configured per-section required-role map (from /settings.dayRequiredRoles).
+// Shape: `{foh: [...], kitchen: [...]}`. When provided AND the section's
+// entry is an array, it WINS over the SECTIONS hard-coded default — even an
+// explicit empty array, which means "permissive: any of coversRoles". This
+// is intentional: the manager's "no requirements" choice must be honoured,
+// not silently replaced by the section's hard-coded default.
+//
+// When the override is null/undefined OR a section's entry is non-array,
+// `slotsForDay` falls back to `SECTIONS[section].dayRequiredRoles || []` —
+// byte-identical to the pre-v1.11.0 behaviour. Bare callers (tests,
+// legacy code paths) continue to work without modification.
+export function slotsForDay(template, dayRequiredRolesOverride) {
   const slots = [];
+
+  // Resolve required-roles per section once. Override array wins; otherwise
+  // SECTIONS default.
+  function resolveDayRequired(sectionKey) {
+    if (
+      dayRequiredRolesOverride
+      && typeof dayRequiredRolesOverride === "object"
+      && Array.isArray(dayRequiredRolesOverride[sectionKey])
+    ) {
+      return dayRequiredRolesOverride[sectionKey];
+    }
+    return (SECTIONS[sectionKey] && SECTIONS[sectionKey].dayRequiredRoles) || [];
+  }
+  const kitchenRequired = resolveDayRequired("kitchen");
+  const fohRequired = resolveDayRequired("foh");
 
   // Kitchen day
   const kitDay = template.kitchen.day;
@@ -306,7 +333,9 @@ export function slotsForDay(template) {
       // and generator demand the employee hold AT LEAST ONE of these
       // roles (not just any of coversRoles). Empty / undefined keeps the
       // permissive "any of coversRoles" v1.0 behaviour.
-      requiredRoles: SECTIONS.kitchen.dayRequiredRoles || [],
+      // v1.11.0: resolved from /settings override when present; falls back
+      // to SECTIONS.kitchen.dayRequiredRoles otherwise.
+      requiredRoles: kitchenRequired,
       isDay: true,
       humanLabel: kitDay.count > 1 ? "Kitchen Day " + (i + 1) : "Kitchen Day",
     });
@@ -349,7 +378,8 @@ export function slotsForDay(template) {
       coversRoles: SECTIONS.foh.roles,
       // v1.1.0: FoH has no dayRequiredRoles → empty list keeps the
       // permissive "any of Bar/Floor" rule.
-      requiredRoles: SECTIONS.foh.dayRequiredRoles || [],
+      // v1.11.0: resolved from /settings override when present.
+      requiredRoles: fohRequired,
       isDay: true,
       humanLabel: fohDay.count > 1 ? "FoH Day " + (i + 1) : "FoH Day",
     });

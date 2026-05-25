@@ -252,10 +252,17 @@ function rankCandidates(candidates, currentShifts, priorShifts, prevAssigneeId) 
 // per-candidate so legacy callers that don't pass it keep raw-cap
 // behaviour. v1.9.0: scope narrowed to `holiday` requests only (was
 // also subtracting `dayoff` pre-v1.9.0).
+// v1.11.0: `minConsecutiveDaysOff` and `maxConsecutiveWorkingDays` are
+// extracted from generateWeek's args and threaded through to
+// hasConsecutiveDaysOff (step 6) and withinMaxConsecutiveWorkingDays
+// (step 6.5). Both default to the helper's own defaults (2 and 5) when
+// callers don't supply them, so legacy /settings docs and bare callers
+// keep the pre-v1.11.0 behaviour byte-for-byte.
 function buildCandidates(
   slotDef, dateIso, date, weekStart,
   employees, requests, currentShifts, strictPreference,
-  holidayDaysByEmp, crossWeekShifts
+  holidayDaysByEmp, crossWeekShifts,
+  minConsecutiveDaysOff, maxConsecutiveWorkingDays
 ) {
   const all = Object.values(employees || {});
   if (all.length === 0) return { eligible: [], reason: "no-role-match" };
@@ -316,7 +323,7 @@ function buildCandidates(
       ...currentShifts,
       [simKey]: { employeeId: e.id, date: dateIso, id: simKey },
     };
-    return hasConsecutiveDaysOff(e.id, weekStart, sim, undefined, crossWeekShifts);
+    return hasConsecutiveDaysOff(e.id, weekStart, sim, minConsecutiveDaysOff, crossWeekShifts);
   });
   if (restedOk.length === 0) return { eligible: [], reason: "no-2-off" };
 
@@ -333,7 +340,7 @@ function buildCandidates(
       ...currentShifts,
       [simKey]: { employeeId: e.id, date: dateIso, id: simKey },
     };
-    return withinMaxConsecutiveWorkingDays(e.id, weekStart, sim, undefined, crossWeekShifts);
+    return withinMaxConsecutiveWorkingDays(e.id, weekStart, sim, maxConsecutiveWorkingDays, crossWeekShifts);
   });
   if (cappedOk.length === 0) return { eligible: [], reason: "max-consecutive" };
 
@@ -530,6 +537,20 @@ export function generateWeek(args) {
     preserveAssignments: args.preserveAssignments !== false,
   };
 
+  // v1.11.0: configurable scheduling rules. All three default to the
+  // pre-v1.11.0 hard-coded values when the caller doesn't pass them:
+  //   - minConsecutiveDaysOff:    2 (matches hasConsecutiveDaysOff default)
+  //   - maxConsecutiveWorkingDays: 5 (matches withinMaxConsecutiveWorkingDays default)
+  //   - dayRequiredRoles:          null → slotsForDay falls back to SECTIONS
+  // So legacy / test callers get identical behaviour.
+  const minConsecutiveDaysOff = Number.isFinite(args.minConsecutiveDaysOff)
+    ? args.minConsecutiveDaysOff
+    : 2;
+  const maxConsecutiveWorkingDays = Number.isFinite(args.maxConsecutiveWorkingDays)
+    ? args.maxConsecutiveWorkingDays
+    : 5;
+  const dayRequiredRoles = args.dayRequiredRoles || null;
+
   // No template → nothing meaningful to do. Caller should ensure this is
   // populated (AppShell waits for `ready`), but stay defensive.
   if (!shiftTemplate) {
@@ -540,7 +561,10 @@ export function generateWeek(args) {
     };
   }
 
-  const slots = slotsForDay(shiftTemplate);
+  // v1.11.0: pass the configured per-section required-role override into
+  // slotsForDay. When `dayRequiredRoles` is null (legacy call), slotsForDay
+  // falls back to the SECTIONS defaults — pre-v1.11.0 behaviour.
+  const slots = slotsForDay(shiftTemplate, dayRequiredRoles);
   const slotsByKey = {};
   for (let i = 0; i < slots.length; i++) slotsByKey[slots[i].key] = slots[i];
   const dates = visibleWeekDates(weekStart, openingDays);
@@ -597,7 +621,8 @@ export function generateWeek(args) {
       const built = buildCandidates(
         slot, dIso, date, weekStart,
         employees, requests, workingShifts, strictPreference, holidayDaysByEmp,
-        crossWeekShifts
+        crossWeekShifts,
+        minConsecutiveDaysOff, maxConsecutiveWorkingDays
       );
       work.push({
         dateIso: dIso,
@@ -622,7 +647,8 @@ export function generateWeek(args) {
     const built = buildCandidates(
       slot, entry.dateIso, entry.date, weekStart,
       employees, requests, pendingShifts, strictPreference, holidayDaysByEmp,
-      crossWeekShifts
+      crossWeekShifts,
+      minConsecutiveDaysOff, maxConsecutiveWorkingDays
     );
     if (built.eligible.length === 0) {
       unfilledCells.push({

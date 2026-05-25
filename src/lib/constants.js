@@ -139,6 +139,53 @@ export const DEFAULT_GENERATOR_BANNER_DURATION_SEC = 5;
 export const GENERATOR_BANNER_DURATION_MIN = 1;
 export const GENERATOR_BANNER_DURATION_MAX = 60;
 
+// ── Scheduling rules (v1.11.0) ───────────────────────────────────────────
+// Three rules that used to be hard-coded constants become first-class
+// /settings knobs in v1.11.0. Defaults preserve every prior version's
+// behaviour byte-for-byte — legacy /settings docs (lacking the new
+// fields) read the defaults via the defensive-fallback pattern in
+// ScheduleGrid.jsx, so nothing changes on the wire until the manager
+// edits the new Settings → "Scheduling rules" accordion section.
+//
+// Each rule affects BOTH the generator HARD filter AND the manual picker
+// SOFT warning — they're scheduling-policy knobs, not generator-only
+// knobs (which is why they live in their own Settings section rather
+// than under Auto-generator).
+//
+// 1. minConsecutiveDaysOff (1..3, default 2)
+//    Was hard-coded in `hasConsecutiveDaysOff` (schedule-logic.js).
+//    Both call sites — generator.js step 6, ShiftFormModal restWarning —
+//    used to pass `undefined` so the helper's own default applied.
+//    v1.11.0 threads the configured value through every call site.
+// 2. maxConsecutiveWorkingDays (3..14, default 5)
+//    Was hard-coded in `withinMaxConsecutiveWorkingDays` (schedule-
+//    logic.js). Same `undefined` pattern at generator.js step 6.5 and
+//    ShiftFormModal maxConsecutiveWarning. Always-on — no disable
+//    toggle (locked decision: labor wellness rule, the cap is the
+//    knob, not its existence).
+// 3. dayRequiredRoles (object keyed by section)
+//    Was hard-coded as `SECTIONS.kitchen.dayRequiredRoles = ["Chef"]`
+//    in constants.js. SECTIONS stays put as the system fallback when
+//    `slotsForDay` is called bare (tests, future call sites). The
+//    /settings override flows through `slotsForDay(template, override)`
+//    so every consumer of `slotDef.requiredRoles` (picker filter,
+//    `roleMatchesSlot` used by generator + Swap) inherits the change.
+//    Empty list per-section = permissive (any of section's
+//    coversRoles). Default mirrors v1.10.x — FoH empty, Kitchen
+//    requires Chef.
+export const DEFAULT_MIN_CONSECUTIVE_DAYS_OFF = 2;
+export const MIN_CONSECUTIVE_DAYS_OFF_MIN = 1;
+export const MIN_CONSECUTIVE_DAYS_OFF_MAX = 3;
+
+export const DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS = 5;
+export const MAX_CONSECUTIVE_WORKING_DAYS_MIN = 3;
+export const MAX_CONSECUTIVE_WORKING_DAYS_MAX = 14;
+
+export const DEFAULT_DAY_REQUIRED_ROLES = Object.freeze({
+  foh: Object.freeze([]),
+  kitchen: Object.freeze(["Chef"]),
+});
+
 // ── Status colours (alpha-tinted, matches Bookings pattern) ──────────────
 // v0.11.0: each entry references CSS vars that flip on dark mode.
 export const STATUS_COLORS = Object.freeze({

@@ -27,6 +27,13 @@ import {
   DEFAULT_GENERATOR_BANNER_DURATION_SEC,
   GENERATOR_BANNER_DURATION_MIN,
   GENERATOR_BANNER_DURATION_MAX,
+  DEFAULT_MIN_CONSECUTIVE_DAYS_OFF,
+  MIN_CONSECUTIVE_DAYS_OFF_MIN,
+  MIN_CONSECUTIVE_DAYS_OFF_MAX,
+  DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS,
+  MAX_CONSECUTIVE_WORKING_DAYS_MIN,
+  MAX_CONSECUTIVE_WORKING_DAYS_MAX,
+  DEFAULT_DAY_REQUIRED_ROLES,
 } from "../lib/constants.js";
 import {
   startOfWeek,
@@ -101,8 +108,40 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         )
       : DEFAULT_GENERATOR_BANNER_DURATION_SEC;
 
+  // v1.11.0: configurable scheduling rules. Same defensive-read +
+  // clamp pattern as the v1.9.4 generator-banner reads above. All three
+  // values fall back to defaults that mirror the pre-v1.11.0 hard-coded
+  // behaviour, so legacy /settings docs render byte-identically.
+  // dayRequiredRoles is the per-section override map; null/missing →
+  // slotsForDay falls back to SECTIONS.kitchen.dayRequiredRoles +
+  // SECTIONS.foh's (absent) entry.
+  const minConsecutiveDaysOff =
+    settings && Number.isFinite(settings.minConsecutiveDaysOff)
+      ? Math.max(
+          MIN_CONSECUTIVE_DAYS_OFF_MIN,
+          Math.min(MIN_CONSECUTIVE_DAYS_OFF_MAX, settings.minConsecutiveDaysOff)
+        )
+      : DEFAULT_MIN_CONSECUTIVE_DAYS_OFF;
+  const maxConsecutiveWorkingDays =
+    settings && Number.isFinite(settings.maxConsecutiveWorkingDays)
+      ? Math.max(
+          MAX_CONSECUTIVE_WORKING_DAYS_MIN,
+          Math.min(MAX_CONSECUTIVE_WORKING_DAYS_MAX, settings.maxConsecutiveWorkingDays)
+        )
+      : DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS;
+  const dayRequiredRoles =
+    settings && settings.dayRequiredRoles && typeof settings.dayRequiredRoles === "object"
+      ? settings.dayRequiredRoles
+      : DEFAULT_DAY_REQUIRED_ROLES;
+
   // Slot definitions for the week (same every day until per-day overrides land).
-  const slots = useMemo(function () { return slotsForDay(template); }, [template]);
+  // v1.11.0: pass dayRequiredRoles so the resulting slotDef.requiredRoles
+  // reflects the manager's per-section configuration. slotsForDay's bare-
+  // call behaviour is preserved (override is optional).
+  const slots = useMemo(
+    function () { return slotsForDay(template, dayRequiredRoles); },
+    [template, dayRequiredRoles]
+  );
 
   // v1.4.0: slot lookup by key for the generator-results modal. Built off
   // the same `slots` array so it stays in sync if the template changes.
@@ -828,6 +867,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           shiftTemplate={shiftTemplate}
           openingDays={openingDays}
           strictPreference={strictPreference}
+          minConsecutiveDaysOff={minConsecutiveDaysOff}
+          maxConsecutiveWorkingDays={maxConsecutiveWorkingDays}
+          dayRequiredRoles={dayRequiredRoles}
           isMobile={isMobile}
           actions={actions}
           onResult={handleGenerateResult}
@@ -1336,6 +1378,8 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         weekShifts={weekShifts}
         priorWeekShifts={priorWeekShifts}
         nextWeekShifts={nextWeekShifts}
+        minConsecutiveDaysOff={minConsecutiveDaysOff}
+        maxConsecutiveWorkingDays={maxConsecutiveWorkingDays}
         isMobile={isMobile}
         onClose={closeModal}
         onSave={handleSave}
