@@ -84,6 +84,7 @@ import {
   normalizeOpeningDays,
   materializeShiftTemplate,
   materializeShiftTemplateBlock as materializeBlock,
+  resolveDayRequiredRoles,
 } from "../lib/schedule-logic.js";
 import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 
@@ -523,42 +524,39 @@ export default function Settings({
   }
 
   // (3) dayRequiredRoles — per-section pill multi-select.
-  // Resolve the live value for each section: prefer /settings override
-  // when it's a valid array, otherwise fall back to the default. The
-  // default itself mirrors v1.10.x state (FoH empty, Kitchen ["Chef"]).
-  // EMPTY ARRAY in /settings is honoured — that's a manager-set
-  // "permissive" choice, not a missing value, and DEFAULT_DAY_REQUIRED_ROLES
-  // would silently override it if we used `|| []` here.
+  // v1.12.0: resolver delegates to the shared schedule-logic helper which
+  // accepts either the v1.12.0 per-role boolean object shape OR the
+  // legacy v1.11.0 array shape and returns role names in SECTIONS source
+  // order. Empty/missing → DEFAULT_DAY_REQUIRED_ROLES fallback.
   function resolveDayRequiredFor(sectionKey) {
-    if (
-      settings && settings.dayRequiredRoles
-      && typeof settings.dayRequiredRoles === "object"
-      && Array.isArray(settings.dayRequiredRoles[sectionKey])
-    ) {
-      return settings.dayRequiredRoles[sectionKey];
-    }
-    return DEFAULT_DAY_REQUIRED_ROLES[sectionKey] || [];
+    return resolveDayRequiredRoles(settings && settings.dayRequiredRoles, sectionKey);
   }
-  // Pill click handler. Toggles the given role's presence in the
-  // sectionKey list, re-sorts to SECTIONS[sectionKey].roles source
-  // order so the stored value stays canonical (mirrors v1.8.2's
-  // recurringDaysOfWeek pattern), then writes the full
-  // dayRequiredRoles object (both sections) back to /settings.
+  // Pill click handler. Toggles the given role's presence for the
+  // section, then writes the full per-section per-role boolean object
+  // back to /settings. The boolean schema (v1.12.0) replaces the
+  // array-of-role-names schema (v1.11.0) because Firebase RTDB strips
+  // empty arrays to null on write — saving `kitchen: []` (manager's
+  // permissive choice) wrote nothing back, and the resolver's fallback
+  // re-painted the default-on pills (notably Chef) on next render.
+  // Booleans including `false` ARE preserved by Firebase, so the
+  // configured-but-permissive state now survives a round-trip. Both
+  // sections + every role within them are always written so the saved
+  // doc stays canonical.
   function onDayRequiredRoleToggle(sectionKey, role) {
-    const sectionRoles = (SECTIONS[sectionKey] && SECTIONS[sectionKey].roles) || [];
     const current = resolveDayRequiredFor(sectionKey);
     const has = current.indexOf(role) !== -1;
     const nextSet = has
       ? current.filter(function (r) { return r !== role; })
       : current.concat([role]);
-    // Re-sort to SECTIONS source order.
-    const nextSorted = sectionRoles.filter(function (r) { return nextSet.indexOf(r) !== -1; });
-    // Build the full per-section object so the saved doc stays canonical
-    // — even sections the manager didn't touch on this click are written
-    // with their current effective value.
     const fullObject = {};
     Object.keys(SECTIONS).forEach(function (k) {
-      fullObject[k] = k === sectionKey ? nextSorted : resolveDayRequiredFor(k);
+      const rolesForSection = (SECTIONS[k] && SECTIONS[k].roles) || [];
+      const sourceList = k === sectionKey ? nextSet : resolveDayRequiredFor(k);
+      const obj = {};
+      rolesForSection.forEach(function (r) {
+        obj[r] = sourceList.indexOf(r) !== -1;
+      });
+      fullObject[k] = obj;
     });
     saveSettings({ ...(settings || {}), dayRequiredRoles: fullObject });
   }
@@ -577,13 +575,6 @@ export default function Settings({
     kitchenDay:     blockError(form.kitchen.day,     blockHours),
     kitchenEvening: blockError(form.kitchen.evening, blockHours),
   };
-  const hasErrors =
-    opsErr !== null ||
-    openDaysErr !== null ||
-    errors.fohDay !== null ||
-    errors.fohEvening !== null ||
-    errors.kitchenDay !== null ||
-    errors.kitchenEvening !== null;
 
   // ── Per-section dirty flags (v0.10.0) ──────────────────────────────────
   // FoH/Kitchen derive from blockDirty comparison so the dot auto-clears
@@ -610,39 +601,54 @@ export default function Settings({
   // hours OR opening-days. Saved as part of the same Save click.
   const operatingDirty = hoursDirty || openDaysFormDirty;
 
-  // ── Save / Reset ───────────────────────────────────────────────────────
-  // v0.10.0: if errors exist, force-open the first section carrying an
-  // error so the validator messages become visible (collapsed sections
-  // hide them). The user can't reach a Save-disabled state without
-  // visible feedback.
-  function handleSave() {
-    if (hasErrors) {
-      // v0.12.0: opening-days error also forces the Operating Hours section
-      // open so the message becomes visible.
-      if (opsErr || openDaysErr) setOpenSection("hours");
-      else if (errors.fohDay || errors.fohEvening) setOpenSection("foh");
-      else if (errors.kitchenDay || errors.kitchenEvening) setOpenSection("kitchen");
-      return;
-    }
-    if (!fohDirty && !kitchenDirty && !hoursDirty && !openDaysFormDirty) return;
-    if (hoursDirty || openDaysFormDirty) {
-      const next = { ...(settings || {}) };
-      if (hoursDirty) {
-        next.operatingStart = hoursForm.operatingStart;
-        next.operatingEnd   = hoursForm.operatingEnd;
-      }
-      if (openDaysFormDirty) {
-        next.openingDays = { ...openingDaysForm };
-      }
-      saveSettings(next);
+  // ── Auto-save (v1.12.0) ────────────────────────────────────────────────
+  // The Save changes button is gone. Every section persists itself when
+  // dirty AND valid, on an 800 ms debounce after the last keystroke. The
+  // Display / Auto-generator / Scheduling rules sections kept their
+  // pre-v1.12.0 write-through pattern (they have no partial-input states
+  // — every change is atomic). Operating time + FoH + Kitchen need the
+  // debounce because partial inputs like "1" (typed before "11:00") would
+  // otherwise thrash writes / surface validation errors mid-typing.
+  //
+  // The debounce starts on every dependency change; the cleanup clears
+  // the pending timer so each new keystroke resets the wait. The save
+  // only fires when the section is dirty AND its validator returns null
+  // for every field — so partial / invalid input never reaches Firebase.
+  // Per-row error captions stay visible (they always did), which replaces
+  // the v0.10.0 "force-open the first error section on Save click"
+  // affordance.
+
+  // Operating time: hours + opening days. Single save covers both since
+  // they live on the same /settings doc.
+  useEffect(function () {
+    if (!operatingDirty) return undefined;
+    if (opsErr !== null || openDaysErr !== null) return undefined;
+    const t = setTimeout(function () {
+      saveSettings({
+        ...(settings || {}),
+        operatingStart: hoursForm.operatingStart,
+        operatingEnd:   hoursForm.operatingEnd,
+        openingDays:    { ...openingDaysForm },
+      });
       setHoursDirty(false);
-      // openDaysFormDirty auto-clears once the `settings` prop updates.
+      // openDaysFormDirty auto-clears once the settings prop updates.
+    }, 800);
+    return function () { clearTimeout(t); };
+  }, [operatingDirty, hoursForm, openingDaysForm, opsErr, openDaysErr, settings, saveSettings]);
+
+  // Shift template: FoH + Kitchen blocks. Saved as one doc so an in-flight
+  // FoH edit doesn't race a Kitchen save and overwrite each other's parts.
+  useEffect(function () {
+    const templateDirty = fohDirty || kitchenDirty;
+    if (!templateDirty) return undefined;
+    if (errors.fohDay !== null || errors.fohEvening !== null
+        || errors.kitchenDay !== null || errors.kitchenEvening !== null) {
+      return undefined;
     }
-    if (fohDirty || kitchenDirty) {
-      saveShiftTemplate(form);
-      // fohDirty/kitchenDirty auto-clear once the shiftTemplate prop updates.
-    }
-  }
+    const t = setTimeout(function () { saveShiftTemplate(form); }, 800);
+    return function () { clearTimeout(t); };
+  }, [fohDirty, kitchenDirty, form, errors.fohDay, errors.fohEvening,
+      errors.kitchenDay, errors.kitchenEvening, saveShiftTemplate]);
 
   function handleReset() {
     const ok = window.confirm(
@@ -662,13 +668,17 @@ export default function Settings({
     setHoursForm(defaultHours);
     setOpeningDaysForm(defaultOpenDays);
     saveShiftTemplate(defaults);
-    // v1.11.0: deep-clone DEFAULT_DAY_REQUIRED_ROLES so the saved doc
-    // gets a mutable plain-object shape (Object.freeze on the constant
-    // protects the export; Firebase doesn't care, but it's a code-
-    // hygiene win to never write a frozen object to /settings).
+    // v1.12.0: deep-clone DEFAULT_DAY_REQUIRED_ROLES (per-section per-role
+    // boolean map) so the saved doc gets a mutable plain-object shape.
+    // Object.freeze on the constant protects the export at every nesting
+    // level; we make a fresh copy at each section so future mutations
+    // don't try to write into a frozen reference.
     const defaultDayRequired = {};
     Object.keys(DEFAULT_DAY_REQUIRED_ROLES).forEach(function (k) {
-      defaultDayRequired[k] = DEFAULT_DAY_REQUIRED_ROLES[k].slice();
+      const src = DEFAULT_DAY_REQUIRED_ROLES[k] || {};
+      const copy = {};
+      Object.keys(src).forEach(function (role) { copy[role] = src[role] === true; });
+      defaultDayRequired[k] = copy;
     });
     saveSettings({
       operatingStart: OPERATING_HOURS.start,
@@ -776,13 +786,6 @@ export default function Settings({
       </div>
     );
   }
-
-  // ── Save button styling ────────────────────────────────────────────────
-  // Native `disabled` works but the visual cue is weak. Add explicit opacity
-  // + cursor override so the manager can tell at a glance.
-  const anyDirty = fohDirty || kitchenDirty || hoursDirty || openDaysFormDirty;
-  const saveDisabled = !anyDirty || hasErrors;
-  const saveStyle = saveDisabled ? { opacity: 0.5, cursor: "not-allowed" } : undefined;
 
   // v0.7.0: operating-hours row. Two time inputs in the same row layout
   // pattern as the template rows so the visual language stays consistent.
@@ -1307,11 +1310,14 @@ export default function Settings({
         </Collapsible>
       </div>
 
+      {/* v1.12.0: Save button removed; every section auto-saves on a 800 ms
+          debounce after the last valid edit. Reset stays — single-click
+          destructive action that's still worth keeping discoverable. */}
       <div
         style={{
           display: "flex",
           gap: 8,
-          justifyContent: "space-between",
+          justifyContent: "flex-end",
           marginTop: 16,
           flexWrap: "wrap",
         }}
@@ -1321,14 +1327,6 @@ export default function Settings({
           className: "mgt-hover-scale",
           onClick: handleReset,
           children: "Reset to defaults",
-        })}
-        {mkBtn({
-          variant: "primary",
-          className: "mgt-hover-scale",
-          onClick: handleSave,
-          disabled: saveDisabled,
-          style: saveStyle,
-          children: "Save changes",
         })}
       </div>
     </div>

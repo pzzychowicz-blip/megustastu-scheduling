@@ -967,6 +967,108 @@ separate Firebase project, same UI conventions).
   sessionStorage persistence (v1.6.0) works for the new section
   too.
 
+- **Past-week lockdown (v1.12.0):** any focus week whose Sunday is
+  strictly before today (`isPastWeek(weekStart, todayIso)` in
+  `schedule-logic.js`) becomes non-editable. ScheduleGrid derives a
+  single `isReadOnly` flag and threads it as `disabled` to
+  `<GenerateButton>` / `<SwapButton>` / `<UndoButton>` /
+  `<ClearButton>` (every nav-bar mutation entry point) and as
+  `readOnly` to `<ShiftFormModal>`. The modal opens normally so
+  cell info stays inspectable, but Save / Move-Swap / Clear / Reset
+  buttons are hidden, the assignee select + time inputs + role
+  pills are disabled, and a single Close button replaces the action
+  footer. A muted-amber banner above the grid says "This week is
+  in the past. Cells are read-only — switch to the current or a
+  future week to make edits." A defensive `useEffect` also drops
+  any active swap-mode state when `isReadOnly` flips true (catches
+  the "navigate backward mid-swap" edge). `cellClick` short-
+  circuits the swap branches when read-only so even stale state
+  can't trigger a mutation. Pill-highlight + jump-to-cell stay live
+  (read-only by nature). The current week is editable for the full
+  Mon..Sun span; the gate flips the first moment the manager moves
+  forward into a new week.
+
+- **Auto-generator monthly fairness (v1.12.0):** two independent
+  generator changes plus a new visibility surface.
+  - **Prior-week HARD deficit cap.** In `buildCandidates` step (5),
+    a new `priorActualByEmp` map (built once per `generateWeek` call
+    from `priorWeekShifts` via `countAssignedDates`) feeds a
+    `priorDeficit = max(0, priorActualCount - workingDaysPerWeek)`
+    subtraction. A 5-day employee who actually worked 6 dates last
+    week (whether by manager edit or by a relaxed-rules generator
+    pass) is capped at 4 this week. Two-week totals even out.
+    Reuses the `"over-quota"` reason code.
+  - **28-day rolling deficit ranking** in `rankCandidates`. Replaces
+    the v1.1.0 combined-load (this week + prior week) tiebreaker
+    with hours-deficit-desc (PRIMARY) → shifts-deficit-desc (tie-
+    break) → specialists (demoted from #2 → #4) → prevAssigneeId →
+    name. Source data is `monthlyAggregates` (pre-built by
+    `build28DayAggregates` in `schedule-logic.js`, memoised once
+    in `ScheduleGrid` and shared with `<MonthlyFairnessPanel>`).
+    Targets: `shiftsTarget = workingDaysPerWeek × 4 −
+    holidays(28-day window)`, `hoursTarget = shiftsTarget ×
+    avgShiftHours(preference, shiftTemplate)`. "either" preference
+    averages day + evening template hours; "day" / "evening"
+    average only the matching block side. The v1.1.0 7-day combined
+    load is GONE — the 28-day window subsumes it (it was a
+    narrower take on the same fairness idea).
+  - **`<MonthlyFairnessPanel>`** new component rendered below
+    `<WeeklyRequestsPreview>`. One row per active employee: name +
+    `count/target` shifts + `Nh/target` hours + centre-anchored
+    120-px delta bar (red leftward when under-target, green right-
+    ward when over). Always visible (a hard panel — no chrome
+    hidden when employees are at target). Same memoised
+    `monthlyAggregates` as the generator, so what the panel shows
+    is what the generator will act on. Hover-scale via the shared
+    `.mgt-hover-scale` utility (v1.9.0 visual identity preserved).
+
+- **Chef pill bug fix (v1.12.0):** `dayRequiredRoles` schema flipped
+  from v1.11.0's `{foh: ["Bar"], kitchen: ["Chef"]}` array-of-role-
+  names per section to v1.12.0's `{foh: {Bar: false, Floor: false},
+  kitchen: {Chef: false, Plating: false, Pot: false}}` per-role
+  boolean object. Root cause of the bug: Firebase RTDB strips empty
+  arrays to null on write, so saving `kitchen: []` (manager's
+  permissive choice) wrote nothing back; the v1.11.0 resolver's
+  `Array.isArray(settings.dayRequiredRoles[section])` check failed,
+  fell back to `DEFAULT_DAY_REQUIRED_ROLES.kitchen === ["Chef"]`,
+  and the Chef pill sprang back into selected state on next render.
+  Booleans (`false` included) ARE preserved by Firebase, so the
+  configured-but-permissive state now survives a round-trip.
+  New lifted helper `resolveDayRequiredRoles(settingsValue,
+  sectionKey)` in `schedule-logic.js` accepts either shape (boolean
+  object OR legacy array) and returns the canonical role-name
+  array — used by both `slotsForDay` (internal) and `Settings.jsx`
+  (the pill UI). First pill click after upgrade rewrites the doc
+  into the new shape; no eager migration.
+  `SECTIONS.kitchen.dayRequiredRoles` was DELETED — the fallback
+  path now goes through `DEFAULT_DAY_REQUIRED_ROLES` instead of
+  SECTIONS, so the v1.1.0 system fallback field is dead weight.
+
+- **Settings auto-save — Save button removed (v1.12.0):** the
+  three explicit-save sections (Operating time, FoH, Kitchen) now
+  auto-save on a debounce, matching what Display / Auto-generator /
+  Scheduling rules already did since v0.10.0 / v1.0.0 / v1.11.0
+  respectively. Two new `useEffect`s in `Settings.jsx`:
+  - **Operating time** (hours + opening days): writes a single
+    `saveSettings({...settings, operatingStart, operatingEnd,
+    openingDays})` 800 ms after the last change. Gated on
+    `operatingDirty && opsErr === null && openDaysErr === null` so
+    partial inputs ("1" before "11:00") don't fire.
+  - **Template** (FoH + Kitchen blocks combined): writes
+    `saveShiftTemplate(form)` 800 ms after the last change. Gated
+    on `(fohDirty || kitchenDirty) && all four block errors are
+    null`. Saving the whole template per call avoids the race
+    where an in-flight FoH save and a Kitchen save overwrite each
+    other's parts.
+  The Save button, `handleSave` function, force-open-first-error-
+  section logic, and `saveDisabled` / `anyDirty` / `hasErrors`
+  derivations are all gone. Per-section dirty dots stay (they
+  surface BOTH the pending-debounce window AND the invalid-state
+  window — useful feedback). Inline per-row error captions stay
+  (they always rendered; now they're the primary error feedback
+  surface, replacing the force-open affordance). Reset to defaults
+  stays (single-click action, no validation interdependency).
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -983,7 +1085,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.11.0)
+## File structure (current — v1.12.0)
 
 ```
 megustastu-scheduling/
@@ -1038,6 +1140,8 @@ megustastu-scheduling/
     │                                 "eager-shift-template-migration".
     │                                 v1.11.0: → 1.11.0, sha
     │                                 "configurable-scheduling-rules".
+    │                                 v1.12.0: → 1.12.0, sha
+    │                                 "past-week-lock-fairness-autosave".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1131,6 +1235,23 @@ megustastu-scheduling/
     │   │                           Settings → "Scheduling rules" accordion
     │   │                           section + ScheduleGrid defensive reads +
     │   │                           generator thread-through.
+    │   │                           v1.12.0: DEFAULT_DAY_REQUIRED_ROLES shape
+    │   │                           flipped from per-section array of role
+    │   │                           names to per-section per-role boolean object
+    │   │                           ({foh: {Bar: false, Floor: false},
+    │   │                           kitchen: {Chef: true, Plating: false,
+    │   │                           Pot: false}}). Firebase RTDB strips empty
+    │   │                           arrays to null on write — the array shape
+    │   │                           broke the "manager configured Kitchen as
+    │   │                           permissive" state (Chef pill kept springing
+    │   │                           back). Booleans including false ARE
+    │   │                           preserved. Lazy reader for v1.11.0 array
+    │   │                           shape lives in resolveDayRequiredRoles
+    │   │                           (schedule-logic.js). Also: SECTIONS.kitchen.
+    │   │                           dayRequiredRoles DELETED — the fallback
+    │   │                           path now goes through DEFAULT_DAY_REQUIRED_
+    │   │                           ROLES; SECTIONS just lists per-section role
+    │   │                           membership.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -1243,6 +1364,35 @@ megustastu-scheduling/
     │   │                           just stops passing `undefined` at the
     │   │                           call sites in generator.js and
     │   │                           ShiftFormModal.jsx.
+    │   │                           v1.12.0: + isPastWeek(weekStart, todayIso)
+    │   │                           — true iff the focus week's Sunday is
+    │   │                           before today. Drives the read-only gate
+    │   │                           in ScheduleGrid. + resolveDayRequiredRoles
+    │   │                           (settingsValue, sectionKey) — reads both
+    │   │                           the v1.12.0 boolean-object shape AND the
+    │   │                           legacy v1.11.0 array shape and returns
+    │   │                           the canonical role-name array in SECTIONS
+    │   │                           source order. slotsForDay's internal
+    │   │                           resolveDayRequired was deleted; both
+    │   │                           slotsForDay and Settings.jsx now go
+    │   │                           through this single helper, so the
+    │   │                           v1.12.0 shape detection lives in one
+    │   │                           place. + avgShiftHours(preference,
+    │   │                           shiftTemplate) — average per-shift hours
+    │   │                           weighted by preference. + build28Day
+    │   │                           Aggregates({shifts, employees, weekStart,
+    │   │                           requests, shiftTemplate}) — returns
+    │   │                           {[empId]: {shiftsCount, hoursTotal,
+    │   │                           shiftsTarget, hoursTarget, shiftsDeficit,
+    │   │                           hoursDeficit}} over the 28-day window
+    │   │                           [weekStart - 21d, ..., weekStart + 6d].
+    │   │                           Used by both the generator's rankCandidates
+    │   │                           (hours+shifts deficit primary sort) and
+    │   │                           <MonthlyFairnessPanel> (chip-row UI).
+    │   │                           holidayDaysInWeekByEmployee unchanged —
+    │   │                           it already accepts any date array, so
+    │   │                           28-day callers pass a 28-element list
+    │   │                           without a signature change.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -1438,6 +1588,38 @@ megustastu-scheduling/
     │                               section configuration; roleMatchesSlot
     │                               (step 1) needed no change because it
     │                               reads requiredRoles off the slotDef.
+    │                               v1.12.0: two independent fairness
+    │                               changes plus a new arg.
+    │                               (a) buildCandidates signature grew
+    │                               a trailing `priorActualByEmp` arg.
+    │                               Step (5) cap now subtracts
+    │                               max(0, priorActual - rawCap) so an
+    │                               employee who actually worked over
+    │                               their workingDaysPerWeek last week
+    │                               carries the surplus forward as a
+    │                               this-week deficit. Reuses the
+    │                               existing "over-quota" reason code.
+    │                               generateWeek builds priorActualByEmp
+    │                               from priorWeekShifts (countAssignedDates
+    │                               per employee) once before the worklist
+    │                               loop. (b) rankCandidates REWRITTEN.
+    │                               Sort key (lowest wins):
+    │                               schedulingPriority → hoursDeficit DESC
+    │                               (NEW PRIMARY) → shiftsDeficit DESC
+    │                               (NEW TIEBREAK) → specialists →
+    │                               prevAssigneeId (v1.8.1) → name.
+    │                               Replaces the v1.1.0 combined-load
+    │                               (this week + prior week) tiebreaker
+    │                               — the 28-day window is a wider take
+    │                               on the same fairness idea. New
+    │                               generateWeek arg `monthlyAggregates`
+    │                               feeds the deficits — caller (Schedule
+    │                               Grid) pre-builds it via build28Day
+    │                               Aggregates and shares with Monthly
+    │                               FairnessPanel. Missing aggregates →
+    │                               sort degrades to specialists + name
+    │                               (legacy callers without monthly
+    │                               context still work).
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -1749,6 +1931,39 @@ megustastu-scheduling/
         │                           to <ShiftFormModal> (dayRequiredRoles
         │                           flows in through slotDef so the
         │                           modal needs no prop for it).
+        │                           v1.12.0: + isReadOnly derived next
+        │                           to todayIso via isPastWeek(weekStart,
+        │                           todayIso). Threaded as `disabled` to
+        │                           GenerateButton / SwapButton /
+        │                           UndoButton / ClearButton (all four
+        │                           now accept the prop and OR it with
+        │                           their self-disabled conditions) and
+        │                           as `readOnly` to ShiftFormModal.
+        │                           cellClick short-circuits the swap
+        │                           branches when isReadOnly so even
+        │                           stale swapMode state can't trigger
+        │                           a mutation. + useEffect that drops
+        │                           swapMode when isReadOnly flips true
+        │                           (catches the "navigate backward
+        │                           mid-swap" edge). + persistent
+        │                           muted-amber read-only banner above
+        │                           the grid: "🔒 This week is in the
+        │                           past. Cells are read-only…". Sits
+        │                           between navBar and swapBanner /
+        │                           generateBanner. + monthlyAggregates
+        │                           memo via build28DayAggregates(...)
+        │                           — single computation shared with
+        │                           <GenerateButton> (forwarded into
+        │                           generateWeek for the rankCandidates
+        │                           deficit sort) and <MonthlyFairnessPanel>
+        │                           (mounted directly below
+        │                           <WeeklyRequestsPreview>). The
+        │                           defensive-read for dayRequiredRoles
+        │                           unchanged — settings.dayRequiredRoles
+        │                           is now the per-role boolean object
+        │                           shape, but slotsForDay / resolveDay
+        │                           RequiredRoles handle either shape
+        │                           transparently.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -1817,6 +2032,26 @@ megustastu-scheduling/
         │                           flows in through slotsForDay's new
         │                           override arg (handled by
         │                           ScheduleGrid).
+        │                           v1.12.0: + readOnly prop (default
+        │                           false). When true, hides the Save /
+        │                           Move-Swap / Clear footer buttons +
+        │                           the Reset-times-and-role secondary
+        │                           button, replaces the whole action
+        │                           row with a single right-aligned
+        │                           Close button, disables the assignee
+        │                           <select>, disables the time inputs
+        │                           (mkInp passes `disabled` through),
+        │                           disables the role-picker pills (no
+        │                           onClick, hover-scale stripped, dim
+        │                           opacity on non-selected pills), and
+        │                           hides the "Show staff on day off /
+        │                           holiday" toggle (no point flipping
+        │                           it when the assignee can't change).
+        │                           Warning banners (rest / max-consec /
+        │                           preference / conflict) stay visible
+        │                           — historical context worth showing.
+        │                           ScheduleGrid passes readOnly when
+        │                           the focus week is in the past.
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
@@ -1927,6 +2162,53 @@ megustastu-scheduling/
         │                           "rules" so the new section's
         │                           open/closed state persists across
         │                           refresh.
+        │                           v1.12.0: TWO big shape changes plus
+        │                           the Save-button removal.
+        │                           (a) handleSave + the Save changes
+        │                           button + the force-open-first-error-
+        │                           section logic + saveDisabled /
+        │                           anyDirty / hasErrors derivations
+        │                           DELETED. Replaced by two debounced
+        │                           (800 ms) + validity-gated useEffects:
+        │                           one for operating-time (hours +
+        │                           opening days), one for the FoH+Kitchen
+        │                           template. Partial inputs ("1" before
+        │                           "11:00") don't fire the save until
+        │                           the value becomes valid. Per-section
+        │                           dirty dots stay (surface pending-
+        │                           debounce + invalid-state windows).
+        │                           Inline per-row error captions stay
+        │                           (replace force-open-first-error
+        │                           affordance). Reset to defaults stays.
+        │                           (b) onDayRequiredRoleToggle rewritten
+        │                           to build per-section per-role boolean
+        │                           objects ({foh: {Bar: false, Floor: false},
+        │                           kitchen: {Chef: false, ...}}) and
+        │                           never write empty arrays — Firebase
+        │                           preserves false but strips empty arrays
+        │                           to null (the v1.11.0 Chef-pill bug).
+        │                           resolveDayRequiredFor now delegates
+        │                           to the lifted resolveDayRequiredRoles
+        │                           helper in schedule-logic.js.
+        │                           handleReset also updated to deep-clone
+        │                           the new boolean-object shape (not
+        │                           array.slice()).
+        ├── MonthlyFairnessPanel.jsx v1.12.0: NEW. Rolling 28-day fairness
+        │                           summary, rendered below
+        │                           <WeeklyRequestsPreview>. One row per
+        │                           active employee: name + count/target
+        │                           shifts + Nh/target hours + 120-px
+        │                           centre-anchored delta bar (red leftward
+        │                           when under-target, green rightward when
+        │                           over). Sort: hoursDeficit DESC →
+        │                           shiftsDeficit DESC → name (matches
+        │                           the generator's rankCandidates order).
+        │                           Always visible — hard panel, no chrome
+        │                           hidden when employees are at target.
+        │                           Reads pre-built monthlyAggregates from
+        │                           ScheduleGrid (same memo the generator
+        │                           consumes — panel & generator stay in
+        │                           lockstep).
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
@@ -1994,6 +2276,16 @@ megustastu-scheduling/
         │                           the pre-v1.11.0 hard-coded values
         │                           (2 / 5 / null) → byte-identical
         │                           behaviour for legacy /settings docs.
+        │                           v1.12.0: + monthlyAggregates prop
+        │                           (pre-built by ScheduleGrid via
+        │                           build28DayAggregates) forwarded
+        │                           into generateWeek — drives the
+        │                           new hours+shifts-deficit sort in
+        │                           rankCandidates. + disabled prop
+        │                           ORs with the existing self-disabled
+        │                           (!shiftTemplate || employeeCount === 0)
+        │                           conditions; tooltip switches to
+        │                           "Past weeks are read-only" when set.
         ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
         │                           Overlay. Shows the bullet list of
         │                           what the generator will do +
@@ -2050,6 +2342,12 @@ megustastu-scheduling/
         │                           v1.10.0: physical neighbour changed —
         │                           SwapButton is now followed by the
         │                           new UndoButton, then ClearButton.
+        │                           v1.12.0: + disabled prop. When set,
+        │                           the click is a no-op, the button
+        │                           paints 0.5 opacity with not-allowed
+        │                           cursor, and the tooltip switches to
+        │                           "Past weeks are read-only" (overrides
+        │                           the active / inactive tooltips).
         ├── UndoButton.jsx          v1.10.0: NEW. Schedule nav-bar undo
         │                           affordance. Placed between SwapButton
         │                           and ClearButton. Props: stack (from
@@ -2062,6 +2360,10 @@ megustastu-scheduling/
         │                           the manager what they're about to
         │                           undo before they click; tooltip
         │                           carries the same info for clarity.
+        │                           v1.12.0: + disabled prop. ORs with
+        │                           the existing empty-stack disable;
+        │                           tooltip switches to "Past weeks are
+        │                           read-only" when externally disabled.
         ├── ClearButton.jsx         v1.1.0: NEW. "Clear…" entry point
         │                           in the Schedule nav bar between
         │                           Generate and Export. Owns the
@@ -2081,6 +2383,10 @@ megustastu-scheduling/
         │                           when restoreShifts came out empty
         │                           (defensive — modal blocks the
         │                           zero-id path).
+        │                           v1.12.0: + disabled prop. When set,
+        │                           the click is a no-op, the button
+        │                           paints disabled, and the tooltip
+        │                           switches to "Past weeks are read-only".
         ├── ClearConfirmModal.jsx   v1.1.0: NEW. Scope picker + confirm.
         │                           Buttons for Whole week / one per
         │                           open day, each showing the live
@@ -2311,13 +2617,23 @@ megustastu-scheduling/
                                                      // days across the 21-day
                                                      // [prior, focus, next]
                                                      // window. HARD + SOFT.
-      dayRequiredRoles?: {                           // v1.11.0 — default
-        foh: string[],                                // {foh: [],
-        kitchen: string[]                             //  kitchen: ["Chef"]}.
-      } }                                            // Per-section override
-                                                     // for slotDef.requiredRoles;
-                                                     // empty array per section
-                                                     // = permissive.
+      dayRequiredRoles?: {                           // v1.12.0 shape —
+        foh:     { Bar: bool, Floor: bool },          // per-section per-role
+        kitchen: { Chef: bool, Plating: bool,         // boolean object.
+                   Pot: bool }                        // Default: {foh: {Bar:
+      } }                                            //  false, Floor: false},
+                                                     //  kitchen: {Chef: true,
+                                                     //  Plating: false, Pot:
+                                                     //  false}}. Firebase
+                                                     // preserves false (unlike
+                                                     // empty arrays) so the
+                                                     // "configured permissive"
+                                                     // state survives a round-
+                                                     // trip — fixes the v1.11.0
+                                                     // Chef-pill bug. Legacy
+                                                     // v1.11.0 array shape
+                                                     // still readable via
+                                                     // resolveDayRequiredRoles.
 ```
 
 ---

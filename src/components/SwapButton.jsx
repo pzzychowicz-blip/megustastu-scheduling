@@ -16,17 +16,20 @@
 //   isMobile   (bool)             — currently unused; kept for parity with
 //                                   other nav-bar buttons in case the hint
 //                                   needs a mobile-specific tweak later
+//   disabled   (bool)             — v1.12.0; greys out the button and
+//                                   no-ops the click. Past-week lockdown
+//                                   in ScheduleGrid passes this.
 //   onToggle   (fn)               — fires when the button is clicked
 
 import { BTN } from "../lib/constants.js";
 
-export default function SwapButton({ active, onToggle }) {
+export default function SwapButton({ active, onToggle, disabled }) {
   // v1.7.0: when active, the button paints in the yellow warning
   // palette so it visually matches the source-cell pulse + swap banner
   // (one swap-mode visual identity, distinct from accent-blue / green).
   // Inactive state stays in the neutral secondary palette to read as
   // a regular nav-bar tool alongside Generate / Clear.
-  const style = active
+  const baseStyle = active
     ? {
         ...BTN.base,
         padding: "6px 12px",
@@ -42,16 +45,27 @@ export default function SwapButton({ active, onToggle }) {
         padding: "6px 12px",
         fontSize: 13,
       };
+  const style = disabled
+    ? { ...baseStyle, opacity: 0.5, cursor: "not-allowed" }
+    : baseStyle;
+
+  function handleClick() {
+    if (disabled) return;
+    if (onToggle) onToggle();
+  }
 
   return (
     <button
       type="button"
       className="mgt-hover-scale"
-      onClick={onToggle}
+      onClick={handleClick}
+      disabled={disabled}
       style={style}
-      title={active
-        ? "Click a cell to choose source / target, or click again to cancel"
-        : "Toggle Swap mode to move or swap an assignment in two clicks"}
+      title={disabled
+        ? "Past weeks are read-only"
+        : active
+          ? "Click a cell to choose source / target, or click again to cancel"
+          : "Toggle Swap mode to move or swap an assignment in two clicks"}
     >
       {active ? "Swap: cancel" : "Swap…"}
     </button>

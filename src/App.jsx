@@ -21,9 +21,9 @@ import AppShell from "./components/AppShell.jsx";
 
 // ── App signature ────────────────────────────────────────────────────────
 export const __APP_SIGNATURE__ = Object.freeze({
-  version: "1.11.0",
-  build: "2026-05-25",
-  sha: "configurable-scheduling-rules",
+  version: "1.12.0",
+  build: "2026-05-26",
+  sha: "past-week-lock-fairness-autosave",
 });
 
 // Expose for DevTools / debugging.

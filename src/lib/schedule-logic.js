@@ -9,7 +9,7 @@
 //
 // NO React. NO Firebase. Just data in → data out. Easy to reason about.
 
-import { SECTIONS, OPERATING_HOURS } from "./constants.js";
+import { SECTIONS, OPERATING_HOURS, DEFAULT_DAY_REQUIRED_ROLES } from "./constants.js";
 
 // ── ISO date helpers ─────────────────────────────────────────────────────
 // We use "YYYY-MM-DD" strings as the canonical date identifier in Firebase
@@ -49,6 +49,22 @@ export function weekDates(startDate) {
   const arr = [];
   for (let i = 0; i < 7; i++) arr.push(addDays(startDate, i));
   return arr;
+}
+
+// v1.12.0: a week is "past" iff its Sunday is strictly before today.
+// `weekStart` is the Monday-anchored Date; `todayIso` is the canonical
+// "YYYY-MM-DD" string of today's date. ISO date strings compare
+// lexicographically the same as chronologically, so direct < works.
+//
+// Used by ScheduleGrid to gate write paths (Generate / Swap / Clear /
+// Undo buttons + ShiftFormModal save) when the manager has navigated
+// to a historical week. Cells stay viewable; only mutations are blocked.
+// The current week stays editable for the whole Mon..Sun span; the
+// gate flips the first moment the manager moves forward into a new
+// week (Monday morning their local time).
+export function isPastWeek(weekStart, todayIso) {
+  const sundayIso = isoDate(addDays(weekStart, 6));
+  return sundayIso < todayIso;
 }
 
 // ── Opening-days filter (v0.12.0, per-day-part since v1.3.0) ────────────
@@ -281,35 +297,73 @@ function slotTimeFor(block, sectionKey, dayPart, index) {
   return { start: start, end: block.end };
 }
 
+// v1.12.0: resolver that takes a /settings.dayRequiredRoles value (which may
+// be a v1.12.0 per-role boolean object, a v1.11.0 array of role names, or
+// missing entirely) and returns the canonical array of required role names
+// for a single section. Used by `slotsForDay` and by Settings.jsx so both
+// stay in lockstep about how to interpret the saved value.
+//
+// Why this exists: v1.11.0 stored dayRequiredRoles as `{foh: [...],
+// kitchen: [...]}`. Firebase RTDB strips empty arrays to null on write,
+// so when the manager deselected Chef (Kitchen → []) Firebase wrote
+// nothing back, the resolver fell back to `DEFAULT_DAY_REQUIRED_ROLES`
+// (which had `kitchen: ["Chef"]`), and the pill sprang back into the
+// selected state on next render. v1.12.0 swaps to per-role booleans
+// (`{foh: {Bar: false, Floor: false}, kitchen: {Chef: false, ...}}`).
+// Firebase preserves `false`, so the configured-but-permissive state
+// survives a round-trip. The legacy v1.11.0 array shape stays readable
+// here for back-compat — first write from the new pill UI replaces it
+// with the boolean object.
+//
+// Returns role names in SECTIONS source order so the array is canonical.
+export function resolveDayRequiredRoles(settingsValue, sectionKey) {
+  const sectionRoles = (SECTIONS[sectionKey] && SECTIONS[sectionKey].roles) || [];
+  const raw = settingsValue && typeof settingsValue === "object"
+    ? settingsValue[sectionKey]
+    : null;
+
+  // v1.12.0: per-role boolean object.
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return sectionRoles.filter(function (role) { return raw[role] === true; });
+  }
+  // v1.11.0 legacy: array of role names. Filter to SECTIONS source order
+  // so consumers don't have to.
+  if (Array.isArray(raw)) {
+    return sectionRoles.filter(function (role) { return raw.indexOf(role) !== -1; });
+  }
+  // Missing — fall back to DEFAULT_DAY_REQUIRED_ROLES, which is itself the
+  // new per-role boolean shape. Same filter pattern.
+  const fallback = DEFAULT_DAY_REQUIRED_ROLES[sectionKey];
+  if (fallback && typeof fallback === "object" && !Array.isArray(fallback)) {
+    return sectionRoles.filter(function (role) { return fallback[role] === true; });
+  }
+  if (Array.isArray(fallback)) {
+    return sectionRoles.filter(function (role) { return fallback.indexOf(role) !== -1; });
+  }
+  return [];
+}
+
 // v1.11.0: optional second arg `dayRequiredRolesOverride` lets callers pass
 // a configured per-section required-role map (from /settings.dayRequiredRoles).
-// Shape: `{foh: [...], kitchen: [...]}`. When provided AND the section's
-// entry is an array, it WINS over the SECTIONS hard-coded default — even an
-// explicit empty array, which means "permissive: any of coversRoles". This
-// is intentional: the manager's "no requirements" choice must be honoured,
-// not silently replaced by the section's hard-coded default.
 //
-// When the override is null/undefined OR a section's entry is non-array,
-// `slotsForDay` falls back to `SECTIONS[section].dayRequiredRoles || []` —
-// byte-identical to the pre-v1.11.0 behaviour. Bare callers (tests,
-// legacy code paths) continue to work without modification.
+// v1.12.0: accepts BOTH the v1.12.0 per-role boolean object shape
+// (`{foh: {Bar: false, Floor: false}, kitchen: {Chef: true, ...}}`) and
+// the legacy v1.11.0 array shape (`{foh: [...], kitchen: [...]}`) via
+// the shared `resolveDayRequiredRoles` helper. The schema flipped to
+// per-role booleans because Firebase RTDB strips empty arrays to null,
+// which broke v1.11.0's "configured empty" state for Kitchen (the Chef
+// pill kept springing back). Booleans survive the round-trip.
+//
+// When the override is null/undefined OR a section's entry is neither
+// an array nor a boolean object, the resolver falls back to
+// `DEFAULT_DAY_REQUIRED_ROLES[section]` — which mirrors the pre-v1.11.0
+// SECTIONS hard-coded default. Bare callers (tests, legacy code paths)
+// continue to work without modification.
 export function slotsForDay(template, dayRequiredRolesOverride) {
   const slots = [];
 
-  // Resolve required-roles per section once. Override array wins; otherwise
-  // SECTIONS default.
-  function resolveDayRequired(sectionKey) {
-    if (
-      dayRequiredRolesOverride
-      && typeof dayRequiredRolesOverride === "object"
-      && Array.isArray(dayRequiredRolesOverride[sectionKey])
-    ) {
-      return dayRequiredRolesOverride[sectionKey];
-    }
-    return (SECTIONS[sectionKey] && SECTIONS[sectionKey].dayRequiredRoles) || [];
-  }
-  const kitchenRequired = resolveDayRequired("kitchen");
-  const fohRequired = resolveDayRequired("foh");
+  const kitchenRequired = resolveDayRequiredRoles(dayRequiredRolesOverride, "kitchen");
+  const fohRequired = resolveDayRequiredRoles(dayRequiredRolesOverride, "foh");
 
   // Kitchen day
   const kitDay = template.kitchen.day;
@@ -634,6 +688,142 @@ export function holidayDaysInWeekByEmployee(requestsMap, dates) {
   const counts = {};
   for (const id in out) counts[id] = Object.keys(out[id]).length;
   return counts;
+}
+
+// ── 28-day rolling fairness aggregates (v1.12.0) ────────────────────────
+// Rolling 28-day window ending at the focus week's Sunday. Window =
+// [weekStart - 21d, ..., weekStart + 6d] = 28 dates. Smooth across
+// month boundaries (no calendar reset); divides cleanly into the
+// existing 7-day fairness window so the generator's prior-week deficit
+// cap and this longer-horizon ranking compose without weird gaps.
+//
+// Returns { [empId]: { shiftsCount, hoursTotal, shiftsTarget, hoursTarget,
+//                       shiftsDeficit, hoursDeficit } }.
+//
+// Used in two places:
+//   1. generator.js `rankCandidates` — hours-deficit-desc (primary) +
+//      shifts-deficit-desc (tiebreak) replace the v1.1.0 combined-load
+//      tiebreaker. Employees who fell behind on hours/shifts over the
+//      last 4 weeks get picked first this week.
+//   2. MonthlyFairnessPanel — same map drives the chip-row visibility
+//      surface below the weekly request preview. Single source so the
+//      panel and the generator stay in lockstep.
+//
+// Targets per employee:
+//   shiftsTarget = workingDaysPerWeek × 4 − holiday days in the 28-day
+//                  window (Math.max floor at 0). Holiday subtraction
+//                  mirrors v1.9.0's per-week effective-cap math.
+//   hoursTarget  = shiftsTarget × avgShiftHours(preference, shiftTemplate)
+//
+// Deficits are non-negative (max(0, target − actual)). Over-target
+// employees register 0 deficit; they sort with the same "no fairness
+// claim" weight as employees exactly at target.
+function timeToMinutes(s) {
+  if (!s) return 0;
+  const parts = String(s).split(":");
+  if (parts.length !== 2) return 0;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+function hoursBetween(startStr, endStr) {
+  const minutes = timeToMinutes(endStr) - timeToMinutes(startStr);
+  return minutes > 0 ? minutes / 60 : 0;
+}
+
+// Average hours per shift the employee would take, given their
+// preference and the active template. "day" averages the day-blocks
+// (FoH day + Kitchen day per-slot times); "evening" averages the
+// evening-blocks; "either" / unset averages across all blocks. Used
+// only by the monthly fairness target — the picker / generator pick
+// per-cell hours, not averages.
+export function avgShiftHours(preference, shiftTemplate) {
+  if (!shiftTemplate) return 0;
+  const blocks = [];
+  const wantDay = preference === "day" || preference === "either" || !preference;
+  const wantEve = preference === "evening" || preference === "either" || !preference;
+  if (wantDay) {
+    if (shiftTemplate.foh && shiftTemplate.foh.day) blocks.push(shiftTemplate.foh.day);
+    if (shiftTemplate.kitchen && shiftTemplate.kitchen.day) blocks.push(shiftTemplate.kitchen.day);
+  }
+  if (wantEve) {
+    if (shiftTemplate.foh && shiftTemplate.foh.evening) blocks.push(shiftTemplate.foh.evening);
+    if (shiftTemplate.kitchen && shiftTemplate.kitchen.evening) blocks.push(shiftTemplate.kitchen.evening);
+  }
+  let total = 0;
+  let count = 0;
+  for (let i = 0; i < blocks.length; i++) {
+    const times = Array.isArray(blocks[i].times) ? blocks[i].times : [];
+    for (let j = 0; j < times.length; j++) {
+      const h = hoursBetween(times[j].start, times[j].end);
+      if (h > 0) { total += h; count++; }
+    }
+  }
+  return count > 0 ? total / count : 0;
+}
+
+export function build28DayAggregates(args) {
+  const out = {};
+  if (!args || !args.employees || !args.weekStart) return out;
+  const shifts = args.shifts || {};
+  const employees = args.employees;
+  const weekStart = args.weekStart;
+  const requests = args.requests || {};
+  const shiftTemplate = args.shiftTemplate || null;
+
+  const empList = Object.values(employees);
+  if (empList.length === 0) return out;
+
+  // 28 dates ending at this focus week's Sunday.
+  const dates = [];
+  for (let i = -21; i <= 6; i++) dates.push(addDays(weekStart, i));
+  const dateIsoSet = {};
+  for (let i = 0; i < dates.length; i++) dateIsoSet[isoDate(dates[i])] = true;
+
+  // Per-employee accumulators. Initialize for every passed-in employee
+  // so the returned map is dense — consumers can iterate `employees`
+  // and never miss a row. Archived employees are skipped at the shift
+  // loop (their map entry stays at zero, which the panel can filter).
+  const accum = {};
+  empList.forEach(function (e) { accum[e.id] = { shiftDates: {}, hours: 0 }; });
+
+  const allShifts = Object.values(shifts);
+  for (let i = 0; i < allShifts.length; i++) {
+    const s = allShifts[i];
+    if (!s || !s.employeeId || !s.date) continue;
+    if (!dateIsoSet[s.date]) continue;
+    if (!accum[s.employeeId]) continue;
+    accum[s.employeeId].shiftDates[s.date] = true;
+    accum[s.employeeId].hours += hoursBetween(s.start, s.end);
+  }
+
+  // 28-day holiday subtraction uses the existing helper — its
+  // signature is `(requestsMap, dates)` and it works for any date
+  // array, not just one week.
+  const holidayCounts = holidayDaysInWeekByEmployee(requests, dates);
+
+  empList.forEach(function (e) {
+    const a = accum[e.id];
+    const shiftsCount = Object.keys(a.shiftDates).length;
+    const hoursTotal = a.hours;
+    const wpw = Number.isFinite(e.workingDaysPerWeek) && e.workingDaysPerWeek >= 1
+      ? Math.min(7, Math.round(e.workingDaysPerWeek))
+      : 5;
+    const holiday = holidayCounts[e.id] || 0;
+    const shiftsTarget = Math.max(0, wpw * 4 - holiday);
+    const hoursTarget = shiftsTarget * avgShiftHours(e.preference, shiftTemplate);
+    out[e.id] = {
+      shiftsCount: shiftsCount,
+      hoursTotal: hoursTotal,
+      shiftsTarget: shiftsTarget,
+      hoursTarget: hoursTarget,
+      shiftsDeficit: Math.max(0, shiftsTarget - shiftsCount),
+      hoursDeficit: Math.max(0, hoursTarget - hoursTotal),
+    };
+  });
+  return out;
 }
 
 // ── Consecutive days off check (v1.2.0, cross-week v1.8.0) ───────────────
