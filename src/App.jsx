@@ -21,9 +21,9 @@ import AppShell from "./components/AppShell.jsx";
 
 // ── App signature ────────────────────────────────────────────────────────
 export const __APP_SIGNATURE__ = Object.freeze({
-  version: "1.10.0",
-  build: "2026-05-24",
-  sha: "undo-stack-and-login-hover-scale",
+  version: "1.10.1",
+  build: "2026-05-25",
+  sha: "eager-shift-template-migration",
 });
 
 // Expose for DevTools / debugging.

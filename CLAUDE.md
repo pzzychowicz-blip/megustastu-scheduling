@@ -871,6 +871,49 @@ separate Firebase project, same UI conventions).
   button is disabled (fields empty or busy). Brings the login
   screen in line with every other interactive surface in the app.
 
+- **Eager `/shiftTemplate` migration (v1.10.1):** the v1.9.0 per-slot
+  shape change (`{count, start, end, secondPersonStart?}` →
+  `{count, times: [{start, end}, ...]}`) was previously migrated
+  lazily — Settings.jsx rewrote a legacy doc to the new shape only
+  when the manager opened the tab and clicked Save. v1.10.1 promotes
+  the migration to "once per session, automatically." `AppShell`
+  mounts a ref-guarded `useEffect` that, after `usePersistence`
+  reports `ready` and `data.shiftTemplate` is non-null, calls the
+  new `isShiftTemplateMigrated(template)` helper; if it returns
+  false, the canonical form (built by `materializeShiftTemplate`) is
+  written back via `actions.saveShiftTemplate(materialised, true)`
+  (`isSilent=true` so a refusal banner can't surface for the
+  user — this is an auto-effect, not a manual action). The effect
+  also fires when the template is already canonical, but
+  short-circuits via `isShiftTemplateMigrated` returning true; the
+  ref guard then prevents re-entrancy after the migration write's
+  own onValue echo.
+  **Helper lift:** `materializeShiftTemplateBlock` (per-block) +
+  `materializeShiftTemplate` (whole template) + `isShiftTemplateMigrated`
+  (predicate) live in `schedule-logic.js` as the single source of
+  truth for shape-knowledge. The pre-v1.10.1 local `materializeBlock`
+  in `Settings.jsx` was deleted; Settings now imports the lifted
+  helper aliased as `materializeBlock` so internal call sites
+  (`cloneTemplate`, `blockDirty`, the `renderBlock` count-onChange
+  path) keep their original naming. `cloneTemplate` delegates to
+  `materializeShiftTemplate` and falls back to a default-shaped
+  object only when the input is null (defensive — pre-v1.10.1
+  callers always passed `shiftTemplate || DEFAULT_SHIFT_TEMPLATE`,
+  so the fallback path is unreachable in practice).
+  **Why not also delete `slotTimeFor`'s legacy fallback?** Belt &
+  braces. Eager migration handles every doc that passes through a
+  signed-in session, but the fallback covers in-flight reads
+  between persistence-ready and the migration write completing,
+  AND any future legacy state from manual Firebase console edits or
+  backup restores. The fallback is ≈8 lines; removing it is a
+  v2.0 cleanup, not a v1.10 win.
+  **Idempotency:** `isShiftTemplateMigrated` also flags lingering
+  legacy fields (`start`, `end`, `secondPersonStart`) on a block
+  whose `times` array is otherwise valid — so a doc that had its
+  `times` written by Settings without `start`/`end` being deleted
+  (e.g., partial manual edit) still triggers the migration's
+  cleanup pass.
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -938,6 +981,8 @@ megustastu-scheduling/
     │                                 "mobile-closed-placeholder".
     │                                 v1.10.0: → 1.10.0, sha
     │                                 "undo-stack-and-login-hover-scale".
+    │                                 v1.10.1: → 1.10.1, sha
+    │                                 "eager-shift-template-migration".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1101,6 +1146,19 @@ megustastu-scheduling/
     │   │                           blocking for dayoff is unchanged
     │   │                           (findRequestConflict still includes
     │   │                           both types in BLOCKING_REQUEST_TYPES).
+    │   │                           v1.10.1: + materializeShiftTemplateBlock
+    │   │                           (per-block) + materializeShiftTemplate
+    │   │                           (whole template) + isShiftTemplateMigrated
+    │   │                           (predicate). Lifted from Settings.jsx's
+    │   │                           local materializeBlock so the new
+    │   │                           AppShell eager-migration effect and
+    │   │                           Settings can share one shape source. The
+    │   │                           predicate also flags lingering legacy
+    │   │                           fields (start/end/secondPersonStart) on
+    │   │                           an otherwise-valid block so partial
+    │   │                           docs still trigger cleanup. Imports
+    │   │                           OPERATING_HOURS for the per-block
+    │   │                           defaults.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -1299,6 +1357,23 @@ megustastu-scheduling/
         │                           try/catch around storage calls so
         │                           Safari private mode degrades
         │                           gracefully.
+        │                           v1.10.1: + eager-migration useEffect
+        │                           for /shiftTemplate. Ref-guarded
+        │                           (migrationAttemptedRef) so it fires
+        │                           once per session. Runs when ready &&
+        │                           data.shiftTemplate is non-null; if
+        │                           isShiftTemplateMigrated returns false,
+        │                           materializeShiftTemplate's canonical
+        │                           output is written back via
+        │                           actions.saveShiftTemplate(_, true).
+        │                           Logs a coloured "[shiftTemplate]
+        │                           Eager migration writing canonical
+        │                           per-slot shape." banner on the
+        │                           migration path so the user can see in
+        │                           DevTools that the upgrade ran. The
+        │                           isSilent=true flag suppresses any
+        │                           refusal banner (this is an auto-
+        │                           effect, not user-initiated).
         ├── EmployeesList.jsx       roster list + Add button.
         │                           v0.12.0: each row shows
         │                           "Pattern: N/M" below the role chips
@@ -1656,6 +1731,21 @@ megustastu-scheduling/
         │                           defaults now includes
         │                           generatorBannerAutoDismiss (true)
         │                           and generatorBannerDurationSec (5).
+        │                           v1.10.1: local materializeBlock
+        │                           deleted; the function was lifted into
+        │                           schedule-logic.js as
+        │                           materializeShiftTemplateBlock so the
+        │                           new AppShell eager-migration effect
+        │                           can share the same shape logic.
+        │                           Settings imports it aliased as
+        │                           materializeBlock (so internal call
+        │                           sites — cloneTemplate, blockDirty,
+        │                           the renderBlock count-onChange path
+        │                           — keep their pre-v1.10.1 naming).
+        │                           cloneTemplate now delegates to
+        │                           materializeShiftTemplate with a
+        │                           defensive default-shape fallback for
+        │                           null input.
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.

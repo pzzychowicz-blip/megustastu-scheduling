@@ -73,7 +73,11 @@ import {
   GENERATOR_BANNER_DURATION_MAX,
   WEEKDAYS,
 } from "../lib/constants.js";
-import { normalizeOpeningDays } from "../lib/schedule-logic.js";
+import {
+  normalizeOpeningDays,
+  materializeShiftTemplate,
+  materializeShiftTemplateBlock as materializeBlock,
+} from "../lib/schedule-logic.js";
 import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 
 // ── Deep-clone the template for local edit state ─────────────────────────
@@ -83,50 +87,39 @@ import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 // to snap back to Firebase state mid-edit if onValue fires).
 // v1.9.0: materializes each (section, dayPart) block into the per-slot
 // shape — `{count, times: [{start, end}, ...]}`. Legacy v0.5.0 docs with
-// the single start/end/secondPersonStart shape are migrated lazily here
-// (form-state-only; the Firebase doc is rewritten on the next save).
+// the single start/end/secondPersonStart shape are migrated form-side here
+// for editing; the Firebase doc is rewritten on the next save.
+// v1.10.1: the per-block + whole-template helpers were lifted into
+// schedule-logic.js so the new eager-migration effect in AppShell can
+// share the exact same shape logic. cloneTemplate now delegates to the
+// lifted `materializeShiftTemplate` (returns the canonical shape OR null
+// for a null input; the `|| { foh:..., kitchen:... }` fallback below
+// preserves the pre-v1.10.1 behaviour where cloneTemplate(null) returned
+// a default-shaped object rather than null).
 function cloneTemplate(src) {
+  const out = materializeShiftTemplate(src);
+  if (out) return out;
+  // Defensive: shouldn't be reached in practice because callers always
+  // pass `shiftTemplate || DEFAULT_SHIFT_TEMPLATE`, but keep the explicit
+  // fallback so a hand-edited null doesn't crash the form.
   return {
     foh: {
-      day: materializeBlock(src.foh.day, "foh", "day"),
-      evening: materializeBlock(src.foh.evening, "foh", "evening"),
+      day: materializeBlock(null, "foh", "day"),
+      evening: materializeBlock(null, "foh", "evening"),
     },
     kitchen: {
-      day: materializeBlock(src.kitchen.day, "kitchen", "day"),
-      evening: materializeBlock(src.kitchen.evening, "kitchen", "evening"),
+      day: materializeBlock(null, "kitchen", "day"),
+      evening: materializeBlock(null, "kitchen", "evening"),
     },
   };
 }
 
-// v1.9.0: build a normalized block with a per-slot `times` array of length
-// `count`. Preserves entries already in `block.times`; for missing entries
-// falls back to (a) v0.8.0 FoH-evening `secondPersonStart` for slot 1+,
-// (b) the block's single `start`/`end`, (c) the operating window defaults.
-// Returned object is a fresh deep copy.
-function materializeBlock(block, sectionKey, dayPart) {
-  if (!block || typeof block !== "object") {
-    return { count: 1, times: [{ start: OPERATING_HOURS.start, end: OPERATING_HOURS.end }] };
-  }
-  const rawCount = block.count;
-  const count = Number.isFinite(rawCount) && rawCount >= 1 ? Math.round(rawCount) : 1;
-  const existing = Array.isArray(block.times) ? block.times : [];
-  const fallbackStart = block.start || OPERATING_HOURS.start;
-  const fallbackEnd = block.end || OPERATING_HOURS.end;
-  const fohEveningSecondStart = sectionKey === "foh" && dayPart === "evening" && block.secondPersonStart
-    ? block.secondPersonStart
-    : null;
-  const times = [];
-  for (let i = 0; i < count; i++) {
-    const t = existing[i];
-    if (t && t.start && t.end) {
-      times.push({ start: t.start, end: t.end });
-      continue;
-    }
-    const legacyStart = i > 0 && fohEveningSecondStart ? fohEveningSecondStart : fallbackStart;
-    times.push({ start: legacyStart, end: fallbackEnd });
-  }
-  return { count: count, times: times };
-}
+// v1.10.1: materializeBlock used to live here as a local helper. It now
+// lives in schedule-logic.js as `materializeShiftTemplateBlock` so the new
+// eager-migration effect in AppShell shares the exact same shape logic.
+// We import it aliased as `materializeBlock` (at the top) to keep the
+// local naming inside this file unchanged — blockDirty, cloneTemplate,
+// and the renderBlock count-onChange path all still call `materializeBlock`.
 
 // ── Per-block validation ─────────────────────────────────────────────────
 // Returns the first error string, or null if valid. We surface one error
