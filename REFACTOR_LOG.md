@@ -5,6 +5,122 @@ an entry. Newest first.
 
 ---
 
+## v1.10.1 — Eager /shiftTemplate migration
+
+**Date:** 2026-05-25
+
+**Behavioural change:** None user-visible. Internal data hygiene only.
+
+v1.9.0 changed the `/shiftTemplate` per-block shape from the legacy
+single-time form (`{count, start, end, secondPersonStart?}`) to a
+per-slot array (`{count, times: [{start, end}, ...]}`). Pre-v1.10.1
+the migration was lazy — `Settings.jsx` rewrote a legacy doc to the
+new shape only when the manager opened the Settings tab and hit Save.
+Untouched legacy docs (DEV projects, restored backups, clones) sat
+on Firebase indefinitely, each silently relying on the read-side
+fallback in `slotTimeFor`.
+
+v1.10.1 promotes the migration to "once per session, automatically."
+`AppShell` mounts a ref-guarded `useEffect` that, after `usePersistence`
+reports `ready` and the live template is non-null, checks
+`isShiftTemplateMigrated(template)`. If false, the canonicalised doc
+(built by `materializeShiftTemplate(template)`) is written back via
+`actions.saveShiftTemplate(materialised, true /* isSilent */)`. The
+write-guard chain in `usePersistence` still holds — the write only
+fires after `templateLoaded === true`, which is implied by `ready`.
+
+The shape-knowledge migration helpers were lifted from Settings.jsx's
+local `materializeBlock` into `schedule-logic.js` (as
+`materializeShiftTemplateBlock` / `materializeShiftTemplate` /
+`isShiftTemplateMigrated`) so Settings and AppShell share one source of
+truth. Settings imports the per-block helper aliased back to
+`materializeBlock` to keep its internal naming. The read-side fallback
+in `slotTimeFor` stays — belt & braces for in-flight reads between
+ready and migration-completes, and for any future legacy state we don't
+anticipate. Removing the fallback is v2.0 cleanup.
+
+**Files:**
+
+MODIFIED:
+- `src/lib/schedule-logic.js` — + `isBlockMigrated` (private predicate;
+  checks block has valid `count` + same-length `times` of `{start,end}`
+  entries AND no lingering legacy fields). + `isShiftTemplateMigrated`
+  (exported; returns true for null input — "nothing to migrate"). +
+  `materializeShiftTemplateBlock` (exported; per-block canonicalise,
+  identical to Settings's pre-v1.10.1 `materializeBlock` byte-for-byte).
+  + `materializeShiftTemplate` (exported; calls the block helper 4
+  times; returns null for null input). Imports `OPERATING_HOURS` (new)
+  for the per-block default times.
+- `src/components/Settings.jsx` — local `materializeBlock` deleted.
+  Import block now pulls `materializeShiftTemplate` +
+  `materializeShiftTemplateBlock as materializeBlock` from
+  schedule-logic.js so `cloneTemplate`, `blockDirty`, and the
+  `renderBlock` count-onChange path keep their pre-v1.10.1 naming.
+  `cloneTemplate` body became a delegation to `materializeShiftTemplate`
+  with a defensive default-shape fallback when the lifted helper returns
+  null (unreachable in practice — callers always pass
+  `shiftTemplate || DEFAULT_SHIFT_TEMPLATE`).
+- `src/components/AppShell.jsx` — + ref-guarded `useEffect` that calls
+  `isShiftTemplateMigrated` and writes back `materializeShiftTemplate`'s
+  output via `saveShiftTemplate(..., true)` when needed. Imports
+  `useRef` (added to the React import) and the two new helpers from
+  schedule-logic.js. Logs a coloured `[shiftTemplate] Eager migration
+  writing canonical per-slot shape.` banner on the migration path so
+  DevTools shows it ran.
+- `src/App.jsx` — version 1.10.0 → 1.10.1, build 2026-05-24 → 2026-05-25,
+  sha `undo-stack-and-login-hover-scale` → `eager-shift-template-migration`.
+- `CLAUDE.md` — + new v1.10.1 locked-decision block (Eager
+  `/shiftTemplate` migration). File-structure heading bumped to v1.10.1.
+  Per-file v1.10.1 sub-entries on `App.jsx`, `AppShell.jsx`,
+  `Settings.jsx`, and `schedule-logic.js`.
+- `REFACTOR_LOG.md` — this entry prepended.
+
+**Line delta:** ≈ +100 / −35 (schedule-logic.js +85 for the three
+helpers + comment block; AppShell.jsx +45 for the import, ref, and
+effect; Settings.jsx −30 for the removed local materializeBlock + 8
+for the delegation note + 10 for the import block; App.jsx ±3 for the
+version field).
+
+**Verification:**
+- `npm run build` succeeds; main-bundle gz size delta noted at commit
+  time.
+- DEV smoke: open the app, watch DevTools console for the coloured
+  `[shiftTemplate] Eager migration writing canonical per-slot shape.`
+  banner on first sign-in if the DEV `/shiftTemplate` is still in
+  legacy shape. Refresh; banner should NOT appear on subsequent loads
+  (doc is now canonical). Open Settings → FoH or Kitchen; the form
+  must look identical to pre-v1.10.1 (Count input + per-slot Start/End
+  rows). Hit Save with no changes → no-op (blockDirty returns false
+  for the now-canonical doc).
+- PROD smoke: confirm `__APP_SIGNATURE__.version === "1.10.0"` flips to
+  "1.10.1" on production. If PROD's `/shiftTemplate` was already in
+  the new shape (v1.9.0 was almost a month ago — almost certainly
+  yes), no migration write fires, and the DevTools banner does NOT
+  appear. That's the correct behaviour.
+
+**Design notes:**
+- The legacy fallback in `slotTimeFor` stays. Removing it is a v2.0
+  cleanup, not a v1.10 win — the eager migration covers every doc
+  that passes through a signed-in session, but the fallback covers
+  in-flight reads between `ready` and the migration write completing,
+  AND any future legacy state from manual Firebase console edits or
+  backup restores.
+- `isShiftTemplateMigrated` flags lingering legacy fields
+  (`start`/`end`/`secondPersonStart`) on a block whose `times` array
+  is otherwise valid — so a partially-migrated doc (Settings wrote
+  `times` but Firebase kept the legacy fields beside it) still
+  triggers the cleanup pass. In practice Settings's full-block
+  replace already drops them, so this is defensive.
+- The ref guard prevents re-entrancy after the migration write's own
+  onValue echo. Without it, the effect would re-run on the new
+  `data.shiftTemplate` reference; `isShiftTemplateMigrated` would
+  return true on the canonical write and the effect would short-circuit
+  anyway, so the ref is belt-and-braces. The "once per session"
+  semantic is more defensible if a future refactor changes the
+  canonical check.
+
+---
+
 ## v1.10.0 — Undo stack + LoginScreen hover-scale
 
 **Date:** 2026-05-24

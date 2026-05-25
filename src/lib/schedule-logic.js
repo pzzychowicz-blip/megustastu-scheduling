@@ -9,7 +9,7 @@
 //
 // NO React. NO Firebase. Just data in → data out. Easy to reason about.
 
-import { SECTIONS } from "./constants.js";
+import { SECTIONS, OPERATING_HOURS } from "./constants.js";
 
 // ── ISO date helpers ─────────────────────────────────────────────────────
 // We use "YYYY-MM-DD" strings as the canonical date identifier in Firebase
@@ -147,6 +147,96 @@ export function formatWeekRange(startDate) {
     return startDate.getDate() + "–" + end.getDate() + " " + endMonth + " " + end.getFullYear();
   }
   return startDate.getDate() + " " + startMonth + "–" + end.getDate() + " " + endMonth + " " + end.getFullYear();
+}
+
+// ── Shift template migration (v1.10.1) ───────────────────────────────────
+// v1.9.0 changed the /shiftTemplate per-block shape from
+//   { count, start, end, secondPersonStart? }
+// to the per-slot form
+//   { count, times: [{start, end}, ...] }
+// Pre-v1.10.1, migration was lazy — `slotTimeFor` below reads either shape,
+// and Settings.jsx rewrote the doc to the new shape on the next manual
+// Save click. That left untouched legacy docs sitting in Firebase
+// indefinitely (DEV projects, project clones, restored backups), each
+// quietly relying on the read-side fallback.
+//
+// v1.10.1 ships an EAGER migration. `AppShell` calls
+// `materializeShiftTemplate(data.shiftTemplate)` once per session after
+// the persistence layer reports ready; if `isShiftTemplateMigrated`
+// returns false, the canonicalised doc is written back via
+// `saveShiftTemplate(..., true /* isSilent */)`. The legacy fallback in
+// `slotTimeFor` stays in place — defensive belt for in-flight reads
+// before the eager write completes, and for any future legacy state we
+// don't anticipate (manual Firebase console edits, etc.).
+//
+// `materializeShiftTemplate` matches Settings.jsx's `materializeBlock`
+// byte-for-byte (this file is the single source of truth as of v1.10.1
+// — Settings.jsx now imports and delegates). Both helpers below treat a
+// null template as "nothing to migrate"; callers shouldn't synthesise
+// defaults here (that's the consumer's job via DEFAULT_SHIFT_TEMPLATE).
+
+function isBlockMigrated(block) {
+  if (!block || typeof block !== "object") return false;
+  if (typeof block.count !== "number") return false;
+  if (!Array.isArray(block.times)) return false;
+  if (block.times.length !== block.count) return false;
+  for (let i = 0; i < block.times.length; i++) {
+    const t = block.times[i];
+    if (!t || !t.start || !t.end) return false;
+  }
+  // Lingering legacy fields would be dropped by a rewrite — flag them so
+  // the eager migration cleans the record even if `times` is also valid.
+  if ("start" in block || "end" in block || "secondPersonStart" in block) return false;
+  return true;
+}
+
+export function isShiftTemplateMigrated(template) {
+  if (!template || typeof template !== "object") return true;
+  return (
+    isBlockMigrated(template.foh && template.foh.day) &&
+    isBlockMigrated(template.foh && template.foh.evening) &&
+    isBlockMigrated(template.kitchen && template.kitchen.day) &&
+    isBlockMigrated(template.kitchen && template.kitchen.evening)
+  );
+}
+
+export function materializeShiftTemplateBlock(block, sectionKey, dayPart) {
+  if (!block || typeof block !== "object") {
+    return { count: 1, times: [{ start: OPERATING_HOURS.start, end: OPERATING_HOURS.end }] };
+  }
+  const rawCount = block.count;
+  const count = Number.isFinite(rawCount) && rawCount >= 1 ? Math.round(rawCount) : 1;
+  const existing = Array.isArray(block.times) ? block.times : [];
+  const fallbackStart = block.start || OPERATING_HOURS.start;
+  const fallbackEnd = block.end || OPERATING_HOURS.end;
+  const fohEveningSecondStart = sectionKey === "foh" && dayPart === "evening" && block.secondPersonStart
+    ? block.secondPersonStart
+    : null;
+  const times = [];
+  for (let i = 0; i < count; i++) {
+    const t = existing[i];
+    if (t && t.start && t.end) {
+      times.push({ start: t.start, end: t.end });
+      continue;
+    }
+    const legacyStart = i > 0 && fohEveningSecondStart ? fohEveningSecondStart : fallbackStart;
+    times.push({ start: legacyStart, end: fallbackEnd });
+  }
+  return { count: count, times: times };
+}
+
+export function materializeShiftTemplate(template) {
+  if (!template || typeof template !== "object") return null;
+  return {
+    foh: {
+      day: materializeShiftTemplateBlock(template.foh && template.foh.day, "foh", "day"),
+      evening: materializeShiftTemplateBlock(template.foh && template.foh.evening, "foh", "evening"),
+    },
+    kitchen: {
+      day: materializeShiftTemplateBlock(template.kitchen && template.kitchen.day, "kitchen", "day"),
+      evening: materializeShiftTemplateBlock(template.kitchen && template.kitchen.evening, "kitchen", "evening"),
+    },
+  };
 }
 
 // ── Slot enumeration ─────────────────────────────────────────────────────

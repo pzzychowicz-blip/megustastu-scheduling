@@ -14,10 +14,14 @@
 //   isMobile  — viewport breakpoint flag from App.jsx
 //   appVersion— __APP_SIGNATURE__.version string (for the header label)
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { S, BTN } from "../lib/constants.js";
 import { usePersistence } from "../hooks/usePersistence.js";
 import { useThemeMode } from "../hooks/useThemeMode.js";
+import {
+  isShiftTemplateMigrated,
+  materializeShiftTemplate,
+} from "../lib/schedule-logic.js";
 import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
@@ -61,6 +65,46 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   useEffect(function () {
     try { sessionStorage.setItem(TAB_STORAGE_KEY, tab); } catch (_e) { /* private-mode safari */ }
   }, [tab]);
+
+  // ── v1.10.1: eager /shiftTemplate migration ──────────────────────────────
+  // v1.9.0 changed the per-block shape from
+  //   { count, start, end, secondPersonStart? }
+  // to
+  //   { count, times: [{start, end}, ...] }
+  // Pre-v1.10.1 docs migrated lazily — only when the manager opened Settings
+  // and clicked Save. This effect promotes the migration to "once per session,
+  // automatically." After persistence reports ready, if the live template is
+  // non-null and still in (any flavour of) legacy shape, we materialise the
+  // canonical form via `materializeShiftTemplate` and write it back via
+  // `saveShiftTemplate(..., true /* isSilent */)`. The write-guard chain in
+  // usePersistence holds — the write only fires after templateLoaded === true,
+  // which is implied by `ready`.
+  //
+  // The ref prevents re-entrancy: after our own write completes, Firebase
+  // emits onValue with the new shape, which re-renders this component with
+  // a new `data.shiftTemplate` reference and re-runs this effect. Without
+  // the ref guard, we'd then call `isShiftTemplateMigrated` on the new
+  // (canonical) doc, get true, and skip — that path is already safe. The
+  // ref just shortcuts to "once per session, period," which is the more
+  // defensible semantic if a future refactor changes the canonical check.
+  const migrationAttemptedRef = useRef(false);
+  useEffect(function () {
+    if (migrationAttemptedRef.current) return;
+    if (!ready) return;
+    if (!data.shiftTemplate) return;  // never customised → nothing to migrate
+    if (isShiftTemplateMigrated(data.shiftTemplate)) {
+      migrationAttemptedRef.current = true;
+      return;
+    }
+    migrationAttemptedRef.current = true;
+    const materialised = materializeShiftTemplate(data.shiftTemplate);
+    if (!materialised) return;  // defensive — null only if input was null, already handled
+    console.log(
+      "%c[shiftTemplate] Eager migration writing canonical per-slot shape.",
+      "color:#0a0;font-weight:bold;"
+    );
+    actions.saveShiftTemplate(materialised, true);
+  }, [ready, data.shiftTemplate, actions]);
 
   // v0.11.0: theme resolution. settings.darkMode is true/false when the
   // manager has explicitly chosen; undefined means "follow system pref",
