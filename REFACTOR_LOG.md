@@ -5,6 +5,151 @@ an entry. Newest first.
 
 ---
 
+## v1.11.0 — Configurable scheduling rules
+
+**Date:** 2026-05-25
+
+**Behavioural change:** None visible on legacy `/settings` docs. New
+Settings → "Scheduling rules" accordion section lets the manager tune
+three rules in-app that were previously hard-coded.
+
+Three labor-wellness / role-policy values become first-class `/settings`
+knobs:
+
+1. **`minConsecutiveDaysOff`** (1..3, default 2). Was the hard-coded
+   `n` default inside `hasConsecutiveDaysOff`. v1.11.0 threads the
+   configured value through generator.js's step 6 + ShiftFormModal's
+   `restWarning`. Picker yellow banner copy adapts ("less than N
+   consecutive day(s) off").
+2. **`maxConsecutiveWorkingDays`** (3..14, default 5). Was the
+   hard-coded `max` default inside `withinMaxConsecutiveWorkingDays`.
+   Same threading through generator step 6.5 + ShiftFormModal's
+   `maxConsecutiveWarning`. Always-on — no disable toggle.
+3. **`dayRequiredRoles`** (object keyed by section, default
+   `{foh: [], kitchen: ["Chef"]}`). Was the hard-coded
+   `SECTIONS.kitchen.dayRequiredRoles = ["Chef"]` in `constants.js`.
+   `slotsForDay` gained an optional 2nd arg
+   `dayRequiredRolesOverride` that wins over SECTIONS defaults when
+   supplied (even an explicit empty array — that's a manager-set
+   "permissive" choice). ScheduleGrid threads the configured map into
+   its `slotsForDay` call; every consumer of `slotDef.requiredRoles`
+   (picker filter, generator's `roleMatchesSlot`, Swap mechanic)
+   inherits the configuration automatically.
+
+All three rules affect BOTH the generator HARD filter AND the manual
+picker SOFT warning, which is why they live in a new "Scheduling rules"
+accordion section between Display and Auto-generator rather than under
+Auto-generator (which is for generator-only knobs).
+
+Pre-v1.11.0 `/settings` docs lack all three new fields. ScheduleGrid +
+Settings + generator all use the defensive defensive-fallback pattern
+(same as v1.0.0 `generatorStrictPreference` + v1.9.4 banner config), so
+behaviour is byte-identical for legacy docs. No eager migration needed
+— first auto-save from the new Settings section writes the explicit
+values. SECTIONS.kitchen.dayRequiredRoles STAYS as the system fallback
+when `slotsForDay` is called bare (tests, future call sites).
+
+UX in the new Collapsible:
+- Row 1: 1 / 2 / 3 segmented control for `minConsecutiveDaysOff`.
+- Row 2: number input 3..14 for `maxConsecutiveWorkingDays`.
+- Row 3: per-section pill multi-select. Two stacked sub-rows (FoH then
+  Kitchen, mirroring app section ordering). Pill toggles role membership;
+  re-sorts to SECTIONS source order on every flip; writes the full
+  per-section object (both sections) so the doc stays canonical. Empty
+  per-section list = "permissive — any role in {section}" with a muted
+  helper line confirming.
+
+All three rows auto-save on change — no Save button, matching the
+existing Auto-generator section's pattern. Reset to defaults writes the
+three new defaults alongside the existing ones (deep-cloned so the
+saved doc isn't a frozen object).
+
+**Files:**
+
+MODIFIED:
+- `src/lib/constants.js` — + `DEFAULT_MIN_CONSECUTIVE_DAYS_OFF` (2) +
+  `MIN_CONSECUTIVE_DAYS_OFF_MIN/MAX` (1/3). +
+  `DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS` (5) +
+  `MAX_CONSECUTIVE_WORKING_DAYS_MIN/MAX` (3/14). +
+  `DEFAULT_DAY_REQUIRED_ROLES` (frozen `{foh: [], kitchen: ["Chef"]}`).
+  All inserted next to the v1.9.4 banner-config block. SECTIONS
+  untouched.
+- `src/lib/schedule-logic.js` — `slotsForDay(template)` →
+  `slotsForDay(template, dayRequiredRolesOverride)`. New helper
+  `resolveDayRequired(sectionKey)` (closure inside slotsForDay) picks
+  the override when supplied + valid array, otherwise SECTIONS default.
+  The two day slots' `requiredRoles` reads switched from
+  `SECTIONS.kitchen.dayRequiredRoles || []` / `SECTIONS.foh.dayRequiredRoles || []`
+  to the resolved values. Helper bodies + signatures unchanged.
+- `src/lib/generator.js` — `generateWeek` gains three new optional
+  args (extracted with `Number.isFinite ? value : default` guards so
+  legacy callers get pre-v1.11.0 behaviour). Internal `slotsForDay`
+  call now passes the configured `dayRequiredRoles`.
+  `buildCandidates` signature grew two trailing positional args
+  (`minConsecutiveDaysOff` + `maxConsecutiveWorkingDays`) — passed
+  into the two helper calls that previously used `undefined`. Both
+  `buildCandidates` call sites in `generateWeek` updated.
+- `src/components/ScheduleGrid.jsx` — + three new derived consts
+  (defensive read + clamp pattern). slotsForDay memo updated:
+  `slotsForDay(template, dayRequiredRoles)` + `[template,
+  dayRequiredRoles]` dep array. `<GenerateButton>` mount gains three
+  new props; `<ShiftFormModal>` mount gains the two consecutive-rule
+  props (per-section required-role config flows in through slotDef so
+  the modal needs no prop for it).
+- `src/components/GenerateButton.jsx` — destructured signature grows
+  three new props. `generateWeek({...})` call forwards them verbatim.
+- `src/components/ShiftFormModal.jsx` — destructured signature gains
+  `minConsecutiveDaysOff` + `maxConsecutiveWorkingDays`. Both passed
+  into `hasConsecutiveDaysOff` (line 384) and
+  `withinMaxConsecutiveWorkingDays` (line 387–389) — replacing
+  `undefined`. Banner copy uses inline `minOffForCopy` /
+  `maxConsecForCopy` fallbacks so the message reflects the actual
+  configured value (or the helper default when the prop is missing).
+- `src/components/Settings.jsx` — + new "Scheduling rules"
+  Collapsible inserted between Display and Auto-generator. Three
+  rows: segmented 1/2/3 + number input 3..14 + per-section pill
+  multi-select. Three new derived values + three new `on*Change`
+  handlers + one `resolveDayRequiredFor` helper. `openSection` valid
+  set in the sessionStorage read expanded with `"rules"`. Reset to
+  defaults writes all three new fields (deep-cloned).
+- `src/App.jsx` — version 1.10.1 → 1.11.0, sha
+  `eager-shift-template-migration` → `configurable-scheduling-rules`.
+- `CLAUDE.md` — new v1.11.0 locked-decision block. File-structure
+  heading bumped to v1.11.0. Per-file v1.11.0 sub-entries on App,
+  constants, schedule-logic, generator, ScheduleGrid, GenerateButton,
+  ShiftFormModal, Settings. Data-model `/settings` block updated
+  with the three new optional fields.
+- `REFACTOR_LOG.md` — this entry prepended.
+
+**Verified NOT changed (Phase-5 inventory):**
+- `src/lib/pdf-export.js` — never reads `slot.requiredRoles`; only
+  uses `section`, `dayPart`, `sectionLabel`, `dayPartLabel`,
+  `humanLabel`, `defaultStart`, `defaultEnd`. The dayRequiredRoles
+  override has no effect on the PDF output, so no threading needed
+  through `ExportButton.jsx` either.
+
+**Line delta (estimated):** ≈ +280 / −20. The bulk is the new
+Settings Collapsible (~140 lines for the three rows + handlers), the
+v1.11.0 CLAUDE.md/REFACTOR_LOG.md entries (~100 lines combined), and
+~20 lines of imports / signature changes spread across the JS files.
+
+**Verification:**
+- `npm run build` succeeds; main-bundle gz size delta noted at commit
+  time.
+- DEV smoke: open Settings → Scheduling rules. Confirm the section
+  lives between Display and Auto-generator. Click 1/2/3 — auto-saves;
+  refresh confirms persistence. Edit max-consec to 3 then to 14;
+  values clamp and persist. Toggle Kitchen's Chef pill off, verify a
+  Plating-only employee now appears in the Kitchen Day picker
+  dropdown. Reset to defaults — all three rules return to 2 / 5 /
+  `{foh: [], kitchen: ["Chef"]}`.
+- PROD smoke: confirm `__APP_SIGNATURE__.version === "1.11.0"` after
+  deploy. With PROD `/settings` lacking the three new fields, the
+  schedule grid + auto-generator + picker behave byte-identically to
+  v1.10.1 until the manager visits Settings → Scheduling rules.
+
+---
+
 ## v1.10.1 — Eager /shiftTemplate migration
 
 **Date:** 2026-05-25

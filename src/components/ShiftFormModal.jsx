@@ -17,6 +17,17 @@
 //   nextWeekShifts  ({ [id]: shift })— v1.8.0 cross-week 2-off check.
 //                                       Used to resolve next Monday's
 //                                       worked state. Optional.
+//   minConsecutiveDaysOff      (number) — v1.11.0. From /settings, clamped
+//                                       1..3, default 2. Drives the yellow
+//                                       restWarning banner copy and the
+//                                       hasConsecutiveDaysOff call.
+//                                       Optional — falls back to undefined
+//                                       so the helper's default (2) applies.
+//   maxConsecutiveWorkingDays  (number) — v1.11.0. From /settings, clamped
+//                                       3..14, default 5. Drives the yellow
+//                                       maxConsecutiveBanner copy and the
+//                                       withinMaxConsecutiveWorkingDays
+//                                       call. Optional.
 //   isMobile    (bool)
 //   onClose     (fn)
 //   onSave      (fn)            — receives the shift payload
@@ -91,7 +102,9 @@ function initialForm(slotDef, shift) {
 
 export default function ShiftFormModal({
   open, dateIso, slotDef, shift, employees, requests, weekShifts,
-  priorWeekShifts, nextWeekShifts, isMobile,
+  priorWeekShifts, nextWeekShifts,
+  minConsecutiveDaysOff, maxConsecutiveWorkingDays,
+  isMobile,
   onClose, onSave, onDelete, onStartSwap,
 }) {
   const [form, setForm] = useState(function () { return initialForm(slotDef || {}, shift); });
@@ -381,11 +394,16 @@ export default function ShiftFormModal({
       priorWeekShifts: priorWeekShifts,
       nextWeekShifts: nextWeekShifts,
     };
-    restWarning = !hasConsecutiveDaysOff(form.employeeId, weekStart, sim, undefined, opts);
-    // v1.8.0 amendment: companion wellness check — max 5 consecutive
+    // v1.11.0: pass configured min/max into the helpers. Both fall back
+    // to the helper's own defaults (2 and 5) when the prop is missing
+    // — preserves pre-v1.11.0 callers' behaviour.
+    restWarning = !hasConsecutiveDaysOff(
+      form.employeeId, weekStart, sim, minConsecutiveDaysOff, opts
+    );
+    // v1.8.0 amendment: companion wellness check — max N consecutive
     // working days across the 21-day [prior, focus, next] window.
     maxConsecutiveWarning = !withinMaxConsecutiveWorkingDays(
-      form.employeeId, weekStart, sim, undefined, opts
+      form.employeeId, weekStart, sim, maxConsecutiveWorkingDays, opts
     );
   }
 
@@ -421,11 +439,16 @@ export default function ShiftFormModal({
     )
     : null;
 
+  // v1.11.0: copy uses the configured min/max instead of hard-coding
+  // "2" and "5". Falls back to the helper defaults when the prop is
+  // missing, keeping the message accurate even for legacy callers.
+  const minOffForCopy = Number.isFinite(minConsecutiveDaysOff) ? minConsecutiveDaysOff : 2;
+  const maxConsecForCopy = Number.isFinite(maxConsecutiveWorkingDays) ? maxConsecutiveWorkingDays : 5;
   const restWarningBanner = restWarning
     ? (
       <div style={warningBoxStyle}>
-        ⚠ Saving this would leave this employee without 2 consecutive
-        days off this calendar week. You can still save; this is just a
+        ⚠ Saving this would leave this employee without {minOffForCopy} consecutive
+        day{minOffForCopy === 1 ? "" : "s"} off this calendar week. You can still save; this is just a
         warning.
       </div>
     )
@@ -434,7 +457,7 @@ export default function ShiftFormModal({
   const maxConsecutiveBanner = maxConsecutiveWarning
     ? (
       <div style={warningBoxStyle}>
-        ⚠ Saving this would put this employee at more than 5 consecutive
+        ⚠ Saving this would put this employee at more than {maxConsecForCopy} consecutive
         working days. You can still save; this is just a warning.
       </div>
     )

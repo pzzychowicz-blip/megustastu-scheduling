@@ -20,6 +20,16 @@
 //   shiftTemplate    (object | null)
 //   openingDays      (object | null)    — from /settings.openingDays
 //   strictPreference (bool)             — from /settings.generatorStrictPreference
+//   minConsecutiveDaysOff       (number) — v1.11.0. From /settings.minConsecutiveDaysOff
+//                                          (clamped 1..3, default 2). Threaded into
+//                                          generateWeek → hasConsecutiveDaysOff.
+//   maxConsecutiveWorkingDays   (number) — v1.11.0. From /settings.maxConsecutiveWorkingDays
+//                                          (clamped 3..14, default 5). Threaded into
+//                                          generateWeek → withinMaxConsecutiveWorkingDays.
+//   dayRequiredRoles            (object) — v1.11.0. Per-section override
+//                                          `{foh: [...], kitchen: [...]}`. Threaded
+//                                          into generateWeek → slotsForDay so per-cell
+//                                          slotDef.requiredRoles reflects the config.
 //   isMobile         (bool)
 //   actions          (object)           — usePersistence().actions; uses upsertShift
 //   onResult         (fn(summary))      — fires after a run with the summary;
@@ -40,7 +50,9 @@ import GenerateConfirmModal from "./GenerateConfirmModal.jsx";
 
 export default function GenerateButton({
   weekStart, weekShifts, priorWeekShifts, nextWeekShifts, employees, requests,
-  shiftTemplate, openingDays, strictPreference, isMobile, actions, onResult,
+  shiftTemplate, openingDays, strictPreference,
+  minConsecutiveDaysOff, maxConsecutiveWorkingDays, dayRequiredRoles,
+  isMobile, actions, onResult,
   onUndoableOp,
 }) {
   const [open, setOpen] = useState(false);
@@ -90,6 +102,11 @@ export default function GenerateButton({
           shiftTemplate: shiftTemplate,
           openingDays: openingDays,
           strictPreference: strictPreference,
+          // v1.11.0: configurable scheduling rules. All three drive
+          // generator HARD filters via buildCandidates + slotsForDay.
+          minConsecutiveDaysOff: minConsecutiveDaysOff,
+          maxConsecutiveWorkingDays: maxConsecutiveWorkingDays,
+          dayRequiredRoles: dayRequiredRoles,
           // v1.8.1: preserve-on-regenerate policy. Ignored when mode is
           // "fill-empty". Both default to true on the modal — wiring
           // through unchanged forwards that default.

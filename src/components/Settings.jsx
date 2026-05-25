@@ -71,6 +71,13 @@ import {
   DEFAULT_GENERATOR_BANNER_DURATION_SEC,
   GENERATOR_BANNER_DURATION_MIN,
   GENERATOR_BANNER_DURATION_MAX,
+  DEFAULT_MIN_CONSECUTIVE_DAYS_OFF,
+  MIN_CONSECUTIVE_DAYS_OFF_MIN,
+  MIN_CONSECUTIVE_DAYS_OFF_MAX,
+  DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS,
+  MAX_CONSECUTIVE_WORKING_DAYS_MIN,
+  MAX_CONSECUTIVE_WORKING_DAYS_MAX,
+  DEFAULT_DAY_REQUIRED_ROLES,
   WEEKDAYS,
 } from "../lib/constants.js";
 import {
@@ -303,7 +310,8 @@ export default function Settings({
       if (v === null) return "hours";
       if (v === "null") return null;
       // Defensive: only accept known section keys; everything else falls back.
-      const known = ["hours", "display", "generator", "foh", "kitchen"];
+      // v1.11.0: + "rules" — the new Scheduling rules accordion section.
+      const known = ["hours", "display", "rules", "generator", "foh", "kitchen"];
       if (known.indexOf(v) !== -1) return v;
       return "hours";
     } catch (_e) {
@@ -478,6 +486,83 @@ export default function Settings({
     saveSettings({ ...(settings || {}), generatorBannerDurationSec: n });
   }
 
+  // v1.11.0: Scheduling rules — three knobs that used to be hard-coded.
+  // Same defensive read + auto-save pattern as the v1.0.0 / v1.9.4
+  // generator settings above. ScheduleGrid also reads these (via its
+  // own defensive-fallback consts) and threads them through
+  // GenerateButton + ShiftFormModal.
+  //
+  // (1) minConsecutiveDaysOff — segmented 1 / 2 / 3.
+  const minConsecutiveDaysOff =
+    settings && Number.isFinite(settings.minConsecutiveDaysOff)
+      ? Math.max(
+          MIN_CONSECUTIVE_DAYS_OFF_MIN,
+          Math.min(MIN_CONSECUTIVE_DAYS_OFF_MAX, settings.minConsecutiveDaysOff)
+        )
+      : DEFAULT_MIN_CONSECUTIVE_DAYS_OFF;
+  function onMinConsecutiveDaysOffChange(nextValue) {
+    const n = parseInt(nextValue, 10);
+    if (!Number.isFinite(n)) return;
+    if (n < MIN_CONSECUTIVE_DAYS_OFF_MIN || n > MIN_CONSECUTIVE_DAYS_OFF_MAX) return;
+    saveSettings({ ...(settings || {}), minConsecutiveDaysOff: n });
+  }
+
+  // (2) maxConsecutiveWorkingDays — number input 3..14.
+  const maxConsecutiveWorkingDays =
+    settings && Number.isFinite(settings.maxConsecutiveWorkingDays)
+      ? Math.max(
+          MAX_CONSECUTIVE_WORKING_DAYS_MIN,
+          Math.min(MAX_CONSECUTIVE_WORKING_DAYS_MAX, settings.maxConsecutiveWorkingDays)
+        )
+      : DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS;
+  function onMaxConsecutiveWorkingDaysChange(rawValue) {
+    const n = parseInt(rawValue, 10);
+    if (!Number.isFinite(n)) return;
+    if (n < MAX_CONSECUTIVE_WORKING_DAYS_MIN || n > MAX_CONSECUTIVE_WORKING_DAYS_MAX) return;
+    saveSettings({ ...(settings || {}), maxConsecutiveWorkingDays: n });
+  }
+
+  // (3) dayRequiredRoles — per-section pill multi-select.
+  // Resolve the live value for each section: prefer /settings override
+  // when it's a valid array, otherwise fall back to the default. The
+  // default itself mirrors v1.10.x state (FoH empty, Kitchen ["Chef"]).
+  // EMPTY ARRAY in /settings is honoured — that's a manager-set
+  // "permissive" choice, not a missing value, and DEFAULT_DAY_REQUIRED_ROLES
+  // would silently override it if we used `|| []` here.
+  function resolveDayRequiredFor(sectionKey) {
+    if (
+      settings && settings.dayRequiredRoles
+      && typeof settings.dayRequiredRoles === "object"
+      && Array.isArray(settings.dayRequiredRoles[sectionKey])
+    ) {
+      return settings.dayRequiredRoles[sectionKey];
+    }
+    return DEFAULT_DAY_REQUIRED_ROLES[sectionKey] || [];
+  }
+  // Pill click handler. Toggles the given role's presence in the
+  // sectionKey list, re-sorts to SECTIONS[sectionKey].roles source
+  // order so the stored value stays canonical (mirrors v1.8.2's
+  // recurringDaysOfWeek pattern), then writes the full
+  // dayRequiredRoles object (both sections) back to /settings.
+  function onDayRequiredRoleToggle(sectionKey, role) {
+    const sectionRoles = (SECTIONS[sectionKey] && SECTIONS[sectionKey].roles) || [];
+    const current = resolveDayRequiredFor(sectionKey);
+    const has = current.indexOf(role) !== -1;
+    const nextSet = has
+      ? current.filter(function (r) { return r !== role; })
+      : current.concat([role]);
+    // Re-sort to SECTIONS source order.
+    const nextSorted = sectionRoles.filter(function (r) { return nextSet.indexOf(r) !== -1; });
+    // Build the full per-section object so the saved doc stays canonical
+    // — even sections the manager didn't touch on this click are written
+    // with their current effective value.
+    const fullObject = {};
+    Object.keys(SECTIONS).forEach(function (k) {
+      fullObject[k] = k === sectionKey ? nextSorted : resolveDayRequiredFor(k);
+    });
+    saveSettings({ ...(settings || {}), dayRequiredRoles: fullObject });
+  }
+
   // ── Validation snapshot ────────────────────────────────────────────────
   // v0.7.0: template-row checks now also enforce the operating window.
   // Pass hoursForm only when it's valid on its own — otherwise the
@@ -577,6 +662,14 @@ export default function Settings({
     setHoursForm(defaultHours);
     setOpeningDaysForm(defaultOpenDays);
     saveShiftTemplate(defaults);
+    // v1.11.0: deep-clone DEFAULT_DAY_REQUIRED_ROLES so the saved doc
+    // gets a mutable plain-object shape (Object.freeze on the constant
+    // protects the export; Firebase doesn't care, but it's a code-
+    // hygiene win to never write a frozen object to /settings).
+    const defaultDayRequired = {};
+    Object.keys(DEFAULT_DAY_REQUIRED_ROLES).forEach(function (k) {
+      defaultDayRequired[k] = DEFAULT_DAY_REQUIRED_ROLES[k].slice();
+    });
     saveSettings({
       operatingStart: OPERATING_HOURS.start,
       operatingEnd:   OPERATING_HOURS.end,
@@ -585,6 +678,9 @@ export default function Settings({
       generatorStrictPreference:    DEFAULT_GENERATOR_STRICT_PREFERENCE,    // v1.0.0
       generatorBannerAutoDismiss:   DEFAULT_GENERATOR_BANNER_AUTO_DISMISS,  // v1.9.4
       generatorBannerDurationSec:   DEFAULT_GENERATOR_BANNER_DURATION_SEC,  // v1.9.4
+      minConsecutiveDaysOff:        DEFAULT_MIN_CONSECUTIVE_DAYS_OFF,       // v1.11.0
+      maxConsecutiveWorkingDays:    DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS,   // v1.11.0
+      dayRequiredRoles:             defaultDayRequired,                     // v1.11.0
     });
     setHoursDirty(false);
   }
@@ -944,6 +1040,171 @@ export default function Settings({
               : null}
             className="mgt-hover-scale"
           />
+        </Collapsible>
+
+        {/* v1.11.0: Scheduling rules. Three labor-wellness / role-policy
+            knobs that used to be hard-coded constants. Auto-save on
+            change (no Save button) — same pattern as Display and
+            Auto-generator. These rules affect BOTH the generator HARD
+            filter AND the manual picker SOFT warning, which is why
+            they live in their own section rather than under
+            Auto-generator. */}
+        <Collapsible
+          title="Scheduling rules"
+          open={openSection === "rules"}
+          onToggle={function () { toggleSection("rules"); }}
+          className="mgt-hover-scale"
+          headerClassName="mgt-hover-scale"
+        >
+          {/* Row 1: Consecutive days off — segmented 1 / 2 / 3. */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "10px 12px",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
+                Consecutive days off
+              </div>
+              <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
+                Every employee must have at least this many consecutive off
+                days touching the week. Default 2. Generator rejects
+                candidates that would break the rule; manual picker shows a
+                yellow warning.
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              {[1, 2, 3].map(function (n) {
+                const on = minConsecutiveDaysOff === n;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    className="mgt-hover-scale"
+                    onClick={function () { onMinConsecutiveDaysOffChange(n); }}
+                    style={{
+                      ...BTN.base,
+                      padding: "6px 14px",
+                      fontSize: 13,
+                      borderRadius: 8,
+                      minWidth: 40,
+                      background: on ? "var(--accent)" : "var(--bg-pill)",
+                      color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+                      border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                    }}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Row 2: Max consecutive working days — number input 3..14. */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "10px 12px",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
+                Max consecutive working days
+              </div>
+              <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
+                {MAX_CONSECUTIVE_WORKING_DAYS_MIN + "–" + MAX_CONSECUTIVE_WORKING_DAYS_MAX +
+                  " days. Catches long stretches across week boundaries (e.g. Wed–Sun + Mon–Fri = 10 straight)."}
+              </div>
+            </div>
+            {mkInp({
+              type: "number",
+              min: MAX_CONSECUTIVE_WORKING_DAYS_MIN,
+              max: MAX_CONSECUTIVE_WORKING_DAYS_MAX,
+              step: 1,
+              className: "mgt-hover-scale",
+              value: maxConsecutiveWorkingDays,
+              onChange: function (e) { onMaxConsecutiveWorkingDaysChange(e.target.value); },
+              style: { width: 120, flexShrink: 0 },
+            })}
+          </div>
+
+          {/* Row 3: Per-section day-shift required roles — pill multi-select.
+              Two stacked sub-rows (FoH then Kitchen, mirroring app section
+              ordering). Each sub-row: section label + N pills (one per role
+              in SECTIONS[section].roles). Pill toggles role in the per-
+              section list. Empty list = permissive (any of section's
+              coversRoles, matching pre-v1.11.0 FoH behaviour). */}
+          <div style={{ padding: "10px 12px" }}>
+            <div style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
+              Day-shift required roles
+            </div>
+            <div style={{ ...S.muted, fontSize: 11, marginTop: 2, marginBottom: 10 }}>
+              For each section, pick which roles an employee must hold to
+              be eligible for the day shift. Empty = anyone in the section
+              can take the day shift.
+            </div>
+            {Object.keys(SECTIONS).map(function (sectionKey) {
+              const section = SECTIONS[sectionKey];
+              const required = resolveDayRequiredFor(sectionKey);
+              return (
+                <div
+                  key={sectionKey}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    marginTop: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--text-primary)",
+                      minWidth: 110,
+                    }}
+                  >
+                    {section.label}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {section.roles.map(function (role) {
+                      const on = required.indexOf(role) !== -1;
+                      return (
+                        <button
+                          key={role}
+                          type="button"
+                          className="mgt-hover-scale"
+                          onClick={function () { onDayRequiredRoleToggle(sectionKey, role); }}
+                          style={{
+                            ...BTN.base,
+                            padding: "6px 12px",
+                            fontSize: 12,
+                            borderRadius: 999,
+                            background: on ? "var(--accent)" : "var(--bg-pill)",
+                            color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+                            border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                          }}
+                        >
+                          {role}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {required.length === 0 ? (
+                    <div style={{ ...S.muted, fontSize: 11 }}>
+                      Permissive — any role in {section.label}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </Collapsible>
 
         {/* v1.0.0: Auto-generator config. Auto-saves on flip like the

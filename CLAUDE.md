@@ -914,6 +914,59 @@ separate Firebase project, same UI conventions).
   (e.g., partial manual edit) still triggers the migration's
   cleanup pass.
 
+- **Configurable scheduling rules (v1.11.0):** three labor-wellness
+  / role-policy values that were hard-coded at v1.1.0–v1.8.0 become
+  first-class `/settings` knobs in a new "Scheduling rules"
+  accordion section (inserted between Display and Auto-generator).
+  Each rule affects BOTH the generator HARD filter AND the manual
+  picker SOFT warning — they're not generator-only knobs (which is
+  why Auto-generator wasn't the right home).
+  - **`minConsecutiveDaysOff` (1..3, default 2).** Used to be the
+    `n` default inside `hasConsecutiveDaysOff` (`schedule-logic.js`);
+    every call site passed `undefined`. v1.11.0 threads the
+    configured value into `generator.js`'s step 6 + ShiftFormModal's
+    `restWarning`. The picker's yellow banner copy adapts ("less
+    than N consecutive day(s) off"). Generator reason code stays
+    `"no-2-off"` (the semantic is "rest rule" regardless of N).
+  - **`maxConsecutiveWorkingDays` (3..14, default 5).** Used to be
+    the `max` default inside `withinMaxConsecutiveWorkingDays`.
+    Same `undefined` pattern at the two call sites. v1.11.0 threads
+    the configured value into `generator.js`'s step 6.5 +
+    ShiftFormModal's `maxConsecutiveWarning`. Picker banner copy
+    adapts ("more than N consecutive working days"). Always-on —
+    no disable toggle (locked: the cap is the knob, not its
+    existence).
+  - **`dayRequiredRoles` (object keyed by section, default
+    `{foh: [], kitchen: ["Chef"]}`).** Used to be the hard-coded
+    `SECTIONS.kitchen.dayRequiredRoles = ["Chef"]` in `constants.js`.
+    v1.11.0 adds an optional second arg to
+    `slotsForDay(template, dayRequiredRolesOverride)` — when the
+    override is supplied and the section's entry is an array, it
+    wins over the SECTIONS default (even an explicit empty array
+    counts as "permissive"). ScheduleGrid threads the configured
+    map into its `slotsForDay` call, so every consumer of
+    `slotDef.requiredRoles` (picker filter, generator's
+    `roleMatchesSlot`, Swap mechanic) inherits the configuration
+    automatically. UX is a per-section pill multi-select (FoH row:
+    Bar / Floor; Kitchen row: Chef / Plating / Pot). Empty per
+    section = permissive — any of the section's `coversRoles` is
+    enough, matching the pre-v1.11.0 FoH legacy behaviour.
+  **Migration / idempotency:** pre-v1.11.0 `/settings` docs lack
+  all three new fields. ScheduleGrid + Settings + generator all use
+  the defensive defensive-fallback pattern (same as v1.0.0
+  `generatorStrictPreference` and v1.9.4 banner config), so
+  behaviour is byte-identical for legacy docs. No eager migration;
+  the first auto-save from the new Settings section writes the
+  explicit values. SECTIONS.kitchen.dayRequiredRoles STAYS as the
+  system fallback when `slotsForDay` is called bare (tests, future
+  callers) — no deletion.
+  **Settings UX:** all three rows auto-save on change (no Save
+  button), matching the Auto-generator section's pattern. Reset to
+  defaults writes the three new defaults alongside the existing
+  ones. `openSection` valid set expanded to include `"rules"` so
+  sessionStorage persistence (v1.6.0) works for the new section
+  too.
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -930,7 +983,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.10.0)
+## File structure (current — v1.11.0)
 
 ```
 megustastu-scheduling/
@@ -983,6 +1036,8 @@ megustastu-scheduling/
     │                                 "undo-stack-and-login-hover-scale".
     │                                 v1.10.1: → 1.10.1, sha
     │                                 "eager-shift-template-migration".
+    │                                 v1.11.0: → 1.11.0, sha
+    │                                 "configurable-scheduling-rules".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1063,6 +1118,19 @@ megustastu-scheduling/
     │   │                           configurability in Settings → Auto-
     │   │                           generator and ScheduleGrid's auto-
     │   │                           dismiss effect.
+    │   │                           v1.11.0: + DEFAULT_MIN_CONSECUTIVE_DAYS_OFF
+    │   │                           (2) + MIN_CONSECUTIVE_DAYS_OFF_MIN/MAX (1/3).
+    │   │                           + DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS (5)
+    │   │                           + MAX_CONSECUTIVE_WORKING_DAYS_MIN/MAX (3/14).
+    │   │                           + DEFAULT_DAY_REQUIRED_ROLES =
+    │   │                           Object.freeze({foh: [], kitchen: ["Chef"]})
+    │   │                           — per-section override. SECTIONS.kitchen.
+    │   │                           dayRequiredRoles STAYS as system fallback
+    │   │                           when slotsForDay is called bare (tests,
+    │   │                           future call sites). All three drive
+    │   │                           Settings → "Scheduling rules" accordion
+    │   │                           section + ScheduleGrid defensive reads +
+    │   │                           generator thread-through.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first since v0.8.0) + cell-state
     │   │                           derivation + findRequestConflict +
@@ -1159,6 +1227,22 @@ megustastu-scheduling/
     │   │                           docs still trigger cleanup. Imports
     │   │                           OPERATING_HOURS for the per-block
     │   │                           defaults.
+    │   │                           v1.11.0: slotsForDay gains an optional
+    │   │                           2nd arg `dayRequiredRolesOverride` —
+    │   │                           per-section map `{foh: [...], kitchen:
+    │   │                           [...]}` that wins over SECTIONS defaults
+    │   │                           when supplied (even an explicit empty
+    │   │                           array; that's a manager-set "permissive"
+    │   │                           choice). Bare-call behaviour preserved
+    │   │                           — falls back to SECTIONS[section].
+    │   │                           dayRequiredRoles when override missing.
+    │   │                           hasConsecutiveDaysOff +
+    │   │                           withinMaxConsecutiveWorkingDays bodies
+    │   │                           unchanged — they already took n/max as
+    │   │                           positional args with defaults; v1.11.0
+    │   │                           just stops passing `undefined` at the
+    │   │                           call sites in generator.js and
+    │   │                           ShiftFormModal.jsx.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -1331,6 +1415,29 @@ megustastu-scheduling/
     │                               to 5 OTHER dates (the Day-OFF
     │                               date is still skipped at step (2)
     │                               via findRequestConflict).
+    │                               v1.11.0: + three new generateWeek
+    │                               args — `minConsecutiveDaysOff`
+    │                               (1..3, default 2),
+    │                               `maxConsecutiveWorkingDays` (3..14,
+    │                               default 5), `dayRequiredRoles` (per-
+    │                               section map). All extracted with
+    │                               `Number.isFinite ? value : default`
+    │                               guards so legacy callers get
+    │                               pre-v1.11.0 behaviour byte-identical.
+    │                               buildCandidates signature grew two
+    │                               trailing positional args
+    │                               (minConsecutiveDaysOff +
+    │                               maxConsecutiveWorkingDays) — passed
+    │                               into hasConsecutiveDaysOff (step 6,
+    │                               was `undefined`) and
+    │                               withinMaxConsecutiveWorkingDays
+    │                               (step 6.5, was `undefined`).
+    │                               Internal slotsForDay call now passes
+    │                               `dayRequiredRoles` so slotDef.
+    │                               requiredRoles reflects the per-
+    │                               section configuration; roleMatchesSlot
+    │                               (step 1) needed no change because it
+    │                               reads requiredRoles off the slotDef.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -1623,6 +1730,25 @@ megustastu-scheduling/
         │                           the existing v1.9.4 auto-dismiss /
         │                           duration settings apply to it for
         │                           uniformity.
+        │                           v1.11.0: + three new derived consts
+        │                           (minConsecutiveDaysOff,
+        │                           maxConsecutiveWorkingDays,
+        │                           dayRequiredRoles) using the same
+        │                           defensive-read + clamp pattern as the
+        │                           v1.9.4 banner config. slotsForDay
+        │                           memo now receives dayRequiredRoles
+        │                           as its 2nd arg and includes it in
+        │                           the dep array — slot definitions
+        │                           rebuild when the manager changes the
+        │                           per-section required-role list, so
+        │                           the picker dropdown updates
+        │                           immediately. All three new values
+        │                           thread into <GenerateButton> via
+        │                           new props; minConsecutiveDaysOff +
+        │                           maxConsecutiveWorkingDays also pass
+        │                           to <ShiftFormModal> (dayRequiredRoles
+        │                           flows in through slotDef so the
+        │                           modal needs no prop for it).
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -1667,6 +1793,30 @@ megustastu-scheduling/
         │                           would create > 5 consecutive
         │                           working days (across the 21-day
         │                           [prior, focus, next] window).
+        │                           v1.11.0: + minConsecutiveDaysOff +
+        │                           maxConsecutiveWorkingDays props
+        │                           (both optional; fall back to the
+        │                           helper defaults — 2 and 5 — when
+        │                           missing so pre-v1.11.0 callers
+        │                           behave identically). Both are
+        │                           passed into hasConsecutiveDaysOff
+        │                           + withinMaxConsecutiveWorkingDays
+        │                           respectively (replacing the
+        │                           `undefined` 4th arg the calls used
+        │                           before). Yellow restWarningBanner +
+        │                           maxConsecutiveBanner copy adapts to
+        │                           the configured value ("less than N
+        │                           consecutive day(s) off", "more than
+        │                           N consecutive working days") via
+        │                           inline minOffForCopy /
+        │                           maxConsecForCopy fallbacks. The
+        │                           picker's role-match filter at lines
+        │                           142–156 needed no change because it
+        │                           already reads slotDef.requiredRoles
+        │                           — per-section required-role config
+        │                           flows in through slotsForDay's new
+        │                           override arg (handled by
+        │                           ScheduleGrid).
         ├── Settings.jsx            operating-hours editor + shift template
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
@@ -1746,6 +1896,37 @@ megustastu-scheduling/
         │                           materializeShiftTemplate with a
         │                           defensive default-shape fallback for
         │                           null input.
+        │                           v1.11.0: + new "Scheduling rules"
+        │                           Collapsible accordion section
+        │                           inserted between Display and
+        │                           Auto-generator. Three rows:
+        │                           (1) segmented 1/2/3 for
+        │                           minConsecutiveDaysOff, (2) number
+        │                           input 3..14 for
+        │                           maxConsecutiveWorkingDays, (3) per-
+        │                           section pill multi-select (FoH:
+        │                           Bar/Floor; Kitchen: Chef/Plating/Pot)
+        │                           for dayRequiredRoles. All auto-save
+        │                           on change — no Save button, matching
+        │                           the Auto-generator section's pattern.
+        │                           The required-role pill writer
+        │                           always builds the full per-section
+        │                           dayRequiredRoles object (both
+        │                           sections) before saving, even when
+        │                           the manager only touched one section
+        │                           — keeps the doc canonical. Empty per-
+        │                           section list = "permissive — any
+        │                           role in {section}", with a muted
+        │                           helper line confirming that. Reset
+        │                           to defaults writes the three new
+        │                           defaults alongside the existing
+        │                           ones (deep-cloned so the saved doc
+        │                           isn't a frozen object). openSection
+        │                           valid set in the sessionStorage
+        │                           read (v1.6.0) expanded with
+        │                           "rules" so the new section's
+        │                           open/closed state persists across
+        │                           refresh.
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
@@ -1799,6 +1980,20 @@ megustastu-scheduling/
         │                           on a full week). Fill-
         │                           empty mode ignores the policy
         │                           (only Regenerate consults it).
+        │                           v1.11.0: + three new props
+        │                           (minConsecutiveDaysOff,
+        │                           maxConsecutiveWorkingDays,
+        │                           dayRequiredRoles) forwarded
+        │                           verbatim into the generateWeek({...})
+        │                           call. All three are optional in
+        │                           generateWeek — when ScheduleGrid's
+        │                           defensive read defaults to the
+        │                           DEFAULT_* constants and forwards
+        │                           those, the generator's own arg
+        │                           extraction matches them against
+        │                           the pre-v1.11.0 hard-coded values
+        │                           (2 / 5 / null) → byte-identical
+        │                           behaviour for legacy /settings docs.
         ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
         │                           Overlay. Shows the bullet list of
         │                           what the generator will do +
@@ -2103,9 +2298,26 @@ megustastu-scheduling/
                                                      // When false, the result
                                                      // banner stays until the
                                                      // manager dismisses it.
-      generatorBannerDurationSec?: number }          // v1.9.4 — 1..60; default 5.
+      generatorBannerDurationSec?: number,           // v1.9.4 — 1..60; default 5.
                                                      // Only consulted when
                                                      // auto-dismiss is on.
+      minConsecutiveDaysOff?: number,                // v1.11.0 — 1..3; default 2.
+                                                     // Min consecutive off-days
+                                                     // touching the focus week.
+                                                     // HARD in generator, SOFT
+                                                     // in manual picker.
+      maxConsecutiveWorkingDays?: number,            // v1.11.0 — 3..14; default 5.
+                                                     // Max consecutive working
+                                                     // days across the 21-day
+                                                     // [prior, focus, next]
+                                                     // window. HARD + SOFT.
+      dayRequiredRoles?: {                           // v1.11.0 — default
+        foh: string[],                                // {foh: [],
+        kitchen: string[]                             //  kitchen: ["Chef"]}.
+      } }                                            // Per-section override
+                                                     // for slotDef.requiredRoles;
+                                                     // empty array per section
+                                                     // = permissive.
 ```
 
 ---
