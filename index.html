@@ -303,7 +303,17 @@
       }
       .mgt-hover-scale:hover:not(:disabled) {
         transform: scale(1.08);
-        background-color: var(--bg-overlay-sheet);
+        /* v1.13.0 polish: the hover card now uses 80% of the overlay-
+           sheet token (rather than the full var(--bg-overlay-sheet)
+           value, which is itself 0.92/0.95 alpha). The 80% color-mix
+           applies a softer wash on top of the underlying surface so
+           translucent rows (Settings rows, fairness panel rows, per-
+           week sparkline bars) read as "I'm hovered" without painting
+           a near-opaque white card. Elements WITH an inline
+           background: keep their colour because inline styles beat
+           CSS rules at the same specificity — the new color-mix only
+           fills in the gap for elements that had no inline bg. */
+        background-color: color-mix(in srgb, var(--bg-overlay-sheet) 80%, transparent);
         box-shadow: var(--shadow-soft);
         /* v1.9.0 (perslot+ commit, second round): rounded corners on the
            hover card so transparent rows (Toggle atoms, Collapsible
@@ -317,19 +327,6 @@
         border-radius: 12px;
         position: relative;
         z-index: 2;
-      }
-      /* v1.13.0 polish: subtle-hover variant. Pair with .mgt-hover-scale
-         on rows where the standard opaque hover card reads as too strong
-         — currently the <MonthlyFairnessPanel> rows and the per-week
-         sparkline bars in <EmployeeFairnessModal>. Two-class selector
-         (.mgt-hover-scale.mgt-hover-soft) raises specificity so it wins
-         over .mgt-hover-scale:hover regardless of source order.
-         color-mix at 50% gives the same color at half the perceived
-         intensity; the shadow is suppressed entirely so the lift cue
-         comes purely from the scale transform + the faint bg. */
-      .mgt-hover-scale.mgt-hover-soft:hover:not(:disabled) {
-        background-color: color-mix(in srgb, var(--bg-overlay-sheet) 50%, transparent);
-        box-shadow: none;
       }
     </style>
   </head>

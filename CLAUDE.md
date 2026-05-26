@@ -1122,26 +1122,32 @@ separate Firebase project, same UI conventions).
     Clicking "this wk" is a no-op navigationally (weekStart already
     matches) but still closes the modal — accepted minor cost for
     interaction consistency across all four bars.
-  - **Row layout (in-DEV review polish, second pass).** The first
-    cut of the fairness row made the name+counts area `flex: 1`,
-    which meant the hover background and the selected green tint
-    extended across the full row width. The first polish pass
-    over-corrected — name button sized to its content with 12 × 14
-    px padding made the row tall and the green tint too small. The
-    second pass (Q-bundle: "full row width" + "subtle hover") puts
-    the selected green back on the wrapper at full row width and
-    introduces a new `.mgt-hover-soft` CSS utility (defined in
-    `index.html`) that pairs with `.mgt-hover-scale` to halve the
-    standard opaque hover-card fill (via
-    `color-mix(in srgb, var(--bg-overlay-sheet) 50%, transparent)`)
-    and drop the shadow. The two-class selector
-    `.mgt-hover-scale.mgt-hover-soft:hover` raises specificity so it
-    wins over the standard hover-scale rule regardless of source
-    order. Wrapper padding settled at 8 × 12 px — a small bump from
-    the original 6 × 8 for breathing room without making the row
-    tall. The soft variant is also applied to the per-week sparkline
-    bars in `<EmployeeFairnessModal>` so the two surfaces share one
-    interaction language.
+  - **Row layout & hover bg (in-DEV review polish, three iteration
+    rounds).** The first cut of the fairness row made the name+
+    counts area `flex: 1`, so the hover background + selected green
+    tint stretched across the full row width past the hours info.
+    Round 1 fixed by sizing the name button to its content with
+    12×14 px padding — but the row read as too tall and the green
+    tint too small. Round 2 restored the wrapper-as-highlight
+    pattern (full-row green when selected), bumped padding to 8×12,
+    and introduced a `.mgt-hover-soft` variant that halved the
+    hover-card opacity. Round 3 (FINAL): padding restored to the
+    original 6×8 (active-only rows feel compact again, matching the
+    `<WeeklyShiftSummary>` chip-row rhythm above). The
+    `.mgt-hover-soft` variant was DELETED — instead, the base
+    `.mgt-hover-scale:hover` rule was tuned globally to use
+    `color-mix(in srgb, var(--bg-overlay-sheet) 80%, transparent)`
+    so every surface that uses the utility gets a slightly softer
+    wash (still clearly visible, just no longer a near-opaque card).
+    The single rule keeps the interaction language consistent across
+    the app — fairness rows, per-week sparkline bars, Settings rows,
+    tab nav, everywhere.
+  - **Active-only fairness rows.** `<MonthlyFairnessPanel>` skips
+    `emp.active === false` employees entirely (was: skip-archived-
+    with-zero-shifts, which still surfaced orphan shifts on archived
+    rows). Orphan-shift visibility lives on `<WeeklyShiftSummary>`
+    just above the panel; this surface is for active-roster
+    balancing.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -2369,25 +2375,20 @@ megustastu-scheduling/
         │                           past-week navigation does NOT gate it
         │                           (informational only).
         │                           v1.13.0 polish (in-DEV review,
-        │                           landed in two passes):
-        │                           (a) Row layout — final state. The
-        │                           wrapper holds the selected green
-        │                           tint at full row width (restored
-        │                           after the first polish pass shrank
-        │                           it to the name+counts area only —
-        │                           the manager wanted the wider extent
-        │                           back). Wrapper padding bumped from
-        │                           the original 6×8 → 8×12 for a small
-        │                           breathing-room win without making
-        │                           the row tall. The name button (the
-        │                           highlight-toggle target) uses
-        │                           `.mgt-hover-scale .mgt-hover-soft`
-        │                           — the soft variant (NEW in v1.13.0,
-        │                           defined in index.html) halves the
-        │                           standard opaque hover-card fill via
-        │                           color-mix and drops the shadow, so
-        │                           the on-hover affordance reads as
-        │                           subtle instead of a strong card-pop.
+        │                           three iteration rounds — final
+        │                           state described here):
+        │                           (a) Row layout. Wrapper is the
+        │                           highlight host; selected green tint
+        │                           covers the full row width. Wrapper
+        │                           padding 6×8 (the original v1.12.0
+        │                           value — intermediate 8×12 and 12×14
+        │                           attempts read as too tall). Name
+        │                           button uses just `.mgt-hover-scale`
+        │                           (no longer needs a -soft variant;
+        │                           index.html's base rule was tuned to
+        │                           `color-mix(--bg-overlay-sheet 80%,
+        │                           transparent)` so every surface using
+        │                           the utility gets a softer wash).
         │                           (b) + onJumpToWeek prop. When set,
         │                           forwards a wrapped handler to
         │                           <EmployeeFairnessModal> that calls
@@ -2397,6 +2398,13 @@ megustastu-scheduling/
         │                           ScheduleGrid omits the prop → the
         │                           modal's per-week bars render as
         │                           plain text.
+        │                           (c) Active-only. Row-build loop
+        │                           skips emp.active === false entirely
+        │                           (was: skip-archived-with-zero-
+        │                           shifts). Orphan-shift visibility
+        │                           lives on <WeeklyShiftSummary> right
+        │                           above; this surface is for active-
+        │                           roster balancing.
         ├── EmployeeFairnessModal.jsx v1.13.0: NEW. Read-only drill-down
         │                           popover opened from a MonthlyFairness
         │                           Panel row's delta-bar click. Overlay-
@@ -2421,18 +2429,19 @@ megustastu-scheduling/
         │                           v1.13.0 polish: + optional
         │                           onJumpToWeek(weekStartIso) prop. When
         │                           set, each WeekBar becomes a
-        │                           `<button>` (`.mgt-hover-scale
-        │                           .mgt-hover-soft` — the same subtle
-        │                           half-opacity hover treatment used on
-        │                           the fairness panel rows, no shadow)
-        │                           that fires the handler with its
-        │                           weekStartIso. When unset, bars
-        │                           render as plain `<div>`s (the
-        │                           original v1.13.0 layout). The helper
-        │                           text below the sparkline conditionally
-        │                           appends "Click a bar to open that
-        │                           week in the schedule." so the
-        │                           affordance is discoverable.
+        │                           `<button>` (`.mgt-hover-scale` —
+        │                           gets the v1.13.0 round-3 80%
+        │                           color-mix hover bg defined globally
+        │                           in index.html, no per-element
+        │                           variant needed) that fires the
+        │                           handler with its weekStartIso. When
+        │                           unset, bars render as plain
+        │                           `<div>`s (the original v1.13.0
+        │                           layout). The helper text below the
+        │                           sparkline conditionally appends
+        │                           "Click a bar to open that week in
+        │                           the schedule." so the affordance is
+        │                           discoverable.
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.

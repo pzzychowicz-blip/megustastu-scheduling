@@ -35,24 +35,25 @@
 //     three sections (28-day rolling, calendar month, per-week
 //     sparkline).
 //
-// v1.13.0 polish (in-DEV review feedback):
-//   - Row layout. Wrapper holds the selected green tint at full row
-//     width (restored after the first polish pass shrank it to the
-//     name+counts area — the manager wanted the wider extent back).
-//     Wrapper padding bumped from the original 6×8 → 8×12 for a
-//     small breathing-room win without making the row tall. The
-//     name button (which is the highlight-toggle target) uses
-//     `.mgt-hover-scale .mgt-hover-soft` — the soft variant
-//     (defined in index.html) halves the standard hover-card fill
-//     opacity and drops the shadow, giving a subtle "I'm hovered"
-//     cue instead of the strong card-pop that read as too loud.
+// v1.13.0 polish (in-DEV review feedback, final state after three
+// iteration rounds):
+//   - Row layout. Wrapper is the highlight host (selected green tint
+//     covers the full row width including the delta-bar area).
+//     Wrapper padding stayed at the original 6×8 px — earlier
+//     attempts at 8×12 and 12×14 read as too tall. The name button
+//     uses just `.mgt-hover-scale` (no longer needs a `-soft`
+//     variant — see hover-bg notes in `index.html`'s utility
+//     definition).
 //   - Per-week sparkline jump-to-week. New `onJumpToWeek` prop
 //     (forwarded by ScheduleGrid). When set, the modal's WeekBars
 //     become clickable buttons that navigate the schedule to the
 //     chosen week. We wrap the upstream handler locally so a
 //     successful jump also auto-closes the modal — the manager
-//     wants to see the week they picked. The bars also use
-//     `.mgt-hover-soft` for the same subtle hover treatment.
+//     wants to see the week they picked.
+//   - Active-only. The row-build loop now skips every archived
+//     employee (was: skip-archived-with-zero-shifts). Orphan-shift
+//     visibility lives on <WeeklyShiftSummary> already; this surface
+//     is for active-roster balancing.
 //
 // Props:
 //   employees             ({ [id]: employee })
@@ -86,22 +87,24 @@ export default function MonthlyFairnessPanel({
 
   const [detailEmployeeId, setDetailEmployeeId] = useState(null);
 
-  // Build row models, skipping employees with no target AND no actual
-  // (e.g. archived employees that the 28-day window had zero activity
-  // for). An employee with target=0 but actual>0 still shows — they
-  // were over-utilised against an empty quota, which is worth seeing.
+  // Build row models. v1.13.0 polish (round 3): the panel is now
+  // active-only — archived employees are skipped entirely, even when
+  // they still have orphan shifts in the 28-day window. The manager
+  // is using this surface to balance the CURRENT roster, and a
+  // strikethrough archived row was just visual noise. Orphan-shift
+  // detection still happens at the WeeklyShiftSummary panel which
+  // intentionally surfaces them on the active week.
   const rows = [];
   const ids = Object.keys(empMap);
   for (let i = 0; i < ids.length; i++) {
     const emp = empMap[ids[i]];
     if (!emp) continue;
+    if (emp.active === false) continue;
     const agg = aggMap[emp.id];
     if (!agg) continue;
-    if (emp.active === false && agg.shiftsCount === 0) continue;
     rows.push({
       id: emp.id,
       name: emp.name || "(unnamed)",
-      archived: emp.active === false,
       shiftsCount: agg.shiftsCount,
       shiftsTarget: agg.shiftsTarget,
       hoursTotal: agg.hoursTotal,
@@ -258,7 +261,6 @@ export default function MonthlyFairnessPanel({
                 style={{
                   fontWeight: isSelected ? 700 : 600,
                   minWidth: 110,
-                  textDecoration: r.archived ? "line-through" : "none",
                 }}
               >
                 {r.name}
@@ -290,10 +292,10 @@ export default function MonthlyFairnessPanel({
           const nameNode = interactiveHighlight ? (
             <button
               type="button"
-              className="mgt-hover-scale mgt-hover-soft"
+              className="mgt-hover-scale"
               onClick={function () { onHighlight(isSelected ? null : r.id); }}
               aria-pressed={isSelected ? "true" : "false"}
-              title={(r.archived ? r.name + " (archived)" : r.name) + " — click to highlight"}
+              title={r.name + " — click to highlight"}
               style={nameBtnStyle}
             >
               {nameContent}
@@ -326,22 +328,21 @@ export default function MonthlyFairnessPanel({
             <span style={{ flexShrink: 0 }}>{deltaBar(r)}</span>
           );
 
-          // Selected = full-row green tint on the wrapper. Per Q1 the
-          // user wants the v1.13.0-first extent back (covers the full
-          // row including the delta bar area), not the narrower
-          // around-name treatment from the first polish pass.
+          // Selected = full-row green tint on the wrapper. v1.13.0
+          // round 3: wrapper padding restored to the original 6×8 px
+          // (active-only rows feel compact again, matching the
+          // chip-row rhythm of <WeeklyShiftSummary> just above).
           const wrapStyle = {
             display: "flex",
             alignItems: "center",
             gap: 12,
             flexWrap: "wrap",
             width: "100%",
-            padding: "8px 12px",
+            padding: "6px 8px",
             borderRadius: 8,
             border: isSelected ? "1px solid var(--border-active-on)" : "1px solid transparent",
             background: isSelected ? "var(--bg-active-on)" : "transparent",
             boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : "none",
-            opacity: r.archived ? 0.6 : 1,
             boxSizing: "border-box",
           };
 

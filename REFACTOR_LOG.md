@@ -89,25 +89,22 @@ an entry. Newest first.
   one is all-employees and feeds the generator + panel; the drill-
   down is one-off and consumer-local.
 
-**In-DEV review polish (same PR, two follow-up commits):**
-- **Row layout — final state (second pass).** First pass tried sizing
-  the name button to its content with 12 × 14 px padding; the row
-  became too tall and the green selected state shrank. Second pass
-  (per manager feedback) restored the wrapper-as-highlight pattern so
-  the selected green tint extends across the full row width again,
-  with wrapper padding settled at 8 × 12 px (a small bump from the
-  original 6 × 8 for breathing room, kept compact). The name button
-  uses the new `.mgt-hover-soft` variant — see below.
-- **NEW `.mgt-hover-soft` CSS utility.** Defined in `index.html` to
-  pair with the existing `.mgt-hover-scale`. The two-class selector
-  `.mgt-hover-scale.mgt-hover-soft:hover` halves the standard opaque
-  hover-card fill via
-  `color-mix(in srgb, var(--bg-overlay-sheet) 50%, transparent)` and
-  drops the shadow. Higher specificity (two classes) guarantees it
-  wins over the standard hover-scale rule regardless of source order.
-  Applied to (a) fairness panel rows and (b) per-week sparkline bars
-  in `<EmployeeFairnessModal>` — single interaction language across
-  both surfaces.
+**In-DEV review polish (same PR, three iteration rounds — final
+state described here):**
+- **Row layout — final.** First round sized the name button to its
+  content with 12×14 padding; row read as too tall, green tint too
+  small. Second round restored the wrapper-as-highlight pattern
+  (full-row green when selected), bumped padding to 8×12, and added
+  a `.mgt-hover-soft` variant for a faint half-opacity hover bg.
+  Third round (per manager feedback): padding restored to the
+  ORIGINAL 6×8 (active-only rows feel compact, matching the
+  `<WeeklyShiftSummary>` chip-row rhythm just above). The
+  `.mgt-hover-soft` variant was DELETED and the base
+  `.mgt-hover-scale:hover` rule was tuned globally to use
+  `color-mix(in srgb, var(--bg-overlay-sheet) 80%, transparent)` —
+  every surface using the utility gets a slightly softer wash
+  (still visible, just no longer a near-opaque card). Single rule,
+  consistent interaction language app-wide.
 - **Per-week sparkline jump-to-week.** Each WeekBar in
   `<EmployeeFairnessModal>` is now a clickable `<button>` (when
   ScheduleGrid provides the new `onJumpToWeek` prop). Click → navigate
@@ -118,6 +115,12 @@ an entry. Newest first.
   navigation AND the modal close. Helper text below the sparkline
   conditionally announces the affordance ("Click a bar to open that
   week in the schedule.").
+- **Active-only fairness rows.** `<MonthlyFairnessPanel>` now skips
+  every `emp.active === false` employee. Earlier behaviour (skip-
+  archived-with-zero-shifts) still surfaced orphan shifts on
+  archived rows, which read as noise on a panel meant for balancing
+  the active roster. Orphan visibility for the focus week lives on
+  `<WeeklyShiftSummary>` immediately above the fairness panel.
 
 **Verification:** local DEV (`npm run dev`) on the standard manual QA
 flow. `npm run build` clean.
