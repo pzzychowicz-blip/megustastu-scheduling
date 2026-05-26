@@ -89,22 +89,32 @@ an entry. Newest first.
   one is all-employees and feeds the generator + panel; the drill-
   down is one-off and consumer-local.
 
-**In-DEV review polish (same PR, three iteration rounds — final
+**In-DEV review polish (same PR, four iteration rounds — final
 state described here):**
-- **Row layout — final.** First round sized the name button to its
-  content with 12×14 padding; row read as too tall, green tint too
-  small. Second round restored the wrapper-as-highlight pattern
-  (full-row green when selected), bumped padding to 8×12, and added
-  a `.mgt-hover-soft` variant for a faint half-opacity hover bg.
-  Third round (per manager feedback): padding restored to the
-  ORIGINAL 6×8 (active-only rows feel compact, matching the
-  `<WeeklyShiftSummary>` chip-row rhythm just above). The
-  `.mgt-hover-soft` variant was DELETED and the base
-  `.mgt-hover-scale:hover` rule was tuned globally to use
-  `color-mix(in srgb, var(--bg-overlay-sheet) 80%, transparent)` —
-  every surface using the utility gets a slightly softer wash
-  (still visible, just no longer a near-opaque card). Single rule,
-  consistent interaction language app-wide.
+- **Row layout & hover bg — final.** Each round addressed a
+  separate concern the previous one over-corrected:
+  - **Round 1** sized the name button to its content with 12×14
+    padding; row read as too tall, green tint too small.
+  - **Round 2** restored the wrapper-as-highlight pattern (full-
+    row green when selected), bumped padding to 8×12, and added
+    a `.mgt-hover-soft` variant for a faint half-opacity hover bg.
+  - **Round 3** restored padding to the original 6×8 and deleted
+    `.mgt-hover-soft` in favour of a global tune of
+    `.mgt-hover-scale:hover` to
+    `color-mix(in srgb, var(--bg-overlay-sheet) 80%, transparent)`.
+  - **Round 4 (final).** Even 80% still read as washy on top of
+    the already-translucent `--bg-soft` / `--bg-card` surfaces.
+    Introduced a NEW theme-aware `--bg-hover-card` token (light:
+    `#ffffff`, dark: `rgb(50,50,53)`) used directly by the
+    `.mgt-hover-scale:hover` rule. Solid colour gives the hover
+    card a clear "lifted off the surface" read across every
+    surface that uses the utility. Separately, the fairness name
+    button stopped being `flex: 1` and now sizes to its content
+    (4×8 px inner padding), so the hover card fits snugly around
+    name+counts. The delta bar is pushed right via
+    `marginLeft: auto`. Selected green tint stays full-row-wide
+    on the wrapper — hover and selected have intentionally
+    different extents now.
 - **Per-week sparkline jump-to-week.** Each WeekBar in
   `<EmployeeFairnessModal>` is now a clickable `<button>` (when
   ScheduleGrid provides the new `onJumpToWeek` prop). Click → navigate

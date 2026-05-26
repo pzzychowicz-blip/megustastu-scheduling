@@ -255,8 +255,16 @@ export default function MonthlyFairnessPanel({
           //   - The name button stays `flex: 1` so the hover surface
           //     covers the click target. The delta bar sits on the
           //     right, with its own (regular) hover-scale.
+          // v1.13.0 polish round 4: the name button no longer
+          // stretches via `flex: 1` — it sizes to its content + a
+          // small inner padding so the hover card fits snugly around
+          // name+counts (was: spanning the full row width minus the
+          // delta bar). The delta-bar block is pushed to the right
+          // via `marginLeft: auto`. Selected green still lives on
+          // the wrapper (full row width), so the highlight identity
+          // stays unchanged.
           const nameContent = (
-            <span style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, flexWrap: "wrap" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <span
                 style={{
                   fontWeight: isSelected ? 700 : 600,
@@ -277,15 +285,13 @@ export default function MonthlyFairnessPanel({
           const nameBtnStyle = {
             background: "transparent",
             border: "none",
-            padding: 0,
+            padding: "4px 8px",
             margin: 0,
             cursor: "pointer",
             color: "inherit",
             fontFamily: "inherit",
             fontSize: "inherit",
             textAlign: "left",
-            flex: 1,
-            minWidth: 0,
             borderRadius: 8,
           };
 
@@ -301,7 +307,7 @@ export default function MonthlyFairnessPanel({
               {nameContent}
             </button>
           ) : (
-            <div style={{ flex: 1, minWidth: 0 }}>{nameContent}</div>
+            <div style={{ padding: "4px 8px" }}>{nameContent}</div>
           );
 
           const barBlock = canDrillDown ? (
@@ -314,6 +320,7 @@ export default function MonthlyFairnessPanel({
                 border: "none",
                 padding: 0,
                 margin: 0,
+                marginLeft: "auto",
                 cursor: "pointer",
                 display: "inline-block",
                 lineHeight: 0,
@@ -325,7 +332,7 @@ export default function MonthlyFairnessPanel({
               {deltaBar(r)}
             </button>
           ) : (
-            <span style={{ flexShrink: 0 }}>{deltaBar(r)}</span>
+            <span style={{ marginLeft: "auto", flexShrink: 0 }}>{deltaBar(r)}</span>
           );
 
           // Selected = full-row green tint on the wrapper. v1.13.0
