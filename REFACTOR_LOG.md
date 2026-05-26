@@ -5,6 +5,142 @@ an entry. Newest first.
 
 ---
 
+## v1.13.0 — Monthly Fairness Panel polish (highlight sync, delta bar, drill-down popover)
+
+**Date:** 2026-05-27
+
+**Behavioural change:** Three coupled improvements to the v1.12.0
+`<MonthlyFairnessPanel>`. All informational — the generator's
+`rankCandidates` ordering is byte-identical to v1.12.0.
+
+1. **Highlight sync.** Clicking a "Shifts assigned" pill now also lights
+   up the matching row in the fairness panel (and vice versa). The
+   pre-existing `highlightedEmployeeId` axis owned by `ScheduleGrid`
+   simply gained `<MonthlyFairnessPanel>` as a second consumer — same
+   green iOS-on tokens (`--bg-active-on` + `--border-active-on`) the
+   pill and the lit grid cells already use. One state, three surfaces
+   in lockstep.
+
+2. **Delta bar overhaul.** The 120×6 px bar with a thin hairline divider
+   reads poorly at arm's length. v1.13.0 bumps geometry to 160×10 px,
+   border-radius 3 → 5, replaces the full-height divider with a 2-px
+   vertically-centred notch (`top:2 bottom:2 opacity:.55`), and adds
+   inset 1-px micro-borders to both the red and green fills for
+   definition. Min-fill floor: any non-zero magnitude renders at
+   least 2 px so a small deficit can't visually collapse to
+   at-target.
+
+3. **Drill-down popover.** Clicking a delta bar opens a new read-only
+   `<EmployeeFairnessModal>` with three sections: (a) 28-day rolling
+   stats with signed deltas + holiday days + window dates; (b)
+   calendar month stats for the focus week's month, with a pro-rated
+   target = `workingDaysPerWeek × monthLength / 7 − holidays`; (c)
+   4-bar per-week sparkline [wk-3, wk-2, wk-1, this wk] tinted red /
+   neutral / green per under / at / over target. Past-week navigation
+   does NOT gate the modal — it's informational only.
+
+**Files changed:**
+- `src/lib/schedule-logic.js` — `+ buildEmployeeFairnessDetail({shifts,
+  employee, weekStart, requests, shiftTemplate})` returning
+  `{rolling28, calendarMonth, perWeek}`. Helper uses existing
+  `addDays`, `isoDate`, `parseIsoDate`, `hoursBetween`,
+  `avgShiftHours`, plus three private helpers (`wpwOf`,
+  `holidayDayCountForEmployeeInRange`, `aggregateShiftsInRange`).
+  Informational only — never feeds the generator.
+- `src/components/MonthlyFairnessPanel.jsx` — accepts
+  `highlightedEmployeeId` + `onHighlight` + new data props (`shifts`,
+  `requests`, `weekStart`, `shiftTemplate`). Name+counts area is a
+  `<button>` toggling the shared highlight; delta bar is a sibling
+  `<button>` opening `<EmployeeFairnessModal>` (NOT nested — invalid
+  HTML). Local `[detailEmployeeId]` owns the modal state. Delta-bar
+  geometry rewritten per the spec above.
+- `src/components/EmployeeFairnessModal.jsx` — **NEW.** Overlay-wrapped
+  read-only popover. Calls `buildEmployeeFairnessDetail` on open.
+  Three Section blocks (28-day, calendar month, per-week sparkline)
+  plus a single Close button. Mirrors the v1.9.0
+  `<RequestPreviewModal>` pattern (read-only, no edit affordance).
+- `src/components/ScheduleGrid.jsx` — `<MonthlyFairnessPanel>` mount
+  grew five extra props (`shifts`, `requests`, `weekStart`,
+  `shiftTemplate`, `highlightedEmployeeId`, `onHighlight`). No new
+  state — the pill-highlight axis just gained a second consumer.
+- `src/App.jsx` — `__APP_SIGNATURE__` → v1.13.0, sha
+  `"fairness-panel-highlight-deltabar-drilldown"`, build 2026-05-27.
+- `CLAUDE.md` — v1.13.0 locked-decisions block + per-file sub-entries.
+- `REFACTOR_LOG.md` — this entry.
+
+**Key design decisions:**
+- **Sibling buttons, not nested.** Nesting `<button>` inside `<button>`
+  is invalid HTML and React warns at runtime. The row uses two
+  side-by-side buttons inside a `<div>` wrapper: name+counts (highlight
+  toggle) and delta bar (modal trigger). The wrapper div carries the
+  green tint when selected so the visual identity reads across the
+  whole row.
+- **Single highlight axis, three consumers.** No new state in
+  ScheduleGrid; just one more prop forwarded. The pill / fairness-row
+  / grid-cell trio stays in lockstep by construction.
+- **Modal stays clickable in past weeks.** v1.12.0's read-only gate
+  blocks mutations, not inspection. The fairness modal is pure
+  informational — opening it from a past-week navigation is a
+  legitimate use case (the manager is auditing why someone's at /
+  under / over target).
+- **Helper lives in schedule-logic.js, computed on modal open.**
+  Single employee + four small windows; the work is sub-millisecond.
+  No need to fold into the existing `monthlyAggregates` memo — that
+  one is all-employees and feeds the generator + panel; the drill-
+  down is one-off and consumer-local.
+
+**In-DEV review polish (same PR, five iteration rounds — final
+state described here):**
+- **Row layout & hover bg — final.** Each round addressed a
+  separate concern the previous one over-corrected:
+  - **Round 1** sized the name button to its content with 12×14
+    padding; row read as too tall, green tint too small.
+  - **Round 2** restored the wrapper-as-highlight pattern (full-
+    row green when selected), bumped padding to 8×12, and added
+    a `.mgt-hover-soft` variant for a faint half-opacity hover bg.
+  - **Round 3** restored padding to the original 6×8 and deleted
+    `.mgt-hover-soft` in favour of a global tune of
+    `.mgt-hover-scale:hover` to
+    `color-mix(in srgb, var(--bg-overlay-sheet) 80%, transparent)`.
+  - **Round 4** introduced the theme-aware `--bg-hover-card`
+    token (light: `#ffffff`, dark: `rgb(50,50,53)`) used directly
+    by the hover rule — every translucent attempt read as washy
+    on top of the already-translucent `--bg-soft` / `--bg-card`
+    surfaces. Name button became content-sized with 4×8 px
+    padding so the hover card fits snug around name+counts.
+  - **Round 5 (final).** Wrapper padding dropped to 0; name
+    button padding bumped to 4×10 (matching the
+    `<WeeklyShiftSummary>` pill's `padding: "4px 10px"`).
+    Previous rounds stacked wrapper padding + button padding,
+    doubling the visual mass and making the fairness rows
+    noticeably taller than the Shifts assigned pills above. The
+    fairness section now matches the Shifts assigned section's
+    row density. Wrapper still hosts the selected green tint at
+    full row width — hover and selected have intentionally
+    different extents (hover snug; selected paints the full row
+    as the "lit" identity).
+- **Per-week sparkline jump-to-week.** Each WeekBar in
+  `<EmployeeFairnessModal>` is now a clickable `<button>` (when
+  ScheduleGrid provides the new `onJumpToWeek` prop). Click → navigate
+  the schedule to that week → modal auto-closes (manager wants to see
+  the picked week; the modal would block it). ScheduleGrid gains
+  `jumpToWeek(weekStartIso)` next to the existing `jumpToCell`.
+  MonthlyFairnessPanel forwards a local wrapper that handles both the
+  navigation AND the modal close. Helper text below the sparkline
+  conditionally announces the affordance ("Click a bar to open that
+  week in the schedule.").
+- **Active-only fairness rows.** `<MonthlyFairnessPanel>` now skips
+  every `emp.active === false` employee. Earlier behaviour (skip-
+  archived-with-zero-shifts) still surfaced orphan shifts on
+  archived rows, which read as noise on a panel meant for balancing
+  the active roster. Orphan visibility for the focus week lives on
+  `<WeeklyShiftSummary>` immediately above the fairness panel.
+
+**Verification:** local DEV (`npm run dev`) on the standard manual QA
+flow. `npm run build` clean.
+
+---
+
 ## v1.12.0 — Past-week lockdown, generator-fairness overhaul, Chef-pill bug, Settings auto-save
 
 **Date:** 2026-05-26

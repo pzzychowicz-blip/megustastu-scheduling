@@ -109,6 +109,13 @@
         --border-overlay-sheet: rgba(255,255,255,0.35);
         --shadow-overlay: 0 20px 60px rgba(0,0,0,0.18);
 
+        /* Hover card surface (v1.13.0 polish round 4). Used by the
+           .mgt-hover-scale:hover rule below. Fully opaque on purpose —
+           translucent versions (we tried 50%, 80% color-mix of
+           --bg-overlay-sheet) read as too washy on top of the
+           already-translucent --bg-soft / --bg-card surfaces. */
+        --bg-hover-card: #ffffff;
+
         /* Danger surfaces (write-warning banner, login error, validators) */
         --bg-danger-tint: rgba(255,59,48,0.12);
         --border-danger-tint: rgba(255,59,48,0.4);
@@ -229,6 +236,12 @@
         --border-overlay-sheet: rgba(255,255,255,0.10);
         --shadow-overlay: 0 20px 60px rgba(0,0,0,0.50);
 
+        /* Hover card surface (v1.13.0 polish round 4). Elevated solid
+           dark — slightly lighter than the body background so the
+           hover card reads as "lifted off the surface" rather than
+           blending in. Fully opaque on purpose. */
+        --bg-hover-card: rgb(50, 50, 53);
+
         /* Danger surfaces */
         --bg-danger-tint: rgba(255,69,58,0.18);
         --border-danger-tint: rgba(255,69,58,0.50);
@@ -303,7 +316,18 @@
       }
       .mgt-hover-scale:hover:not(:disabled) {
         transform: scale(1.08);
-        background-color: var(--bg-overlay-sheet);
+        /* v1.13.0 polish round 4: the hover card now uses
+           var(--bg-hover-card) — a fully opaque, theme-aware token
+           (#ffffff in light / rgb(50,50,53) in dark). Previous
+           translucent attempts (50%, 80% color-mix of
+           --bg-overlay-sheet) read as too washy on top of the
+           already-translucent --bg-soft / --bg-card surfaces. Solid
+           colour gives the hover card a clear "lifted off the
+           surface" read. Elements WITH an inline background: keep
+           their colour because inline styles beat CSS rules at the
+           same specificity — this only fills in the gap for
+           elements that had no inline bg. */
+        background-color: var(--bg-hover-card);
         box-shadow: var(--shadow-soft);
         /* v1.9.0 (perslot+ commit, second round): rounded corners on the
            hover card so transparent rows (Toggle atoms, Collapsible
