@@ -23,6 +23,17 @@
 //   shiftTemplate (obj?)                       — for avgShiftHours
 //   isMobile      (bool)
 //   onClose       (fn)                         — backdrop / Close button
+//   onJumpToWeek  (fn(weekStartIso)?)          — v1.13.0 polish; when set,
+//                                                  the per-week sparkline
+//                                                  rows become clickable
+//                                                  buttons that navigate
+//                                                  the schedule to that
+//                                                  week. Parent
+//                                                  (<MonthlyFairnessPanel>)
+//                                                  wraps the upstream
+//                                                  handler so a successful
+//                                                  jump also closes this
+//                                                  modal.
 //
 // Visual: matches RequestPreviewModal's vertical Section stack so the
 // read-only nature reads as "details panel" rather than a form.
@@ -90,7 +101,12 @@ function StatRow({ label, value, delta }) {
 // to the shifts count vs the bar's target (capped at 100%). Tint: red
 // when under-target, green when at-or-over (handles target=0 too — a
 // surplus on a fully-held week still reads green).
-function WeekBar({ row }) {
+//
+// v1.13.0 polish: optional `onClick` prop. When provided the whole row
+// becomes a `<button>` (hover-scale + tabular-nums cursor cue) that
+// navigates ScheduleGrid to the bar's week. The parent modal then
+// auto-closes via its own onJumpToWeek wrapper.
+function WeekBar({ row, onClick }) {
   const target = row.shiftsTarget;
   const actual = row.shiftsCount;
   // Bar width: 0..1 ratio. Use max(target, actual, 1) so a non-zero
@@ -110,16 +126,14 @@ function WeekBar({ row }) {
     : isAt
       ? "var(--hairline-strong)"
       : "var(--border-active-on)";
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        fontSize: 12,
-        padding: "2px 0",
-      }}
-    >
+
+  const rangeStr = fmtRangeShort(row.weekStartIso, row.weekEndIso);
+  const baseTitle = row.shiftsCount + " / " + row.shiftsTarget + " shifts (" + rangeStr + ")";
+  const interactive = typeof onClick === "function";
+  const rowTitle = interactive ? baseTitle + " — click to open this week" : baseTitle;
+
+  const inner = (
+    <>
       <span style={{ ...S.muted, fontSize: 11, minWidth: 56 }}>{row.label}</span>
       <div
         style={{
@@ -130,7 +144,6 @@ function WeekBar({ row }) {
           position: "relative",
           overflow: "hidden",
         }}
-        title={row.shiftsCount + " / " + row.shiftsTarget + " shifts (" + fmtRangeShort(row.weekStartIso, row.weekEndIso) + ")"}
       >
         <div
           style={{
@@ -156,12 +169,56 @@ function WeekBar({ row }) {
       >
         {row.shiftsCount} / {row.shiftsTarget}
       </span>
+    </>
+  );
+
+  if (interactive) {
+    return (
+      <button
+        type="button"
+        className="mgt-hover-scale"
+        onClick={onClick}
+        title={rowTitle}
+        aria-label={"Open " + rangeStr + " in the schedule"}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          fontSize: 12,
+          padding: "4px 8px",
+          borderRadius: 8,
+          background: "transparent",
+          border: "1px solid transparent",
+          color: "inherit",
+          fontFamily: "inherit",
+          cursor: "pointer",
+          textAlign: "left",
+          width: "100%",
+        }}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        fontSize: 12,
+        padding: "2px 0",
+      }}
+      title={rowTitle}
+    >
+      {inner}
     </div>
   );
 }
 
 export default function EmployeeFairnessModal({
   open, employee, weekStart, shifts, requests, shiftTemplate, isMobile, onClose,
+  onJumpToWeek,
 }) {
   if (!open || !employee || !weekStart) return null;
 
@@ -242,12 +299,18 @@ export default function EmployeeFairnessModal({
       <Section title="Per-week pattern" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {detail.perWeek.map(function (row) {
-            return <WeekBar key={row.weekStartIso} row={row} />;
+            const handler = typeof onJumpToWeek === "function"
+              ? function () { onJumpToWeek(row.weekStartIso); }
+              : null;
+            return <WeekBar key={row.weekStartIso} row={row} onClick={handler} />;
           })}
         </div>
         <div style={{ ...S.muted, fontSize: 11, marginTop: 8 }}>
           Each bar is shifts worked vs the raw workingDaysPerWeek for that week.
           Red = under, neutral = at, green = at-or-over target.
+          {typeof onJumpToWeek === "function"
+            ? " Click a bar to open that week in the schedule."
+            : null}
         </div>
       </Section>
 

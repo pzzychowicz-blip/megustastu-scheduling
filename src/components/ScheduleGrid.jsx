@@ -437,6 +437,23 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     setHighlightedCellKey(dateIso + "|" + slotKey);
   }
 
+  // v1.13.0 polish: navigate to a specific week (called from the
+  // EmployeeFairnessModal per-week sparkline). The modal closes itself
+  // via its own onJumpToWeek wrapper, so we only need to flip weekStart.
+  // No-op if the date string is malformed or the target week equals the
+  // current focus week (setWeekStart with the same value is a React
+  // no-op anyway, but we skip the parseIsoDate work).
+  function jumpToWeek(weekStartIso) {
+    if (!weekStartIso) return;
+    try {
+      const parsed = parseIsoDate(weekStartIso);
+      if (!parsed || isNaN(parsed.getTime())) return;
+      const normalized = startOfWeek(parsed);
+      if (isoDate(normalized) === isoDate(weekStart)) return;
+      setWeekStart(normalized);
+    } catch (_e) { /* malformed date — silently ignore */ }
+  }
+
   function handleSave(payload) {
     actions.upsertShift(payload);
     closeModal();
@@ -1463,6 +1480,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         shiftTemplate={shiftTemplate}
         highlightedEmployeeId={highlightedEmployeeId}
         onHighlight={onHighlight}
+        onJumpToWeek={jumpToWeek}
         isMobile={isMobile}
       />
 

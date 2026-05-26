@@ -20,7 +20,7 @@
 // memo; the panel just presents it.
 //
 // v1.13.0:
-//   - Highlight sync. The name+counts area is now a `<button>` that
+//   - Highlight sync. The name+counts area is a `<button>` that
 //     toggles the shared `highlightedEmployeeId` axis owned by
 //     ScheduleGrid. Selected rows paint with the same iOS-green tokens
 //     as the "Shifts assigned" pill + lit cells — clicking either
@@ -35,6 +35,21 @@
 //     three sections (28-day rolling, calendar month, per-week
 //     sparkline).
 //
+// v1.13.0 polish (same PR, follow-up to in-DEV review):
+//   - Row layout refined. The name-button is no longer `flex: 1` —
+//     it sizes to its content + Settings-style 12×14 px padding, so
+//     both the hover background AND the selected green tint fit
+//     snugly around name+counts. The delta bar is pushed to the
+//     right via `marginLeft: auto` on its block. Earlier full-width
+//     wrapper highlight was reported as "extending too far past the
+//     hours info."
+//   - Per-week sparkline jump-to-week. New `onJumpToWeek` prop
+//     (forwarded by ScheduleGrid). When set, the modal's WeekBars
+//     become clickable buttons that navigate the schedule to the
+//     chosen week. We wrap the upstream handler locally so a
+//     successful jump also auto-closes the modal — the manager
+//     wants to see the week they picked.
+//
 // Props:
 //   employees             ({ [id]: employee })
 //   monthlyAggregates     ({ [empId]: { shiftsCount, hoursTotal,
@@ -47,6 +62,11 @@
 //   shiftTemplate         (obj?)                  — v1.13.0; for avgShiftHours
 //   highlightedEmployeeId (string|null)           — v1.13.0; lit row
 //   onHighlight           (fn(id|null))           — v1.13.0; toggle handler
+//   onJumpToWeek          (fn(weekStartIso)?)     — v1.13.0 polish;
+//                                                    fired from the modal's
+//                                                    per-week sparkline.
+//                                                    When omitted, bars
+//                                                    render as plain text.
 //   isMobile              (bool)
 
 import { useState } from "react";
@@ -55,7 +75,7 @@ import EmployeeFairnessModal from "./EmployeeFairnessModal.jsx";
 
 export default function MonthlyFairnessPanel({
   employees, monthlyAggregates, shifts, requests, weekStart, shiftTemplate,
-  highlightedEmployeeId, onHighlight, isMobile,
+  highlightedEmployeeId, onHighlight, onJumpToWeek, isMobile,
 }) {
   const empMap = employees || {};
   const aggMap = monthlyAggregates || {};
@@ -186,22 +206,17 @@ export default function MonthlyFairnessPanel({
   const canDrillDown = Boolean(weekStart);
   const detailEmployee = detailEmployeeId ? empMap[detailEmployeeId] : null;
 
-  // Style helpers — applied identically to whichever sub-element acts as
-  // the highlight target (the name-button when interactive, the row-div
-  // when not). Keeps the visual identity in one place.
-  const baseRowStyle = {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    fontSize: 12,
-    color: "var(--text-primary)",
-    flexWrap: "wrap",
-    padding: "6px 8px",
-    borderRadius: 8,
-    border: "1px solid transparent",
-    width: "100%",
-    boxSizing: "border-box",
-  };
+  // Per-week jump (v1.13.0 polish round). The modal's per-week
+  // sparkline becomes clickable when ScheduleGrid provides a
+  // navigation handler. We wrap it locally so a successful jump
+  // also auto-closes the modal — the manager wants to *see* the
+  // chosen week, and the modal would block it.
+  function handleJumpToWeekFromModal(weekStartIso) {
+    if (typeof onJumpToWeek === "function") {
+      onJumpToWeek(weekStartIso);
+    }
+    setDetailEmployeeId(null);
+  }
 
   return (
     <div
@@ -215,26 +230,21 @@ export default function MonthlyFairnessPanel({
         Last 28 days · fairness
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {rows.map(function (r) {
           const isSelected = highlightedEmployeeId === r.id;
-          // Selected row paints in the same green identity the v1.7.0
-          // pill + cell highlights use — single visual language so the
-          // pill ↔ row link is unmistakable.
-          const selectedStyle = isSelected
-            ? {
-                background: "var(--bg-active-on)",
-                border: "1px solid var(--border-active-on)",
-                boxShadow: "0 0 0 2px var(--bg-active-on)",
-              }
-            : {};
 
-          // Inner layout: a name+counts cluster (highlight-toggle target)
-          // and a delta-bar cluster (drill-down target) — two sibling
-          // buttons inside an unstyled flex wrapper. Avoids nested
-          // <button> tags (invalid HTML, React warns).
-          const nameBlock = (
-            <span style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, flexWrap: "wrap" }}>
+          // v1.13.0 polish — the row's wrapper is now an unstyled flex
+          // container; the highlight visuals (hover background + green
+          // selected state) live on the name-button so they sit flush
+          // around the name+counts area instead of extending across the
+          // full row width. The delta bar is pushed to the right via
+          // `marginLeft: auto`. Matches the user feedback that the
+          // earlier full-width green panel "extended too far past the
+          // hours info." Padding on the name button matches the
+          // Settings section-header rhythm (12 × 14 px).
+          const nameContent = (
+            <>
               <span
                 style={{
                   fontWeight: isSelected ? 700 : 600,
@@ -250,7 +260,56 @@ export default function MonthlyFairnessPanel({
               <span style={{ ...S.muted, fontSize: 12 }}>
                 {fmtHours(r.hoursTotal)} / {fmtHours(r.hoursTarget)}
               </span>
-            </span>
+            </>
+          );
+
+          // Highlight-area visuals. `background: undefined` (NOT
+          // "transparent") on the un-selected branch is deliberate —
+          // the `.mgt-hover-scale:hover` global rule (v1.9.0 sixth
+          // commit) only fills in a background when the inline value
+          // is absent, so leaving it undefined lets the hover bg paint.
+          // An inline "transparent" would beat the CSS rule and the
+          // hover surface would never appear.
+          const highlightStyle = isSelected
+            ? {
+                background: "var(--bg-active-on)",
+                border: "1px solid var(--border-active-on)",
+                boxShadow: "0 0 0 2px var(--bg-active-on)",
+              }
+            : {
+                background: undefined,
+                border: "1px solid transparent",
+                boxShadow: undefined,
+              };
+
+          const nameAreaStyle = {
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            padding: "12px 14px",
+            borderRadius: 10,
+            color: "inherit",
+            fontFamily: "inherit",
+            fontSize: "inherit",
+            textAlign: "left",
+            cursor: interactiveHighlight ? "pointer" : "default",
+            ...highlightStyle,
+          };
+
+          const nameNode = interactiveHighlight ? (
+            <button
+              type="button"
+              className="mgt-hover-scale"
+              onClick={function () { onHighlight(isSelected ? null : r.id); }}
+              aria-pressed={isSelected ? "true" : "false"}
+              title={(r.archived ? r.name + " (archived)" : r.name) + " — click to highlight"}
+              style={nameAreaStyle}
+            >
+              {nameContent}
+            </button>
+          ) : (
+            <div style={nameAreaStyle}>{nameContent}</div>
           );
 
           const barBlock = canDrillDown ? (
@@ -263,6 +322,7 @@ export default function MonthlyFairnessPanel({
                 border: "none",
                 padding: 0,
                 margin: 0,
+                marginLeft: "auto",
                 cursor: "pointer",
                 display: "inline-block",
                 lineHeight: 0,
@@ -274,50 +334,25 @@ export default function MonthlyFairnessPanel({
               {deltaBar(r)}
             </button>
           ) : (
-            <span style={{ flexShrink: 0 }}>{deltaBar(r)}</span>
+            <span style={{ marginLeft: "auto", flexShrink: 0 }}>
+              {deltaBar(r)}
+            </span>
           );
 
-          const wrapStyle = {
-            ...baseRowStyle,
-            opacity: r.archived ? 0.6 : 1,
-            ...selectedStyle,
-          };
-
-          if (interactiveHighlight) {
-            // Name area is the highlight-toggle button; delta bar is a
-            // sibling button outside it. The row itself is a div wrapper
-            // so the green tint paints across the full width.
-            return (
-              <div key={r.id} style={wrapStyle}>
-                <button
-                  type="button"
-                  className="mgt-hover-scale"
-                  onClick={function () { onHighlight(isSelected ? null : r.id); }}
-                  aria-pressed={isSelected ? "true" : "false"}
-                  title={(r.archived ? r.name + " (archived)" : r.name) + " — click to highlight"}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
-                    margin: 0,
-                    cursor: "pointer",
-                    color: "inherit",
-                    fontFamily: "inherit",
-                    fontSize: "inherit",
-                    textAlign: "left",
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  {nameBlock}
-                </button>
-                {barBlock}
-              </div>
-            );
-          }
           return (
-            <div key={r.id} style={wrapStyle}>
-              {nameBlock}
+            <div
+              key={r.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+                width: "100%",
+                opacity: r.archived ? 0.6 : 1,
+                boxSizing: "border-box",
+              }}
+            >
+              {nameNode}
               {barBlock}
             </div>
           );
@@ -333,6 +368,7 @@ export default function MonthlyFairnessPanel({
         shiftTemplate={shiftTemplate}
         isMobile={isMobile}
         onClose={function () { setDetailEmployeeId(null); }}
+        onJumpToWeek={typeof onJumpToWeek === "function" ? handleJumpToWeekFromModal : undefined}
       />
     </div>
   );

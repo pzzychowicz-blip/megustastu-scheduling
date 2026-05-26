@@ -89,6 +89,31 @@ an entry. Newest first.
   one is all-employees and feeds the generator + panel; the drill-
   down is one-off and consumer-local.
 
+**In-DEV review polish (same PR, follow-up commit):**
+- **Row layout fix.** The first cut made the name+counts area
+  `flex: 1`, so the hover background and selected green tint stretched
+  across the full row width — well past the hours info, almost reaching
+  the delta bar. Fixed: name `<button>` is now sized to its content with
+  Settings-header-style 12 × 14 px padding; delta bar pushed to the
+  right via `marginLeft: auto`. Both hover and selected states now sit
+  flush around the clickable name area.
+- **Per-week sparkline jump-to-week.** Each WeekBar in
+  `<EmployeeFairnessModal>` is now a clickable `<button>` (when
+  ScheduleGrid provides the new `onJumpToWeek` prop). Click → navigate
+  the schedule to that week → modal auto-closes (manager wants to see
+  the picked week; the modal would block it). ScheduleGrid gains
+  `jumpToWeek(weekStartIso)` next to the existing `jumpToCell`.
+  MonthlyFairnessPanel forwards a local wrapper that handles both the
+  navigation AND the modal close. Helper text below the sparkline
+  conditionally announces the affordance ("Click a bar to open that
+  week in the schedule.").
+- **Inline-style nuance worth flagging.** The un-selected branch of
+  the highlight visuals sets `background: undefined`, NOT
+  `"transparent"`. The v1.9.0 sixth-commit `.mgt-hover-scale:hover`
+  CSS rule only fills in a hover bg when the inline value is absent —
+  an explicit `"transparent"` inline would beat the CSS (inline-wins-
+  over-rule) and the hover affordance would silently disappear.
+
 **Verification:** local DEV (`npm run dev`) on the standard manual QA
 flow. `npm run build` clean.
 

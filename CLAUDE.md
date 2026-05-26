@@ -1110,6 +1110,32 @@ separate Firebase project, same UI conventions).
     on modal open. Past-week navigation does NOT gate the modal
     (it's informational; doesn't mutate). Modal closes via
     backdrop / Close / Esc.
+  - **Per-week sparkline jump-to-week.** Each WeekBar in the modal
+    is a `<button>` (when ScheduleGrid provides the `onJumpToWeek`
+    prop) that navigates the schedule to that week. The flow:
+    bar click → modal's `onJumpToWeek(weekStartIso)` →
+    MonthlyFairnessPanel's wrapper (closes the modal locally) →
+    ScheduleGrid's `jumpToWeek(weekStartIso)` (parses ISO,
+    re-normalizes via `startOfWeek`, sets `weekStart`). The auto-
+    close is the load-bearing part — the manager wants to *see*
+    the week they picked, and the modal would block visibility.
+    Clicking "this wk" is a no-op navigationally (weekStart already
+    matches) but still closes the modal — accepted minor cost for
+    interaction consistency across all four bars.
+  - **Row layout (in-DEV review polish).** The first cut of the
+    fairness row made the name+counts area `flex: 1`, which meant
+    the hover background and the selected green tint extended across
+    the full row width — well past the hours info, almost reaching
+    the delta bar. Fixed by making the name `<button>` size to its
+    content with Settings-header-style 12 × 14 px padding; the delta
+    bar sits at the right via `marginLeft: auto`. Both the hover
+    surface and the selected highlight now fit snugly around the
+    clickable name area. Important inline-style nuance — the un-
+    selected branch uses `background: undefined` (NOT
+    `"transparent"`) so the v1.9.0 sixth-commit `.mgt-hover-scale:
+    hover` CSS rule actually paints. An explicit `"transparent"`
+    inline would beat the CSS rule (inline-wins-over-rule) and the
+    hover affordance would silently disappear.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -2044,6 +2070,17 @@ megustastu-scheduling/
         │                           the existing <WeeklyShiftSummary>
         │                           pattern so future read-only consumers
         │                           drop in symmetrically.
+        │                           v1.13.0 polish: + jumpToWeek(weekStartIso)
+        │                           helper next to jumpToCell. Parses the
+        │                           ISO string, re-normalizes via
+        │                           startOfWeek (defensive), and flips
+        │                           weekStart unless it's already the
+        │                           focus week. Forwarded to
+        │                           <MonthlyFairnessPanel> as onJumpToWeek
+        │                           — drives the new clickable per-week
+        │                           sparkline in <EmployeeFairnessModal>.
+        │                           No effect on the existing jumpToCell
+        │                           or pill-highlight axes — orthogonal.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -2325,6 +2362,36 @@ megustastu-scheduling/
         │                           compute on open). Modal is read-only —
         │                           past-week navigation does NOT gate it
         │                           (informational only).
+        │                           v1.13.0 polish (same PR, in-DEV
+        │                           review feedback):
+        │                           (a) Row layout refined. The name
+        │                           button is no longer `flex: 1` — it
+        │                           sizes to its content + Settings-
+        │                           header-style 12×14 px padding, so
+        │                           both the hover background AND the
+        │                           selected green tint fit snugly
+        │                           around name+counts. The delta-bar
+        │                           block is pushed to the right via
+        │                           `marginLeft: auto`. Earlier full-
+        │                           width wrapper highlight was reported
+        │                           as "extending too far past the hours
+        │                           info." Important detail: the un-
+        │                           selected branch sets
+        │                           `background: undefined` (NOT
+        │                           "transparent") so the v1.9.0 sixth-
+        │                           commit `.mgt-hover-scale:hover` bg
+        │                           rule actually paints — an inline
+        │                           "transparent" would beat the CSS and
+        │                           the hover surface would never appear.
+        │                           (b) + onJumpToWeek prop. When set,
+        │                           forwards a wrapped handler to
+        │                           <EmployeeFairnessModal> that calls
+        │                           ScheduleGrid's jumpToWeek AND auto-
+        │                           closes the modal — the manager wants
+        │                           to *see* the chosen week. Falsy when
+        │                           ScheduleGrid omits the prop → the
+        │                           modal's per-week bars render as
+        │                           plain text.
         ├── EmployeeFairnessModal.jsx v1.13.0: NEW. Read-only drill-down
         │                           popover opened from a MonthlyFairness
         │                           Panel row's delta-bar click. Overlay-
@@ -2346,6 +2413,19 @@ megustastu-scheduling/
         │                           open — single employee, cheap. No
         │                           edit affordance; mirrors the
         │                           <RequestPreviewModal> v1.9.0 pattern.
+        │                           v1.13.0 polish: + optional
+        │                           onJumpToWeek(weekStartIso) prop. When
+        │                           set, each WeekBar becomes a
+        │                           `<button>` (hover-scale + cursor +
+        │                           tooltip "Click to open this week")
+        │                           that fires the handler with its
+        │                           weekStartIso. When unset, bars
+        │                           render as plain `<div>`s (the
+        │                           original v1.13.0 layout). The helper
+        │                           text below the sparkline conditionally
+        │                           appends "Click a bar to open that
+        │                           week in the schedule." so the
+        │                           affordance is discoverable.
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
