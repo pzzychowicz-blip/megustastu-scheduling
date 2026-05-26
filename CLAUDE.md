@@ -1122,33 +1122,32 @@ separate Firebase project, same UI conventions).
     Clicking "this wk" is a no-op navigationally (weekStart already
     matches) but still closes the modal — accepted minor cost for
     interaction consistency across all four bars.
-  - **Row layout & hover bg (in-DEV review polish, four iteration
-    rounds).** The first cut of the fairness row made the name+
-    counts area `flex: 1`, so the hover background + selected green
-    tint stretched across the full row width past the hours info.
-    Round 1 fixed by sizing the name button to its content with
-    12×14 px padding — but the row read as too tall and the green
-    tint too small. Round 2 restored the wrapper-as-highlight
-    pattern (full-row green when selected), bumped padding to 8×12,
-    and introduced a `.mgt-hover-soft` variant that halved the
-    hover-card opacity. Round 3 restored padding to the original
-    6×8 and deleted the soft variant in favour of a global tune of
-    `.mgt-hover-scale:hover` background-color to
-    `color-mix(in srgb, var(--bg-overlay-sheet) 80%, transparent)`.
-    Round 4 (FINAL):
-      (a) A NEW theme-aware `--bg-hover-card` token (light:
-      `#ffffff`, dark: `rgb(50,50,53)`) replaces the color-mix
-      altogether. Solid colour gives the hover card a clear
-      "lifted off the surface" read — every prior translucent
-      attempt (50%, 80% mix, even the original 0.92 alpha) read
-      as too washy on top of the already-translucent
-      `--bg-soft` / `--bg-card` surfaces.
-      (b) The fairness name button stops being `flex: 1` and
-      sizes to its content with 4×8 px inner padding; the delta
-      bar is pushed right via `marginLeft: auto`. The hover card
-      now fits snugly around name+counts only, while the selected
-      green tint stays full-row-wide on the wrapper. Two surfaces,
-      two extents, intentionally distinct.
+  - **Row layout & hover bg (in-DEV review polish, five iteration
+    rounds).** Each round fixed a specific concern surfaced by
+    looking at the live DEV server:
+      - **R1.** Name button → content-sized + 12×14 padding. Row
+        read as too tall; green tint too small.
+      - **R2.** Wrapper-as-highlight restored (full-row green);
+        padding 8×12; `.mgt-hover-soft` variant added (50% mix).
+      - **R3.** Padding restored to 6×8; `.mgt-hover-soft` deleted;
+        base `.mgt-hover-scale:hover` tuned to 80% color-mix.
+      - **R4.** New theme-aware `--bg-hover-card` token (light:
+        `#ffffff`, dark: `rgb(50,50,53)`) used DIRECTLY by the
+        hover rule — every translucent attempt (50%, 80%, even
+        the original 0.92) read as washy on the already-
+        translucent `--bg-soft` / `--bg-card` surfaces underneath.
+        Name button became content-sized with 4×8 padding so the
+        hover card fits snug around name+counts.
+      - **R5 (FINAL).** Wrapper padding dropped to 0; name button
+        padding bumped to 4×10 (matching the `<WeeklyShiftSummary>`
+        pill rhythm of `padding: "4px 10px"`). Previous rounds
+        stacked wrapper padding + button padding, doubling the
+        visual mass; the row was noticeably taller than the
+        Shifts assigned pills above. Wrapper still hosts the
+        selected green tint at full row width — hover and
+        selected have intentionally different extents (hover
+        snug around the click target; selected paints the full
+        row as the "lit" identity).
   - **Active-only fairness rows.** `<MonthlyFairnessPanel>` skips
     `emp.active === false` employees entirely (was: skip-archived-
     with-zero-shifts, which still surfaced orphan shifts on archived
@@ -2382,15 +2381,19 @@ megustastu-scheduling/
         │                           past-week navigation does NOT gate it
         │                           (informational only).
         │                           v1.13.0 polish (in-DEV review,
-        │                           four iteration rounds — final
+        │                           five iteration rounds — final
         │                           state described here):
-        │                           (a) Row layout & hover. Wrapper is
-        │                           the highlight host; selected green
-        │                           tint covers the full row width.
-        │                           Wrapper padding 6×8 (the original
-        │                           v1.12.0 value). Name button is
-        │                           content-sized (NOT `flex: 1`) with
-        │                           4×8 px inner padding, so the
+        │                           (a) Row layout & density. Wrapper
+        │                           has NO padding (the name button
+        │                           alone carries the 4×10 px padding,
+        │                           matching the <WeeklyShiftSummary>
+        │                           pill rhythm). Earlier rounds
+        │                           stacked wrapper padding + button
+        │                           padding, doubling the visual mass;
+        │                           round 5 matches the Shifts assigned
+        │                           section's density.
+        │                           (b) Hover. Name button is content-
+        │                           sized (NOT `flex: 1`), so the
         │                           `.mgt-hover-scale` hover card fits
         │                           snugly around just name+counts.
         │                           Delta bar pushed right via
@@ -2400,6 +2403,10 @@ megustastu-scheduling/
         │                           #ffffff light / rgb(50,50,53) dark)
         │                           defined in index.html alongside
         │                           the .mgt-hover-scale rule.
+        │                           (c) Selected. Wrapper still hosts
+        │                           the green tint at FULL row width
+        │                           — hover and selected have
+        │                           intentionally different extents.
         │                           (b) + onJumpToWeek prop. When set,
         │                           forwards a wrapped handler to
         │                           <EmployeeFairnessModal> that calls

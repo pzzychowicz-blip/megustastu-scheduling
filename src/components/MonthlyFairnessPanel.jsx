@@ -35,15 +35,18 @@
 //     three sections (28-day rolling, calendar month, per-week
 //     sparkline).
 //
-// v1.13.0 polish (in-DEV review feedback, final state after three
+// v1.13.0 polish (in-DEV review feedback, final state after five
 // iteration rounds):
-//   - Row layout. Wrapper is the highlight host (selected green tint
-//     covers the full row width including the delta-bar area).
-//     Wrapper padding stayed at the original 6×8 px — earlier
-//     attempts at 8×12 and 12×14 read as too tall. The name button
-//     uses just `.mgt-hover-scale` (no longer needs a `-soft`
-//     variant — see hover-bg notes in `index.html`'s utility
-//     definition).
+//   - Row layout & density. Wrapper carries the selected green tint
+//     at full row width but NO padding of its own — the name button
+//     alone carries the 4×10 px padding (matching the
+//     <WeeklyShiftSummary> pill rhythm), so the row height matches
+//     the Shifts assigned section. Earlier rounds stacked wrapper
+//     padding + button padding which doubled the visual mass.
+//   - Hover snug around content. The name button is content-sized
+//     (not flex:1), so .mgt-hover-scale's hover card fits snugly
+//     around just name+counts. The delta bar is pushed right via
+//     `marginLeft: auto`.
 //   - Per-week sparkline jump-to-week. New `onJumpToWeek` prop
 //     (forwarded by ScheduleGrid). When set, the modal's WeekBars
 //     become clickable buttons that navigate the schedule to the
@@ -255,14 +258,15 @@ export default function MonthlyFairnessPanel({
           //   - The name button stays `flex: 1` so the hover surface
           //     covers the click target. The delta bar sits on the
           //     right, with its own (regular) hover-scale.
-          // v1.13.0 polish round 4: the name button no longer
-          // stretches via `flex: 1` — it sizes to its content + a
-          // small inner padding so the hover card fits snugly around
-          // name+counts (was: spanning the full row width minus the
-          // delta bar). The delta-bar block is pushed to the right
-          // via `marginLeft: auto`. Selected green still lives on
-          // the wrapper (full row width), so the highlight identity
-          // stays unchanged.
+          // v1.13.0 polish round 5: the row's total height now matches
+          // a <WeeklyShiftSummary> pill (~25 px). Achieved by REMOVING
+          // the wrapper's outer padding entirely — the name button
+          // alone carries the visual padding (4 × 10 px, matching the
+          // pill's BTN.base + padding), so the row stops adding a
+          // second padding shell on top of the button. The wrapper is
+          // now just a flex container that hosts the selected green
+          // tint at full row width; the button's hover stays snug
+          // around name+counts only.
           const nameContent = (
             <span style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <span
@@ -285,7 +289,7 @@ export default function MonthlyFairnessPanel({
           const nameBtnStyle = {
             background: "transparent",
             border: "none",
-            padding: "4px 8px",
+            padding: "4px 10px",
             margin: 0,
             cursor: "pointer",
             color: "inherit",
@@ -307,7 +311,7 @@ export default function MonthlyFairnessPanel({
               {nameContent}
             </button>
           ) : (
-            <div style={{ padding: "4px 8px" }}>{nameContent}</div>
+            <div style={{ padding: "4px 10px" }}>{nameContent}</div>
           );
 
           const barBlock = canDrillDown ? (
@@ -335,17 +339,17 @@ export default function MonthlyFairnessPanel({
             <span style={{ marginLeft: "auto", flexShrink: 0 }}>{deltaBar(r)}</span>
           );
 
-          // Selected = full-row green tint on the wrapper. v1.13.0
-          // round 3: wrapper padding restored to the original 6×8 px
-          // (active-only rows feel compact again, matching the
-          // chip-row rhythm of <WeeklyShiftSummary> just above).
+          // Wrapper: no padding (the name button carries it). Selected
+          // green tint paints flush across the full row width; the
+          // box-shadow ring (when selected) extends just outside the
+          // wrapper bounds so the highlight still reads clearly.
           const wrapStyle = {
             display: "flex",
             alignItems: "center",
             gap: 12,
             flexWrap: "wrap",
             width: "100%",
-            padding: "6px 8px",
+            padding: 0,
             borderRadius: 8,
             border: isSelected ? "1px solid var(--border-active-on)" : "1px solid transparent",
             background: isSelected ? "var(--bg-active-on)" : "transparent",

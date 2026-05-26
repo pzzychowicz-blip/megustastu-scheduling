@@ -89,7 +89,7 @@ an entry. Newest first.
   one is all-employees and feeds the generator + panel; the drill-
   down is one-off and consumer-local.
 
-**In-DEV review polish (same PR, four iteration rounds — final
+**In-DEV review polish (same PR, five iteration rounds — final
 state described here):**
 - **Row layout & hover bg — final.** Each round addressed a
   separate concern the previous one over-corrected:
@@ -102,19 +102,23 @@ state described here):**
     `.mgt-hover-soft` in favour of a global tune of
     `.mgt-hover-scale:hover` to
     `color-mix(in srgb, var(--bg-overlay-sheet) 80%, transparent)`.
-  - **Round 4 (final).** Even 80% still read as washy on top of
-    the already-translucent `--bg-soft` / `--bg-card` surfaces.
-    Introduced a NEW theme-aware `--bg-hover-card` token (light:
-    `#ffffff`, dark: `rgb(50,50,53)`) used directly by the
-    `.mgt-hover-scale:hover` rule. Solid colour gives the hover
-    card a clear "lifted off the surface" read across every
-    surface that uses the utility. Separately, the fairness name
-    button stopped being `flex: 1` and now sizes to its content
-    (4×8 px inner padding), so the hover card fits snugly around
-    name+counts. The delta bar is pushed right via
-    `marginLeft: auto`. Selected green tint stays full-row-wide
-    on the wrapper — hover and selected have intentionally
-    different extents now.
+  - **Round 4** introduced the theme-aware `--bg-hover-card`
+    token (light: `#ffffff`, dark: `rgb(50,50,53)`) used directly
+    by the hover rule — every translucent attempt read as washy
+    on top of the already-translucent `--bg-soft` / `--bg-card`
+    surfaces. Name button became content-sized with 4×8 px
+    padding so the hover card fits snug around name+counts.
+  - **Round 5 (final).** Wrapper padding dropped to 0; name
+    button padding bumped to 4×10 (matching the
+    `<WeeklyShiftSummary>` pill's `padding: "4px 10px"`).
+    Previous rounds stacked wrapper padding + button padding,
+    doubling the visual mass and making the fairness rows
+    noticeably taller than the Shifts assigned pills above. The
+    fairness section now matches the Shifts assigned section's
+    row density. Wrapper still hosts the selected green tint at
+    full row width — hover and selected have intentionally
+    different extents (hover snug; selected paints the full row
+    as the "lit" identity).
 - **Per-week sparkline jump-to-week.** Each WeekBar in
   `<EmployeeFairnessModal>` is now a clickable `<button>` (when
   ScheduleGrid provides the new `onJumpToWeek` prop). Click → navigate
