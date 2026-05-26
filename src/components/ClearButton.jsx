@@ -15,6 +15,9 @@
 //   weekShifts     ({ [id]: shift })  — narrowed to current week
 //   isMobile       (bool)
 //   actions        (object)           — usePersistence().actions; uses deleteShift
+//   disabled       (bool)             — v1.12.0; greys out the button and
+//                                        no-ops the click. Past-week
+//                                        lockdown in ScheduleGrid passes this.
 //   onResult       (fn({ cleared }))  — fires after a run; grid renders banner
 //   onUndoableOp   (fn(op))           — v1.10.0; fires after a successful run
 //                                        with the op record for the undo stack.
@@ -28,17 +31,23 @@ import ClearConfirmModal from "./ClearConfirmModal.jsx";
 
 export default function ClearButton({
   weekStart, weekDates, weekShifts, isMobile, actions, onResult, onUndoableOp,
+  disabled: disabledByParent,
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const totalCount = Object.keys(weekShifts || {}).length;
-  const disabled = false;  // always allow open (the modal explains "nothing to clear")
-  const tooltip = totalCount === 0
-    ? "No shifts to clear in this week"
-    : "Clear week or single day";
+  const disabled = Boolean(disabledByParent);
+  const tooltip = disabledByParent
+    ? "Past weeks are read-only"
+    : totalCount === 0
+      ? "No shifts to clear in this week"
+      : "Clear week or single day";
 
-  function handleClick() { setOpen(true); }
+  function handleClick() {
+    if (disabled) return;
+    setOpen(true);
+  }
 
   function handleClose() {
     if (busy) return;

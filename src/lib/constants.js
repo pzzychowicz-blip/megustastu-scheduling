@@ -18,21 +18,15 @@ export const ROLES = Object.freeze(["Bar", "Floor", "Chef", "Plating", "Pot"]);
 // Sections group roles by side of house. Used by the schedule grid and the
 // default shift template (day shifts cover an entire section's roles).
 //
-// v1.1.0: optional `dayRequiredRoles` field on a section makes the day
-// shift require at least one of the listed roles (not just "any of
-// coversRoles"). The day cook for Kitchen has to actually be a Chef —
-// Plating-only or Pot-only people aren't trained to lead the prep run.
-// FoH Day stays permissive (no required role; any of Bar/Floor works).
-// The slotsForDay enumerator copies this onto each day slot's
-// `requiredRoles` field; both the manual picker (ShiftFormModal) and
-// the auto-generator (generator.js) read from the slot.
+// v1.12.0: the historical `dayRequiredRoles` field on a section was the
+// system fallback for the v1.1.0 day-shift required-role rule. The
+// fallback now goes through `DEFAULT_DAY_REQUIRED_ROLES` in this file +
+// `resolveDayRequiredRoles` in schedule-logic.js, which together honour
+// the v1.12.0 per-role boolean schema in /settings. SECTIONS just lists
+// each section's role membership now.
 export const SECTIONS = Object.freeze({
   foh: { label: "Front of House", roles: ["Bar", "Floor"] },
-  kitchen: {
-    label: "Kitchen",
-    roles: ["Chef", "Plating", "Pot"],
-    dayRequiredRoles: ["Chef"],
-  },
+  kitchen: { label: "Kitchen", roles: ["Chef", "Plating", "Pot"] },
 });
 
 // ── Default shift template ───────────────────────────────────────────────
@@ -163,16 +157,26 @@ export const GENERATOR_BANNER_DURATION_MAX = 60;
 //    ShiftFormModal maxConsecutiveWarning. Always-on — no disable
 //    toggle (locked decision: labor wellness rule, the cap is the
 //    knob, not its existence).
-// 3. dayRequiredRoles (object keyed by section)
+// 3. dayRequiredRoles (object keyed by section, per-role boolean map)
 //    Was hard-coded as `SECTIONS.kitchen.dayRequiredRoles = ["Chef"]`
 //    in constants.js. SECTIONS stays put as the system fallback when
 //    `slotsForDay` is called bare (tests, future call sites). The
 //    /settings override flows through `slotsForDay(template, override)`
 //    so every consumer of `slotDef.requiredRoles` (picker filter,
 //    `roleMatchesSlot` used by generator + Swap) inherits the change.
-//    Empty list per-section = permissive (any of section's
-//    coversRoles). Default mirrors v1.10.x — FoH empty, Kitchen
-//    requires Chef.
+//    Default mirrors pre-v1.11.0 — FoH permissive (all roles false),
+//    Kitchen requires Chef (Chef true, others false).
+//
+//    v1.12.0 schema: per-role boolean object instead of v1.11.0's
+//    array-of-role-names. Reason: Firebase RTDB strips empty arrays to
+//    null when writing — saving `kitchen: []` (manager's "permissive"
+//    choice) wrote nothing back, the v1.11.0 resolver fell back to the
+//    default `["Chef"]`, and the Chef pill sprang back on next render.
+//    Booleans (including `false`) ARE preserved by Firebase, so the
+//    configured-but-permissive state survives a round-trip. The v1.11.0
+//    array shape stays readable via the type-guarded resolver in
+//    schedule-logic.js (`resolveDayRequiredRoles`) so legacy docs
+//    upgrade lazily on the next pill click.
 export const DEFAULT_MIN_CONSECUTIVE_DAYS_OFF = 2;
 export const MIN_CONSECUTIVE_DAYS_OFF_MIN = 1;
 export const MIN_CONSECUTIVE_DAYS_OFF_MAX = 3;
@@ -182,8 +186,8 @@ export const MAX_CONSECUTIVE_WORKING_DAYS_MIN = 3;
 export const MAX_CONSECUTIVE_WORKING_DAYS_MAX = 14;
 
 export const DEFAULT_DAY_REQUIRED_ROLES = Object.freeze({
-  foh: Object.freeze([]),
-  kitchen: Object.freeze(["Chef"]),
+  foh: Object.freeze({ Bar: false, Floor: false }),
+  kitchen: Object.freeze({ Chef: true, Plating: false, Pot: false }),
 });
 
 // ── Status colours (alpha-tinted, matches Bookings pattern) ──────────────

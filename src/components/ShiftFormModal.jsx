@@ -29,6 +29,14 @@
 //                                       withinMaxConsecutiveWorkingDays
 //                                       call. Optional.
 //   isMobile    (bool)
+//   readOnly    (bool)          — v1.12.0. Hides Save / Move-Swap / Clear
+//                                  and disables every editable input. The
+//                                  ScheduleGrid past-week lockdown passes
+//                                  this so historical assignments stay
+//                                  inspectable without giving the manager
+//                                  a chance to mutate them. Warning
+//                                  banners stay visible — useful context.
+//                                  Optional; defaults to false.
 //   onClose     (fn)
 //   onSave      (fn)            — receives the shift payload
 //   onDelete    (fn)            — receives shiftId; only call when shift exists
@@ -104,7 +112,7 @@ export default function ShiftFormModal({
   open, dateIso, slotDef, shift, employees, requests, weekShifts,
   priorWeekShifts, nextWeekShifts,
   minConsecutiveDaysOff, maxConsecutiveWorkingDays,
-  isMobile,
+  isMobile, readOnly,
   onClose, onSave, onDelete, onStartSwap,
 }) {
   const [form, setForm] = useState(function () { return initialForm(slotDef || {}, shift); });
@@ -464,6 +472,9 @@ export default function ShiftFormModal({
     : null;
 
   // Role picker (evening only) — chip group.
+  // v1.12.0: in readOnly mode the pills render as static badges (no
+  // onClick, no scale-on-hover, opacity dimmed) so the historical role
+  // is visible without inviting a click.
   const rolePicker = slotDef.isDay
     ? (
       <Fld label="Role">
@@ -482,8 +493,9 @@ export default function ShiftFormModal({
               <button
                 key={r}
                 type="button"
-                className="mgt-hover-scale"
-                onClick={function () { setField("role", on ? "" : r); }}
+                className={readOnly ? undefined : "mgt-hover-scale"}
+                disabled={readOnly}
+                onClick={readOnly ? undefined : function () { setField("role", on ? "" : r); }}
                 style={{
                   ...BTN.base,
                   padding: "6px 12px",
@@ -492,6 +504,8 @@ export default function ShiftFormModal({
                   background: on ? "rgb(" + rgb + ")" : "var(--bg-pill)",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
                   border: "1px solid " + (on ? "rgb(" + rgb + ")" : "var(--btn-ghost-border)"),
+                  opacity: readOnly && !on ? 0.6 : 1,
+                  cursor: readOnly ? "default" : "pointer",
                 }}
               >
                 {r}
@@ -499,7 +513,7 @@ export default function ShiftFormModal({
             );
           })}
         </div>
-        {eveningNeedsRole
+        {eveningNeedsRole && !readOnly
           ? <p style={{ ...S.muted, color: "var(--text-danger)", marginTop: 6, fontSize: 11 }}>
               Pick a role for the assigned employee.
             </p>
@@ -528,15 +542,16 @@ export default function ShiftFormModal({
     <Overlay open={open} isMobile={isMobile} onClose={onClose} title={headerTitle}>
       <Fld label="Assignee">
         <select
-          className="mgt-hover-scale"
+          className={readOnly ? undefined : "mgt-hover-scale"}
           value={form.employeeId}
           onChange={function (e) { setField("employeeId", e.target.value); }}
-          style={{ ...S.inputBase, paddingRight: 28 }}
+          disabled={readOnly}
+          style={{ ...S.inputBase, paddingRight: 28, opacity: readOnly ? 0.8 : 1 }}
         >
           {employeeOptions}
         </select>
         {noEligibleNote}
-        {requestToggle}
+        {readOnly ? null : requestToggle}
         {conflictBanner}
         {prefMismatchBanner}
         {restWarningBanner}
@@ -551,9 +566,11 @@ export default function ShiftFormModal({
           <Fld label="Start">
             {mkInp({
               type: "time",
-              className: "mgt-hover-scale",
+              className: readOnly ? undefined : "mgt-hover-scale",
               value: form.start,
               onChange: function (e) { setField("start", e.target.value); },
+              disabled: readOnly,
+              style: readOnly ? { opacity: 0.8 } : undefined,
             })}
           </Fld>
         </div>
@@ -561,57 +578,80 @@ export default function ShiftFormModal({
           <Fld label="End">
             {mkInp({
               type: "time",
-              className: "mgt-hover-scale",
+              className: readOnly ? undefined : "mgt-hover-scale",
               value: form.end,
               onChange: function (e) { setField("end", e.target.value); },
+              disabled: readOnly,
+              style: readOnly ? { opacity: 0.8 } : undefined,
             })}
           </Fld>
         </div>
       </div>
 
-      {!timesValid
+      {!timesValid && !readOnly
         ? <p style={{ ...S.muted, color: "var(--text-danger)", fontSize: 12, marginTop: -4 }}>
             End time must be after start time.
           </p>
         : null}
 
-      <div style={{ marginTop: 4 }}>
-        <button
-          type="button"
-          className="mgt-hover-scale"
-          onClick={resetToDefaults}
-          style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 12 }}
-        >
-          Reset times & role to template defaults
-        </button>
-      </div>
+      {/* v1.12.0: reset-to-defaults button is hidden in read-only mode —
+          no point offering a mutation affordance the manager can't act on. */}
+      {readOnly ? null : (
+        <div style={{ marginTop: 4 }}>
+          <button
+            type="button"
+            className="mgt-hover-scale"
+            onClick={resetToDefaults}
+            style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 12 }}
+          >
+            Reset times & role to template defaults
+          </button>
+        </div>
+      )}
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 8,
-          marginTop: 16,
-          flexWrap: isMobile ? "wrap" : "nowrap",
-        }}
-      >
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {deleteButton}
-          {swapButton}
+      {/* v1.12.0: bottom action row branches on readOnly. Read-only weeks
+          collapse the row to a single Close button so historical inspection
+          stays cleanly view-only; current/future weeks render the full
+          Clear / Move-Swap / Cancel / Save set as before. */}
+      {readOnly ? (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
+            marginTop: 16,
+          }}
+        >
+          {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "primary", onClick: onClose, children: "Close" })}
         </div>
-        <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-          {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "ghost", onClick: onClose, children: "Cancel" })}
-          {mkBtn({
-            type: "button",
-            className: "mgt-hover-scale",
-            variant: "primary",
-            onClick: handleSave,
-            disabled: !valid,
-            style: { opacity: valid ? 1 : 0.5, cursor: valid ? "pointer" : "not-allowed" },
-            children: "Save",
-          })}
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 8,
+            marginTop: 16,
+            flexWrap: isMobile ? "wrap" : "nowrap",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {deleteButton}
+            {swapButton}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+            {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "ghost", onClick: onClose, children: "Cancel" })}
+            {mkBtn({
+              type: "button",
+              className: "mgt-hover-scale",
+              variant: "primary",
+              onClick: handleSave,
+              disabled: !valid,
+              style: { opacity: valid ? 1 : 0.5, cursor: valid ? "pointer" : "not-allowed" },
+              children: "Save",
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </Overlay>
   );
 }

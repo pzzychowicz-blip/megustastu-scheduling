@@ -5,6 +5,124 @@ an entry. Newest first.
 
 ---
 
+## v1.12.0 — Past-week lockdown, generator-fairness overhaul, Chef-pill bug, Settings auto-save
+
+**Date:** 2026-05-26
+
+**Behavioural change:** Four landing together —
+
+1. **Past weeks are read-only.** Any focus week whose Sunday is before
+   today disables Generate / Swap / Clear / Undo; cell clicks still
+   open `<ShiftFormModal>` but in a new `readOnly` mode that hides
+   Save / Move-Swap / Clear and disables every input. A muted-amber
+   banner above the grid surfaces the lockdown state. Current week
+   stays fully editable for the whole Mon..Sun window — the gate flips
+   the first moment the manager moves forward.
+
+2. **Auto-generator factors in last week's actual count + 28-day
+   monthly fairness.** Two independent changes inside `generator.js`:
+
+   - **HARD prior-week deficit cap at step (5).** If an employee
+     actually worked more dates last week than their
+     `workingDaysPerWeek`, the surplus carries over as a deficit that
+     shrinks this week's cap by the same amount. A 5-day employee
+     who got 6 shifts last week is capped at 4 this week. Reuses
+     the existing `"over-quota"` reason code.
+   - **28-day rolling fairness ranking** in `rankCandidates`.
+     Replaces the v1.1.0 combined-load tiebreaker (this week + prior
+     week) with hours-deficit-desc (primary) + shifts-deficit-desc
+     (tiebreak). Targets are per-employee: shifts = `wpw × 4 −
+     holidays(28d)`, hours = shifts × `avgShiftHours(preference,
+     shiftTemplate)`. Specialists rule demoted from #2 → #4 so
+     under-utilised generalists win over already-full specialists.
+   - New `<MonthlyFairnessPanel>` chip-row visibility surface below
+     `<WeeklyRequestsPreview>` — one row per active employee with
+     name + `count/target` shifts + `Nh/target` hours + a 120-px
+     centre-anchored delta bar (red when under-target, green when
+     over). Same memoised data source as the generator's ranking, so
+     panel and generator stay in lockstep.
+
+3. **Chef pill bug fixed.** `dayRequiredRoles` schema flipped from
+   per-section array of role names (v1.11.0) to per-section per-role
+   boolean object (`{foh: {Bar: false, Floor: false}, kitchen: {Chef:
+   false, Plating: false, Pot: false}}`). Reason: Firebase RTDB
+   strips empty arrays to null on write, so saving `kitchen: []`
+   (manager's permissive choice) wrote nothing back; the resolver
+   fell back to the default and the Chef pill sprang back into
+   selected state on next render. Booleans (`false` included) ARE
+   preserved by Firebase, so the configured-but-permissive state
+   now survives a round-trip. Lazy back-compat reader for the legacy
+   array shape lives in the new `resolveDayRequiredRoles` helper in
+   `schedule-logic.js` — the first pill click after upgrade rewrites
+   the doc into the new shape.
+
+4. **Settings auto-saves; the "Save changes" button is gone.** Display,
+   Auto-generator, and Scheduling rules already wrote through; v1.12.0
+   adds the same pattern to Operating time + FoH + Kitchen via two
+   debounced (800 ms) + validity-gated `useEffect`s. Partial inputs
+   (typing "1" before "11:00") don't fire the save until the value
+   becomes valid — no thrashing. Per-section dirty dots stay (they
+   surface the pending-debounce window AND the invalid-state window),
+   inline per-row error captions stay (they replace the v0.10.0
+   force-open-first-error-section affordance), Reset to defaults stays
+   (single-click action, no debounce risk).
+
+**Files changed:**
+- `src/lib/constants.js` — `DEFAULT_DAY_REQUIRED_ROLES` now per-role
+  boolean. `SECTIONS.kitchen.dayRequiredRoles` removed (dead — the
+  resolver fallback path now goes through `DEFAULT_DAY_REQUIRED_ROLES`).
+- `src/lib/schedule-logic.js` — `+ isPastWeek`, `+ resolveDayRequiredRoles`,
+  `+ avgShiftHours`, `+ build28DayAggregates`. `slotsForDay`'s inner
+  resolver lifted out and replaced by a call to the new helper (handles
+  both shapes transparently).
+- `src/lib/generator.js` — `buildCandidates` step (5) cap now subtracts
+  `priorDeficit`. `rankCandidates` rewritten — hours+shifts deficit
+  primary, specialists demoted, v1.1.0 combined-load tiebreaker removed.
+  `generateWeek` builds `priorActualByEmp` from `priorWeekShifts` and
+  accepts pre-built `monthlyAggregates` from the caller.
+- `src/components/ScheduleGrid.jsx` — `+ isReadOnly` derivation
+  (`isPastWeek(weekStart, todayIso)`). `+ monthlyAggregates` memo via
+  `build28DayAggregates`. New read-only banner above the grid. `disabled`
+  prop threaded through to GenerateButton / SwapButton / UndoButton /
+  ClearButton. `readOnly` prop threaded into ShiftFormModal. Auto-exit
+  swap mode when `isReadOnly` flips true. `+ <MonthlyFairnessPanel>`
+  mounted below `<WeeklyRequestsPreview>`. cellClick short-circuits
+  the swap branches when read-only.
+- `src/components/ShiftFormModal.jsx` — `+ readOnly` prop. Hides Save /
+  Move-Swap / Clear footer + Reset-times button; disables assignee
+  select, time inputs, role-picker pills; hides "Show staff on day off"
+  toggle. Single Close button replaces the action row when read-only.
+- `src/components/SwapButton.jsx` / `UndoButton.jsx` / `ClearButton.jsx`
+  / `GenerateButton.jsx` — `+ disabled` prop (ORs with each button's
+  existing self-disabled conditions). Tooltips adapt to "Past weeks
+  are read-only" when externally disabled.
+- `src/components/GenerateButton.jsx` — `+ monthlyAggregates` prop
+  forwarded into `generateWeek`.
+- `src/components/MonthlyFairnessPanel.jsx` — NEW. Chip-row panel mirroring
+  the `<WeeklyShiftSummary>` + `<WeeklyRequestsPreview>` visual rhythm.
+- `src/components/Settings.jsx` — `handleSave` + Save button + force-
+  open-first-error logic + `saveDisabled` / `anyDirty` / `hasErrors`
+  derivations REMOVED. Two new debounced auto-save `useEffect`s (one
+  for operating-time, one for the template). `onDayRequiredRoleToggle`
+  rewritten to write per-role boolean object; `resolveDayRequiredFor`
+  now delegates to the shared lifted helper. Reset-to-defaults updated
+  to deep-clone the new boolean-object shape.
+- `src/App.jsx` — version bumped to 1.12.0; sha
+  `"past-week-lock-fairness-autosave"`.
+
+**Migration / back-compat:**
+- `dayRequiredRoles` legacy `["Chef"]` array shape readable via the
+  resolver's `Array.isArray(raw)` branch — first pill click after
+  upgrade rewrites to the boolean-object shape. No eager migration job.
+- ShiftFormModal's `readOnly` prop defaults to `false`; existing
+  callers behave identically.
+- Generator's `monthlyAggregates` is optional — missing → rank sort
+  degrades to specialists + name (and the step-(5) prior-week cap
+  still applies via `priorActualByEmp`, which is built internally).
+- The four nav buttons' new `disabled` prop is optional.
+
+---
+
 ## v1.11.0 — Configurable scheduling rules
 
 **Date:** 2026-05-25

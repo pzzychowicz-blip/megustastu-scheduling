@@ -52,6 +52,8 @@ import {
   findRequestConflict,
   findShiftPreferenceMismatch,
   findSameDayShift,
+  isPastWeek,
+  build28DayAggregates,
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
@@ -62,6 +64,7 @@ import SwapButton from "./SwapButton.jsx";
 import UndoButton from "./UndoButton.jsx";
 import WeeklyShiftSummary from "./WeeklyShiftSummary.jsx";
 import WeeklyRequestsPreview from "./WeeklyRequestsPreview.jsx";
+import MonthlyFairnessPanel from "./MonthlyFairnessPanel.jsx";
 import GenerateResultsModal from "./GenerateResultsModal.jsx";
 
 // Section row dividers (visual grouping in the desktop grid).
@@ -112,9 +115,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // clamp pattern as the v1.9.4 generator-banner reads above. All three
   // values fall back to defaults that mirror the pre-v1.11.0 hard-coded
   // behaviour, so legacy /settings docs render byte-identically.
-  // dayRequiredRoles is the per-section override map; null/missing →
-  // slotsForDay falls back to SECTIONS.kitchen.dayRequiredRoles +
-  // SECTIONS.foh's (absent) entry.
+  //
+  // v1.12.0: dayRequiredRoles shape switched from per-section array of
+  // role names to per-section object of role→boolean (so Firebase RTDB
+  // preserves "configured empty" — empty arrays get stripped to null).
+  // The type-guard `typeof === "object"` accepts both shapes; slotsForDay
+  // + resolveDayRequiredRoles in schedule-logic.js handle the per-section
+  // shape detection. Missing → DEFAULT_DAY_REQUIRED_ROLES (also the new
+  // boolean shape).
   const minConsecutiveDaysOff =
     settings && Number.isFinite(settings.minConsecutiveDaysOff)
       ? Math.max(
@@ -179,6 +187,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // doesn't restringify a Date on every column.
   const todayIso = useMemo(function () { return isoDate(new Date()); }, []);
 
+  // v1.12.0: past-week lockdown. A week becomes non-editable once its
+  // Sunday is strictly before today. The flag gates every write entry
+  // point in this component — Generate / Swap / Clear / Undo nav buttons
+  // are disabled, swap-mode is short-circuited in cellClick, and
+  // ShiftFormModal opens in a read-only mode that hides Save / Move-Swap
+  // / Clear. Cells stay viewable; the manager can still inspect historical
+  // assignments through the modal. Pill-highlight and jump-to-cell from
+  // the generator-results modal also stay live (they're view-only).
+  const isReadOnly = isPastWeek(weekStart, todayIso);
+
   // v1.4.0: today's index within the displayed week (or -1 if today is
   // outside the visible range / closed). Consumed by the desktop grid's
   // today-column tint underlay. Computed once per render via dates.
@@ -205,6 +223,23 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   const nextWeekShifts = useMemo(function () {
     return shiftsForWeek(shifts, addDays(weekStart, 7));
   }, [shifts, weekStart]);
+
+  // v1.12.0: 28-day rolling aggregates per employee. Built once per
+  // (shifts, employees, weekStart, requests, shiftTemplate) tuple and
+  // shared with both <GenerateButton> (→ generator's rankCandidates
+  // hours+shifts-deficit sort) and <MonthlyFairnessPanel> (chip-row
+  // visibility surface below the request preview). Computed against
+  // the FULL shifts map (not narrowed to the focus week) since the
+  // window is wider than one week.
+  const monthlyAggregates = useMemo(function () {
+    return build28DayAggregates({
+      shifts: shifts,
+      employees: employees,
+      weekStart: weekStart,
+      requests: requests,
+      shiftTemplate: shiftTemplate,
+    });
+  }, [shifts, employees, weekStart, requests, shiftTemplate]);
 
   // ── Modal state ──────────────────────────────────────────────────────
   const [modalCell, setModalCell] = useState(null);  // { dateIso, slotDef, shift } or null
@@ -246,6 +281,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       text: "Pick the target cell to move or swap. Click the source again to cancel.",
     });
   }
+
+  // v1.12.0: if the manager navigates from a current/future week into a
+  // past week while swap mode is active, drop the swap state — past
+  // weeks can't accept any commit and the lingering swap banner would
+  // confuse the read-only context.
+  useEffect(function () {
+    if (isReadOnly && swapMode) exitSwapMode();
+  }, [isReadOnly, swapMode]);
 
   // ── Pill-click highlight (v1.7.0) ────────────────────────────────────
   // Lit when the manager clicks a Shifts-assigned pill; every cell whose
@@ -583,6 +626,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // Cell-click router. Routes to swap mechanic when swap mode is on, else
   // to the regular picker modal.
   function cellClick(dateIso, slotDef, shift) {
+    // v1.12.0: past weeks bypass swap mode entirely. The cell still opens
+    // (in ShiftFormModal's read-only mode) so the manager can inspect the
+    // historical record. SwapButton is disabled in past weeks so this is
+    // mostly defensive — but if the manager entered swap mode in the
+    // current week and then navigated backward, swapMode state survives.
+    if (isReadOnly) {
+      openCell(dateIso, slotDef, shift);
+      return;
+    }
     if (swapMode) {
       // Source-select: only filled cells qualify.
       if (swapMode.phase === "source-select") {
@@ -870,21 +922,25 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           minConsecutiveDaysOff={minConsecutiveDaysOff}
           maxConsecutiveWorkingDays={maxConsecutiveWorkingDays}
           dayRequiredRoles={dayRequiredRoles}
+          monthlyAggregates={monthlyAggregates}
           isMobile={isMobile}
           actions={actions}
           onResult={handleGenerateResult}
           onUndoableOp={recordUndoableOp}
+          disabled={isReadOnly}
         />
         <SwapButton
           active={Boolean(swapMode)}
           phase={swapMode ? swapMode.phase : undefined}
           isMobile={isMobile}
           onToggle={toggleSwapMode}
+          disabled={isReadOnly}
         />
         <UndoButton
           stack={undoStack}
           onUndo={handleUndo}
           isMobile={isMobile}
+          disabled={isReadOnly}
         />
         <ClearButton
           weekStart={weekStart}
@@ -894,6 +950,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           actions={actions}
           onResult={handleClearResult}
           onUndoableOp={recordUndoableOp}
+          disabled={isReadOnly}
         />
         <ExportButton
           weekStart={weekStart}
@@ -1337,6 +1394,35 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         "}"
       }</style>
       {navBar}
+      {/* v1.12.0: past-week lockdown banner. Sits between the nav bar and
+          the swap / generator banners (which only show transiently while
+          their respective actions are armed/active). Persistent —
+          dismissable only by navigating to a non-past week. Uses the
+          warning palette to match the SwapButton-active visual language
+          without screaming "error". */}
+      {isReadOnly ? (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "8px 12px",
+            background: "var(--bg-warning-tint)",
+            border: "1px solid var(--border-warning-tint)",
+            color: "var(--text-warning)",
+            borderRadius: 10,
+            fontSize: 13,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: "var(--shadow-soft)",
+          }}
+        >
+          <span aria-hidden="true">🔒</span>
+          <span>
+            This week is in the past. Cells are read-only — switch to the
+            current or a future week to make edits.
+          </span>
+        </div>
+      ) : null}
       {swapBannerView}
       {generateBanner}
       {allClosedNotice}
@@ -1368,6 +1454,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         isMobile={isMobile}
       />
 
+      <MonthlyFairnessPanel
+        employees={employees}
+        monthlyAggregates={monthlyAggregates}
+        isMobile={isMobile}
+      />
+
       <ShiftFormModal
         open={modalCell !== null}
         dateIso={modalCell ? modalCell.dateIso : ""}
@@ -1381,6 +1473,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         minConsecutiveDaysOff={minConsecutiveDaysOff}
         maxConsecutiveWorkingDays={maxConsecutiveWorkingDays}
         isMobile={isMobile}
+        readOnly={isReadOnly}
         onClose={closeModal}
         onSave={handleSave}
         onDelete={handleDelete}

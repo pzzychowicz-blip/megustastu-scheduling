@@ -173,52 +173,59 @@ function compareWorklistEntries(a, b, rarity) {
   return a.slot.key < b.slot.key ? -1 : 1;
 }
 
-// Candidate ranking (after eligibility filter). Sort key (lowest wins):
+// Candidate ranking (after eligibility filter). v1.12.0 reshuffled the
+// keys to put fairness ahead of specialists. Sort key (lowest wins):
 //   1. v1.3.0: scheduling priority (true wins). Priority employees fill
-//      before any non-priority employee — the manager has marked them as
-//      "push toward full hours." Specialists rule + load-balance only
-//      tiebreak within the priority and non-priority groups separately.
-//   2. Specialists first (roles.length asc).
-//   3. Combined load (this week + prior week) ascending.
-//   4. Name (lexicographic).
+//      before any non-priority employee — manager override always sits
+//      at the top of the sort.
+//   2. v1.12.0: monthly HOURS deficit DESC (most-behind first).
+//      Primary fairness signal. An employee who's hours-under by 10 vs
+//      target sorts above an employee who's hours-under by 2.
+//   3. v1.12.0: monthly SHIFTS deficit DESC (most-behind first).
+//      Tiebreak when two employees are hours-equal but one has
+//      worked fewer shifts (e.g., the other is on long evening shifts).
+//   4. Specialists first (roles.length asc). Was the v1.1.0 primary
+//      load-balancer above this rule; now demoted below fairness so
+//      under-utilised generalists still get picked before specialists
+//      who already hit their monthly target.
+//   5. v1.8.1 soft de-prioritization: `prevAssigneeId` (optional). When
+//      Regenerate wiped a cell, that cell's old assignee gets ranked
+//      LAST for the refill so the generator doesn't deterministically
+//      hand the same cell back. Other dimensions still win normally.
+//   6. Name (lexicographic).
 //
-// Identical heuristic to ShiftFormModal's picker order (specialists +
-// load) so generator-picked employees match what a careful manager would
-// pick. Priority is the only generator-specific dimension; the manual
-// picker doesn't reorder by it because the manager picks one cell at a
-// time and can see priority on the employee row.
-//
-// v1.1.0 fairness: the combined load includes prior-week shift counts
-// so an under-utilized employee from last week gets prioritized this
-// week. Two-week totals tend to even out. priorShifts may be `{}` or
-// undefined for the first week or when no history is provided —
-// `countAssignedDates` returns 0 cleanly in both cases.
-//
-// v1.8.1 soft de-prioritization: `prevAssigneeId` (optional) is the
-// employee who held this cell BEFORE the Regenerate wipe cleared it
-// (Preserve assignments OFF). When everything else is tied, that
-// employee sorts AFTER everyone else for THIS cell — so when the
-// manager asks the generator to reshuffle, the deterministic
-// tiebreaker doesn't quietly hand the cell back to the same person.
-// Inserted right above the name tiebreaker so specialists / load /
-// priority decisions still win normally.
-function rankCandidates(candidates, currentShifts, priorShifts, prevAssigneeId) {
-  const currentCounts = {};
-  const priorCounts = {};
+// `monthlyAggregates` is the {[empId]: {shiftsDeficit, hoursDeficit, ...}}
+// map produced by `build28DayAggregates` in schedule-logic.js. Missing
+// entries / missing map → per-candidate deficit defaults to 0 (callers
+// without monthly context still get a stable sort dominated by
+// specialists + name). v1.1.0's combined-load tiebreaker is GONE —
+// the 28-day window subsumes it (7-day fairness was a narrower take
+// on the same idea, the deficit calc is just a more accurate version
+// over a longer horizon). currentShifts is still threaded through for
+// future use but isn't consulted at the moment.
+function rankCandidates(candidates, currentShifts, monthlyAggregates, prevAssigneeId) {
+  // currentShifts param retained for backward signature parity with
+  // pre-v1.12.0 callers; not consulted directly. eslint-disable-next-line no-unused-vars
+  void currentShifts;
+  function deficitsFor(emp) {
+    const a = monthlyAggregates && monthlyAggregates[emp.id];
+    if (!a) return { hours: 0, shifts: 0 };
+    return {
+      hours: Number.isFinite(a.hoursDeficit) ? a.hoursDeficit : 0,
+      shifts: Number.isFinite(a.shiftsDeficit) ? a.shiftsDeficit : 0,
+    };
+  }
   return candidates.slice().sort(function (a, b) {
     const aP = a.schedulingPriority === true ? 0 : 1;
     const bP = b.schedulingPriority === true ? 0 : 1;
     if (aP !== bP) return aP - bP;
+    const aD = deficitsFor(a);
+    const bD = deficitsFor(b);
+    if (aD.hours !== bD.hours) return bD.hours - aD.hours;   // DESC
+    if (aD.shifts !== bD.shifts) return bD.shifts - aD.shifts; // DESC
     const aR = Array.isArray(a.roles) ? a.roles.length : 0;
     const bR = Array.isArray(b.roles) ? b.roles.length : 0;
     if (aR !== bR) return aR - bR;
-    if (currentCounts[a.id] === undefined) currentCounts[a.id] = countAssignedDates(currentShifts, a.id);
-    if (currentCounts[b.id] === undefined) currentCounts[b.id] = countAssignedDates(currentShifts, b.id);
-    if (priorCounts[a.id] === undefined) priorCounts[a.id] = countAssignedDates(priorShifts, a.id);
-    if (priorCounts[b.id] === undefined) priorCounts[b.id] = countAssignedDates(priorShifts, b.id);
-    const aCombined = currentCounts[a.id] + priorCounts[a.id];
-    const bCombined = currentCounts[b.id] + priorCounts[b.id];
-    if (aCombined !== bCombined) return aCombined - bCombined;
     if (prevAssigneeId) {
       const aPrev = a.id === prevAssigneeId ? 1 : 0;
       const bPrev = b.id === prevAssigneeId ? 1 : 0;
@@ -258,11 +265,20 @@ function rankCandidates(candidates, currentShifts, priorShifts, prevAssigneeId) 
 // (step 6.5). Both default to the helper's own defaults (2 and 5) when
 // callers don't supply them, so legacy /settings docs and bare callers
 // keep the pre-v1.11.0 behaviour byte-for-byte.
+// v1.12.0: + `priorActualByEmp` (optional). {[empId]: count} map of
+// the number of dates each employee actually worked in the immediately
+// prior week. When an employee worked OVER their workingDaysPerWeek
+// last week (e.g., manager hand-edited them to 6 shifts on a 5-day
+// pattern), the surplus carries forward as a HARD deficit that
+// shrinks this week's cap by the same amount. Same "over-quota"
+// reason code as the holiday-based cap shrink. Missing / undefined →
+// per-employee deficit defaults to 0 (legacy behaviour).
 function buildCandidates(
   slotDef, dateIso, date, weekStart,
   employees, requests, currentShifts, strictPreference,
   holidayDaysByEmp, crossWeekShifts,
-  minConsecutiveDaysOff, maxConsecutiveWorkingDays
+  minConsecutiveDaysOff, maxConsecutiveWorkingDays,
+  priorActualByEmp
 ) {
   const all = Object.values(employees || {});
   if (all.length === 0) return { eligible: [], reason: "no-role-match" };
@@ -304,10 +320,20 @@ function buildCandidates(
   // contribute — they still HARD-block their date at step (2) via
   // findRequestConflict, but the weekly cap isn't shrunk. Mirrors
   // WeeklyShiftSummary's pill math.
+  //
+  // v1.12.0: + prior-week deficit. When `priorActualByEmp` is provided,
+  // any over-quota count from last week (e.g., manager hand-edited the
+  // employee to 6 shifts on a 5-day pattern) reduces this week's cap by
+  // the same surplus. So a 5-day employee with 6 actual shifts last week
+  // gets capped at 4 this week (5 − 0 holiday − 1 deficit). Two-week
+  // average evens out automatically. Missing `priorActualByEmp` → deficit
+  // is 0 per-employee (legacy callers behave identically).
   const quotaOk = dayOk.filter(function (e) {
     const rawCap = workingDaysFor(e);
     const holiday = (holidayDaysByEmp && holidayDaysByEmp[e.id]) || 0;
-    const cap = Math.max(0, rawCap - holiday);
+    const priorActual = (priorActualByEmp && priorActualByEmp[e.id]) || 0;
+    const priorDeficit = Math.max(0, priorActual - rawCap);
+    const cap = Math.max(0, rawCap - holiday - priorDeficit);
     return countAssignedDates(currentShifts, e.id) < cap;
   });
   if (quotaOk.length === 0) return { eligible: [], reason: "all-at-quota" };
@@ -550,6 +576,13 @@ export function generateWeek(args) {
     ? args.maxConsecutiveWorkingDays
     : 5;
   const dayRequiredRoles = args.dayRequiredRoles || null;
+  // v1.12.0: rolling 28-day aggregates per employee. Built by the
+  // caller (ScheduleGrid memoises this once and shares with
+  // MonthlyFairnessPanel — see build28DayAggregates in schedule-logic.js).
+  // Used by rankCandidates as the primary fairness signal; passing `null`
+  // makes the sort degrade to specialists + name (and the prior-week
+  // deficit cap at step 5 still applies independently via priorActualByEmp).
+  const monthlyAggregates = args.monthlyAggregates || null;
 
   // No template → nothing meaningful to do. Caller should ensure this is
   // populated (AppShell waits for `ready`), but stay defensive.
@@ -575,6 +608,17 @@ export function generateWeek(args) {
   // Computed once and threaded through buildCandidates so the quota
   // gate matches the effective cap the UI advertises.
   const holidayDaysByEmp = holidayDaysInWeekByEmployee(requests, dates);
+
+  // v1.12.0: per-employee count of unique dates each employee actually
+  // worked in the PRIOR week. Threaded into buildCandidates' step (5)
+  // so a manager-edited 6-shift week shrinks the next week's cap by 1
+  // (the surplus over the employee's workingDaysPerWeek). Pure read
+  // off `priorWeekShifts` — no extra Firebase work.
+  const priorActualByEmp = {};
+  const employeeIds = Object.keys(employees || {});
+  for (let i = 0; i < employeeIds.length; i++) {
+    priorActualByEmp[employeeIds[i]] = countAssignedDates(priorWeekShifts, employeeIds[i]);
+  }
 
   // workingShifts starts as a shallow clone so we never mutate caller data.
   // v1.7.0: in regenerate mode, the wipe-pass empties it entirely; in
@@ -622,7 +666,8 @@ export function generateWeek(args) {
         slot, dIso, date, weekStart,
         employees, requests, workingShifts, strictPreference, holidayDaysByEmp,
         crossWeekShifts,
-        minConsecutiveDaysOff, maxConsecutiveWorkingDays
+        minConsecutiveDaysOff, maxConsecutiveWorkingDays,
+        priorActualByEmp
       );
       work.push({
         dateIso: dIso,
@@ -648,7 +693,8 @@ export function generateWeek(args) {
       slot, entry.dateIso, entry.date, weekStart,
       employees, requests, pendingShifts, strictPreference, holidayDaysByEmp,
       crossWeekShifts,
-      minConsecutiveDaysOff, maxConsecutiveWorkingDays
+      minConsecutiveDaysOff, maxConsecutiveWorkingDays,
+      priorActualByEmp
     );
     if (built.eligible.length === 0) {
       unfilledCells.push({
@@ -659,7 +705,7 @@ export function generateWeek(args) {
       continue;
     }
     const prevAssigneeId = previousAssignees[entry.dateIso + "|" + slot.key];
-    const ranked = rankCandidates(built.eligible, pendingShifts, priorWeekShifts, prevAssigneeId);
+    const ranked = rankCandidates(built.eligible, pendingShifts, monthlyAggregates, prevAssigneeId);
     const winner = ranked[0];
 
     // v1.8.1: if the wipe-pass preserved a time/role override for this

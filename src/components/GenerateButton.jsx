@@ -52,19 +52,25 @@ export default function GenerateButton({
   weekStart, weekShifts, priorWeekShifts, nextWeekShifts, employees, requests,
   shiftTemplate, openingDays, strictPreference,
   minConsecutiveDaysOff, maxConsecutiveWorkingDays, dayRequiredRoles,
+  monthlyAggregates,
   isMobile, actions, onResult,
   onUndoableOp,
+  disabled: disabledByParent,
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const employeeCount = Object.keys(employees || {}).length;
-  const disabled = !shiftTemplate || employeeCount === 0;
-  const tooltip = !shiftTemplate
-    ? "Schedule template not loaded yet"
-    : employeeCount === 0
-      ? "Add employees first"
-      : "Auto-fill empty cells for this week";
+  // v1.12.0: parent-supplied disabled (past-week lockdown) ORs with the
+  // existing self-disabled conditions (no template / no employees).
+  const disabled = !shiftTemplate || employeeCount === 0 || Boolean(disabledByParent);
+  const tooltip = disabledByParent
+    ? "Past weeks are read-only"
+    : !shiftTemplate
+      ? "Schedule template not loaded yet"
+      : employeeCount === 0
+        ? "Add employees first"
+        : "Auto-fill empty cells for this week";
 
   function handleClick() {
     if (disabled) return;
@@ -107,6 +113,11 @@ export default function GenerateButton({
           minConsecutiveDaysOff: minConsecutiveDaysOff,
           maxConsecutiveWorkingDays: maxConsecutiveWorkingDays,
           dayRequiredRoles: dayRequiredRoles,
+          // v1.12.0: pre-built 28-day rolling aggregates from
+          // ScheduleGrid's memo. Drives rankCandidates' hours+shifts-
+          // deficit sort. Shared with MonthlyFairnessPanel so the
+          // panel and the generator stay in lockstep.
+          monthlyAggregates: monthlyAggregates,
           // v1.8.1: preserve-on-regenerate policy. Ignored when mode is
           // "fill-empty". Both default to true on the modal — wiring
           // through unchanged forwards that default.
