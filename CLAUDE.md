@@ -1189,12 +1189,9 @@ megustastu-scheduling/
 ├── REFACTOR_LOG.md                 version history + decisions
 ├── package.json                    React 19, Vite, Firebase, jsPDF
 ├── vite.config.js                  @vitejs/plugin-react (automatic JSX)
-├── index.html                      Vite entry. v0.11.0: hosts the
-│                                   theme token block — `:root` defines
-│                                   light values, `[data-theme="dark"]`
-│                                   overrides for dark mode. Also has an
-│                                   inline no-flash script that paints
-│                                   the right theme before React mounts.
+├── index.html                      Vite entry. Hosts the theme token
+│                                   block + the no-flash inline script.
+│                                   vPre-1.0: see Pre-v1.0 archive below.
 └── src/
     ├── main.jsx                    mounts <App />
     ├── App.jsx                     orchestration: auth-gate → AppShell.
@@ -1245,10 +1242,11 @@ megustastu-scheduling/
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
     │   ├── usePersistence.js       Firebase RTDB reads + write-guarded CRUD
-    │   ├── useThemeMode.js         v0.11.0: dark/light resolver. Takes
-    │   │                           explicit boolean (or undefined → follow
-    │   │                           system pref live). Writes
-    │   │                           `data-theme` on <html>; returns isDark.
+    │   ├── useThemeMode.js         dark/light resolver. Takes explicit
+    │   │                           boolean (or undefined → follow system
+    │   │                           pref live). Writes `data-theme` on
+    │   │                           <html>; returns isDark.
+    │   │                           vPre-1.0: see Pre-v1.0 archive below.
     │   ├── useUndoStack.js         v1.10.0: bounded FIFO undo stack
     │   │                           (depth 5). { stack, push, pop, clear }.
     │   │                           In-memory only — survives Vite HMR,
@@ -1263,23 +1261,7 @@ megustastu-scheduling/
     │   │                           ROLE_COLORS, REQUEST_TYPES,
     │   │                           DEFAULT_SHIFT_TEMPLATE,
     │   │                           OPERATING_HOURS, WEEKDAYS, DAY_PARTS.
-    │   │                           v0.10.2: S.surfaceSoft strengthened
-    │   │                           (0.78 white, dark hairline border,
-    │   │                           soft elevation shadow) — cascades to
-    │   │                           Collapsible / Section / mobile day-cards.
-    │   │                           v0.11.0: every visual token now reads
-    │   │                           from a CSS var defined in index.html
-    │   │                           (`:root` light / `[data-theme="dark"]`
-    │   │                           dark). ROLE_COLORS entries became
-    │   │                           `var(--role-x-rgb)` RGB triplets —
-    │   │                           callers compose alpha at use site via
-    │   │                           rgba(`${rgb}`, 0.2). Zero rgba/hex
-    │   │                           literals remain in JS.
-    │   │                           v0.12.0: + DEFAULT_OPENING_DAYS (all
-    │   │                           seven weekdays true) — fallback for
-    │   │                           /settings.openingDays. + DEFAULT_WORKING_DAYS
-    │   │                           = 5 — fallback for employee
-    │   │                           .workingDaysPerWeek.
+    │   │                           vPre-1.0: see Pre-v1.0 archive below.
     │   │                           v1.0.0: + DEFAULT_GENERATOR_STRICT_PREFERENCE
     │   │                           = false — fallback for
     │   │                           /settings.generatorStrictPreference.
@@ -1352,15 +1334,10 @@ megustastu-scheduling/
     │   │                           ROLES; SECTIONS just lists per-section role
     │   │                           membership.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
-    │   │                           first since v0.8.0) + cell-state
-    │   │                           derivation + findRequestConflict +
-    │   │                           findSameDayShift + isWeekComplete.
-    │   │                           Pure JS, no React.
-    │   │                           v0.12.0: + weekdayKeyForDate(date) and
-    │   │                           visibleWeekDates(weekStart, openingDays)
-    │   │                           — filters out closed days. isWeekComplete
-    │   │                           now takes openingDays and skips closed
-    │   │                           days (returns false when none open).
+    │   │                           first) + cell-state derivation +
+    │   │                           findRequestConflict + findSameDayShift
+    │   │                           + isWeekComplete. Pure JS, no React.
+    │   │                           vPre-1.0: see Pre-v1.0 archive below.
     │   │                           v1.2.0: findRequestConflict guarded to
     │   │                           dayoff/holiday types only. New
     │   │                           findShiftPreferenceMismatch(...,
@@ -1516,13 +1493,7 @@ megustastu-scheduling/
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
-    │   │                           v0.9.0: evening cells = name only,
-    │   │                           evening row labels = start time only.
-    │   │                           v0.12.0: accepts openingDays; uses
-    │   │                           visibleWeekDates so closed days drop
-    │   │                           out of the table head + body. Filename
-    │   │                           date range uses first / last visible
-    │   │                           date (no longer dates[6]).
+    │   │                           vPre-1.0: see Pre-v1.0 archive below.
     │   │                           v1.3.0: cells where the slot's dayPart
     │   │                           is closed on that date render as empty
     │   │                           strings via isSlotOpenOnDate (legacy
@@ -1784,9 +1755,7 @@ megustastu-scheduling/
         │                           refusal banner (this is an auto-
         │                           effect, not user-initiated).
         ├── EmployeesList.jsx       roster list + Add button.
-        │                           v0.12.0: each row shows
-        │                           "Pattern: N/M" below the role chips
-        │                           (N = workingDaysPerWeek, M = 7 − N).
+        │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.3.0: + small "Priority" badge
         │                           alongside the role chips when
         │                           emp.schedulingPriority === true.
@@ -1797,12 +1766,7 @@ megustastu-scheduling/
         │                           when schedulingPriority is false so
         │                           the row height doesn't shift.
         ├── EmployeeFormModal.jsx   add/edit employee modal.
-        │                           v0.12.0: + "Working days per week"
-        │                           segmented control (1..7) with live
-        │                           "N working / M off" helper. Stored
-        │                           on /employees/{id}.workingDaysPerWeek.
-        │                           Legacy / out-of-range values clamp to
-        │                           the default (5) on read.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.3.0: + "Auto-generator priority"
         │                           pill (schedulingPriority bool).
         │                           Default false. Helper text explains
@@ -1840,19 +1804,7 @@ megustastu-scheduling/
         │                           shift-preference carries the field
         │                           on save; other types drop it.
         ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile).
-        │                           v0.10.2: date pill row (today
-        │                           highlighted), centred banded section
-        │                           headers spanning all columns with
-        │                           marginTop split between groups,
-        │                           label-cell chips in the left column;
-        │                           mobile sub-headers reshaped to match.
-        │                           v0.12.0: reads settings.openingDays;
-        │                           uses visibleWeekDates so closed days
-        │                           drop out. Desktop gridTemplateColumns
-        │                           + minWidth derive from dates.length.
-        │                           Defensive empty-state when zero days
-        │                           open. Forwards openingDays to
-        │                           ExportButton.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.0.0: + GenerateButton in nav bar
         │                           (between week-range and Export). +
         │                           auto-dismissing result banner above
@@ -2110,19 +2062,7 @@ megustastu-scheduling/
         │                           No effect on the existing jumpToCell
         │                           or pill-highlight axes — orthogonal.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
-        │                           v0.8.0 picker filters: role match,
-        │                           STRICT same-date exclusion, request
-        │                           hide-by-default (with show-all toggle
-        │                           + yellow banner). Save-time same-day
-        │                           guard. Evening slots prefill default
-        │                           role (Bar/Floor, Chef/Plating/Pot).
-        │                           v0.9.0: picker sorts specialists
-        │                           first (role-count asc, then name).
-        │                           v0.10.1: "Show staff on day off /
-        │                           holiday" control converted from a
-        │                           checkbox to the Toggle atom; hidden-
-        │                           count surfaces in the Toggle's
-        │                           `helper` slot.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.1.0: picker honours
         │                           slotDef.requiredRoles for day slots
         │                           — when set, employee must hold AT
@@ -2201,29 +2141,7 @@ megustastu-scheduling/
         │                           editor (counts, times, FoH evening
         │                           secondPersonStart). Template times
         │                           validated against operating window.
-        │                           v0.9.0: + Display card with
-        │                           showRolePills toggle.
-        │                           v0.10.0: single-open accordion
-        │                           (Operating Hours, Display, FoH,
-        │                           Kitchen). Per-section dirty dot in
-        │                           Collapsible headers. Display section
-        │                           uses Toggle atom and auto-saves on
-        │                           change (no Save click). Save click
-        │                           force-opens the first error section.
-        │                           v0.11.0: + Dark mode Toggle in Display.
-        │                           Receives `isDark` (resolved) from
-        │                           AppShell. Helper line says "Following
-        │                           your system preference. Tap to
-        │                           override." while settings.darkMode is
-        │                           undefined; collapses to null once an
-        │                           explicit boolean is saved.
-        │                           v0.12.0: + Open days picker inside the
-        │                           Operating Hours section (weekday pill
-        │                           row). Validation requires ≥1 open
-        │                           day; error force-opens Hours. Dirty
-        │                           tracking combines hours + open-days
-        │                           into operatingDirty for the section
-        │                           header dot.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.0.0: + Auto-generator accordion
         │                           section (between Display and FoH).
         │                           Single Toggle for "Strict
@@ -2474,8 +2392,7 @@ megustastu-scheduling/
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
-        │                           v0.12.0: + openingDays prop, forwarded
-        │                           to isWeekComplete + pdf-export.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
         ├── GenerateButton.jsx      v1.0.0: NEW. Schedule-grid entry point
         │                           for the auto-generator. Owns the
         │                           confirm modal + the upsertShift loop.
@@ -3181,6 +3098,115 @@ missing details.
 After ~25 messages in a single chat, remind Patryk to start a new
 conversation. Carry context forward via a `"sum up this thread"` summary
 attached to the next thread.
+
+---
+
+## Pre-v1.0 archive
+
+Per-file v0.x sub-entries extracted from the file-structure block on
+2026-05-26 (session 23) to keep the active per-file blocks scannable.
+Behaviour is still live in the shipped code; this is documentation
+archaeology. Full version history also lives in REFACTOR_LOG.md.
+
+### index.html (v0.11.0)
+
+- **v0.11.0:** hosts the theme token block — `:root` defines light
+  values, `[data-theme="dark"]` overrides for dark mode. Also has an
+  inline no-flash script that paints the right theme before React
+  mounts.
+
+### src/hooks/useThemeMode.js (v0.11.0)
+
+- **v0.11.0:** NEW. dark/light resolver. Takes explicit boolean (or
+  undefined → follow system pref live). Writes `data-theme` on
+  `<html>`; returns isDark.
+
+### src/lib/constants.js (v0.10.2, v0.11.0, v0.12.0)
+
+- **v0.10.2:** `S.surfaceSoft` strengthened (0.78 white, dark hairline
+  border, soft elevation shadow) — cascades to Collapsible / Section /
+  mobile day-cards.
+- **v0.11.0:** every visual token now reads from a CSS var defined in
+  `index.html` (`:root` light / `[data-theme="dark"]` dark).
+  ROLE_COLORS entries became `var(--role-x-rgb)` RGB triplets —
+  callers compose alpha at use site via `rgba(${rgb}, 0.2)`. Zero
+  rgba/hex literals remain in JS.
+- **v0.12.0:** + `DEFAULT_OPENING_DAYS` (all seven weekdays true) —
+  fallback for `/settings.openingDays`. + `DEFAULT_WORKING_DAYS = 5`
+  — fallback for employee `.workingDaysPerWeek`.
+
+### src/lib/schedule-logic.js (v0.8.0, v0.12.0)
+
+- **v0.8.0:** slot enumeration order changed to Kitchen first.
+- **v0.12.0:** + `weekdayKeyForDate(date)` and
+  `visibleWeekDates(weekStart, openingDays)` — filters out closed
+  days. `isWeekComplete` now takes `openingDays` and skips closed days
+  (returns false when none open).
+
+### src/lib/pdf-export.js (v0.9.0, v0.12.0)
+
+- **v0.9.0:** evening cells = name only; evening row labels = start
+  time only (the end is the close of service and was visual noise on
+  the printed sheet). Day rows keep the full `start–end` range.
+- **v0.12.0:** accepts `openingDays`; uses `visibleWeekDates` so
+  closed days drop out of the table head + body. Filename date range
+  uses first / last visible date (no longer `dates[6]`).
+
+### src/components/EmployeesList.jsx (v0.12.0)
+
+- **v0.12.0:** each row shows "Pattern: N/M" below the role chips
+  (N = `workingDaysPerWeek`, M = 7 − N).
+
+### src/components/EmployeeFormModal.jsx (v0.12.0)
+
+- **v0.12.0:** + "Working days per week" segmented control (1..7) with
+  live "N working / M off" helper. Stored on
+  `/employees/{id}.workingDaysPerWeek`. Legacy / out-of-range values
+  clamp to the default (5) on read.
+
+### src/components/ScheduleGrid.jsx (v0.10.2, v0.12.0)
+
+- **v0.10.2:** date pill row (today highlighted); centred banded
+  section headers spanning all columns with `marginTop` split between
+  groups; label-cell chips in the left column; mobile sub-headers
+  reshaped to match.
+- **v0.12.0:** reads `settings.openingDays`; uses `visibleWeekDates`
+  so closed days drop out. Desktop `gridTemplateColumns` + `minWidth`
+  derive from `dates.length`. Defensive empty-state when zero days
+  open. Forwards `openingDays` to ExportButton.
+
+### src/components/ShiftFormModal.jsx (v0.8.0, v0.9.0, v0.10.1)
+
+- **v0.8.0:** picker filters — role match, STRICT same-date exclusion,
+  request hide-by-default (with show-all toggle + yellow banner).
+  Save-time same-day guard. Evening slots prefill default role
+  (Bar/Floor, Chef/Plating/Pot).
+- **v0.9.0:** picker sorts specialists first (role-count asc, then
+  name).
+- **v0.10.1:** "Show staff on day off / holiday" control converted
+  from a checkbox to the Toggle atom; hidden-count surfaces in the
+  Toggle's `helper` slot.
+
+### src/components/Settings.jsx (v0.9.0, v0.10.0, v0.11.0, v0.12.0)
+
+- **v0.9.0:** + Display card with `showRolePills` toggle.
+- **v0.10.0:** single-open accordion (Operating Hours, Display, FoH,
+  Kitchen). Per-section dirty dot in Collapsible headers. Display
+  section uses Toggle atom and auto-saves on change (no Save click).
+  Save click force-opens the first error section.
+- **v0.11.0:** + Dark mode Toggle in Display. Receives `isDark`
+  (resolved) from AppShell. Helper line says "Following your system
+  preference. Tap to override." while `settings.darkMode` is
+  undefined; collapses to null once an explicit boolean is saved.
+- **v0.12.0:** + Open days picker inside the Operating Hours section
+  (weekday pill row). Validation requires ≥1 open day; error
+  force-opens Hours. Dirty tracking combines hours + open-days into
+  `operatingDirty` for the section header dot.
+
+### src/components/ExportButton.jsx (v0.12.0)
+
+- **v0.12.0:** + `openingDays` prop, forwarded to `isWeekComplete` +
+  `pdf-export`.
 
 ---
 
