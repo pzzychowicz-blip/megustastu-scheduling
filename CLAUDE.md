@@ -1069,6 +1069,48 @@ separate Firebase project, same UI conventions).
   surface, replacing the force-open affordance). Reset to defaults
   stays (single-click action, no validation interdependency).
 
+- **Monthly Fairness Panel polish (v1.13.0):** three coupled improvements
+  to the v1.12.0 panel — all stay informational; the generator's
+  rankCandidates ordering is unchanged.
+  - **Highlight sync.** `<MonthlyFairnessPanel>` is now a second
+    consumer of ScheduleGrid's `highlightedEmployeeId` axis (the
+    same one wired to `<WeeklyShiftSummary>` since v1.7.0). Clicking
+    a "Shifts assigned" pill paints the matching fairness row green
+    (iOS-green tokens `--bg-active-on` + `--border-active-on` + a
+    2-px box-shadow ring, matching the pill). Clicking a fairness
+    row name does the inverse — flips the same axis, lighting up
+    the pill and every assigned cell. One state, three surfaces in
+    lockstep. No new state in ScheduleGrid; just one prop forwarded.
+    The row's name+counts area is a `<button>`; the delta bar
+    sits next to it as a sibling button (NOT nested — invalid HTML).
+  - **Delta bar overhaul.** Geometry: 120 × 6 px → 160 × 10 px, border-
+    radius 3 → 5. Centre divider replaced — was a full-height
+    1-px hairline; now a vertically-centred 2-px notch
+    (`top: 2 bottom: 2 opacity: 0.55`) that anchors centre without
+    visually dominating. Under-fill stays red but gains an inset
+    1-px `--btn-danger-fg` micro-border for definition; over-fill
+    gains a matching `--border-active-on` inset border. Min-fill
+    floor: any non-zero magnitude renders at least 2 px so a small
+    deficit can't collapse to "looks at-target." The 160-px width
+    bump is absorbed by the row's existing `flexWrap: "wrap"`; the
+    `marginLeft: "auto"` right-anchor keeps the bar aligned across
+    screen sizes.
+  - **Drill-down popover.** Clicking the delta bar opens
+    `<EmployeeFairnessModal>` — read-only, informational, three
+    Section blocks. (a) 28-day rolling stats (shifts + hours vs
+    target, with signed delta + holiday days + window date bounds).
+    (b) Calendar month stats for the month containing the focus
+    week's Monday — pro-rated target = `workingDaysPerWeek ×
+    monthLength / 7 − holidays in month`. (c) Per-week sparkline:
+    4 horizontal bars [wk-3, wk-2, wk-1, this wk], each 7 days
+    ending at the focus week's Sunday. Bar tint: red under-target,
+    neutral at-target, green at-or-over. New helper
+    `buildEmployeeFairnessDetail` in `schedule-logic.js` returns
+    `{rolling28, calendarMonth, perWeek}` — single employee, computed
+    on modal open. Past-week navigation does NOT gate the modal
+    (it's informational; doesn't mutate). Modal closes via
+    backdrop / Close / Esc.
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -1085,7 +1127,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.12.0)
+## File structure (current — v1.13.0)
 
 ```
 megustastu-scheduling/
@@ -1142,6 +1184,9 @@ megustastu-scheduling/
     │                                 "configurable-scheduling-rules".
     │                                 v1.12.0: → 1.12.0, sha
     │                                 "past-week-lock-fairness-autosave".
+    │                                 v1.13.0: → 1.13.0, sha
+    │                                 "fairness-panel-highlight-deltabar-
+    │                                 drilldown".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1393,6 +1438,27 @@ megustastu-scheduling/
     │   │                           it already accepts any date array, so
     │   │                           28-day callers pass a 28-element list
     │   │                           without a signature change.
+    │   │                           v1.13.0: + buildEmployeeFairnessDetail
+    │   │                           ({shifts, employee, weekStart, requests,
+    │   │                           shiftTemplate}) — single-employee drill-
+    │   │                           down for <EmployeeFairnessModal>. Returns
+    │   │                           {rolling28, calendarMonth, perWeek}.
+    │   │                           rolling28 mirrors build28DayAggregates'
+    │   │                           per-employee shape (shifts/target,
+    │   │                           hours/target) but also exposes holiday
+    │   │                           days + window date bounds. calendarMonth
+    │   │                           uses the focus week's Monday's month;
+    │   │                           target is pro-rated wpw × monthLen/7
+    │   │                           minus holiday days in the month.
+    │   │                           perWeek is 4 buckets [wk-3, wk-2, wk-1,
+    │   │                           this wk], each 7 days ending at the
+    │   │                           focus week's Sunday, raw wpw target per
+    │   │                           bucket (no pro-rating — buckets are full
+    │   │                           weeks). + private helpers wpwOf,
+    │   │                           holidayDayCountForEmployeeInRange,
+    │   │                           aggregateShiftsInRange. Helper is
+    │   │                           informational only — never feeds the
+    │   │                           generator.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -1964,6 +2030,20 @@ megustastu-scheduling/
         │                           shape, but slotsForDay / resolveDay
         │                           RequiredRoles handle either shape
         │                           transparently.
+        │                           v1.13.0: <MonthlyFairnessPanel> mount
+        │                           grew five extra props — shifts,
+        │                           requests, weekStart, shiftTemplate
+        │                           (all needed by the new drill-down
+        │                           helper buildEmployeeFairnessDetail),
+        │                           plus highlightedEmployeeId + onHighlight
+        │                           (the same axis already threaded to
+        │                           <WeeklyShiftSummary> since v1.7.0).
+        │                           No new state in ScheduleGrid — the
+        │                           pill-highlight axis just gained a
+        │                           second consumer. Forward order matches
+        │                           the existing <WeeklyShiftSummary>
+        │                           pattern so future read-only consumers
+        │                           drop in symmetrically.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           v0.8.0 picker filters: role match,
         │                           STRICT same-date exclusion, request
@@ -2209,6 +2289,63 @@ megustastu-scheduling/
         │                           ScheduleGrid (same memo the generator
         │                           consumes — panel & generator stay in
         │                           lockstep).
+        │                           v1.13.0: three changes. (1) Highlight
+        │                           sync — accepts highlightedEmployeeId +
+        │                           onHighlight from ScheduleGrid (the
+        │                           same axis already wired to
+        │                           <WeeklyShiftSummary> since v1.7.0).
+        │                           The name+counts area of each row is a
+        │                           `<button>` that toggles the shared
+        │                           highlight; selected rows paint with
+        │                           the iOS-green tokens (`--bg-active-on`,
+        │                           `--border-active-on`) + a 2-px box-
+        │                           shadow ring matching the pill. Click
+        │                           a pill OR a row — both flip the same
+        │                           state. (2) Delta-bar overhaul —
+        │                           geometry grew from 120×6 → 160×10 px,
+        │                           border-radius 3 → 5, centre divider
+        │                           replaced with a vertically-centred 2-
+        │                           px notch (top:2 bottom:2 opacity .55),
+        │                           fills gained inset 1-px micro-borders
+        │                           (`btn-danger-fg` / `border-active-on`)
+        │                           for definition, and a min-2-px floor
+        │                           on non-zero fill prevents small
+        │                           deficits collapsing to "looks at-
+        │                           target." (3) Drill-down popover —
+        │                           delta bar wrapped in its own
+        │                           `<button>` (sibling to the highlight
+        │                           button; nested buttons are invalid
+        │                           HTML) that opens
+        │                           <EmployeeFairnessModal>. Local state
+        │                           `[detailEmployeeId]` owns the modal;
+        │                           ScheduleGrid doesn't need to know.
+        │                           New props: shifts, requests,
+        │                           weekStart, shiftTemplate (forwarded
+        │                           into the modal so the helper can
+        │                           compute on open). Modal is read-only —
+        │                           past-week navigation does NOT gate it
+        │                           (informational only).
+        ├── EmployeeFairnessModal.jsx v1.13.0: NEW. Read-only drill-down
+        │                           popover opened from a MonthlyFairness
+        │                           Panel row's delta-bar click. Overlay-
+        │                           wrapped, three Section blocks:
+        │                           (1) 28-day rolling — shifts + hours
+        │                           vs target with signed deltas + holiday
+        │                           days subtracted + window date bounds.
+        │                           (2) Calendar month — month containing
+        │                           the focus week's Monday. Same trio
+        │                           plus a pro-rated target derived from
+        │                           wpw × monthLength/7 − holidays.
+        │                           (3) Per-week sparkline — 4 horizontal
+        │                           bars [wk-3, wk-2, wk-1, this wk],
+        │                           tinted red (under) / neutral (at) /
+        │                           green (at-or-over) target. Each bar
+        │                           shows "N / target" to the right.
+        │                           Single Close button (ghost variant).
+        │                           Calls buildEmployeeFairnessDetail on
+        │                           open — single employee, cheap. No
+        │                           edit affordance; mirrors the
+        │                           <RequestPreviewModal> v1.9.0 pattern.
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.

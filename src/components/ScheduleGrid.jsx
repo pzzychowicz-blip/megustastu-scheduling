@@ -1457,6 +1457,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       <MonthlyFairnessPanel
         employees={employees}
         monthlyAggregates={monthlyAggregates}
+        shifts={shifts}
+        requests={requests}
+        weekStart={weekStart}
+        shiftTemplate={shiftTemplate}
+        highlightedEmployeeId={highlightedEmployeeId}
+        onHighlight={onHighlight}
         isMobile={isMobile}
       />
 

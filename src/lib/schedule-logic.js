@@ -826,6 +826,150 @@ export function build28DayAggregates(args) {
   return out;
 }
 
+// ── Per-employee fairness drill-down (v1.13.0) ──────────────────────────
+// Powers the EmployeeFairnessModal that opens when the manager clicks a
+// row's delta bar on <MonthlyFairnessPanel>. Three views over the same
+// underlying shifts + requests data, all anchored on the focus week:
+//
+//   rolling28    — same 28-day window as build28DayAggregates, but for
+//                  a single employee with the holiday-day count exposed.
+//   calendarMonth — the month containing the focus week's Monday. Target
+//                  is a pro-rated (workingDaysPerWeek / 7) × monthLength,
+//                  minus holiday days within the month.
+//   perWeek       — four buckets [wk-3, wk-2, wk-1, this wk] each 7 days
+//                  ending at the focus week's Sunday. Target per bucket is
+//                  the raw workingDaysPerWeek (these are full weeks; the
+//                  panel sparkline doesn't pro-rate).
+//
+// Informational only — never feeds the generator. Built on-demand when
+// the modal opens (single employee, small windows, cheap).
+function wpwOf(emp) {
+  if (!emp) return 5;
+  const v = emp.workingDaysPerWeek;
+  if (!Number.isFinite(v) || v < 1) return 5;
+  return Math.min(7, Math.round(v));
+}
+
+function holidayDayCountForEmployeeInRange(requestsMap, empId, fromIso, toIso) {
+  if (!requestsMap || !empId) return 0;
+  const seen = {};
+  const all = Object.values(requestsMap);
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i];
+    if (!r || r.type !== "holiday") continue;
+    if (r.employeeId !== empId) continue;
+    if (!r.dateFrom) continue;
+    const rFrom = r.dateFrom;
+    const rTo = r.dateTo || r.dateFrom;
+    // Overlap with [fromIso, toIso]
+    const lo = rFrom > fromIso ? rFrom : fromIso;
+    const hi = rTo < toIso ? rTo : toIso;
+    if (lo > hi) continue;
+    // Walk the overlap day-by-day. Range is at most ~31 days; cheap.
+    let cur = parseIsoDate(lo);
+    const stop = parseIsoDate(hi);
+    while (isoDate(cur) <= isoDate(stop)) {
+      seen[isoDate(cur)] = true;
+      cur = addDays(cur, 1);
+    }
+  }
+  return Object.keys(seen).length;
+}
+
+function aggregateShiftsInRange(shiftsMap, empId, fromIso, toIso) {
+  const seenDates = {};
+  let hours = 0;
+  const all = Object.values(shiftsMap || {});
+  for (let i = 0; i < all.length; i++) {
+    const s = all[i];
+    if (!s || s.employeeId !== empId || !s.date) continue;
+    if (s.date < fromIso || s.date > toIso) continue;
+    seenDates[s.date] = true;
+    hours += hoursBetween(s.start, s.end);
+  }
+  return { shiftsCount: Object.keys(seenDates).length, hoursTotal: hours };
+}
+
+export function buildEmployeeFairnessDetail(args) {
+  if (!args || !args.employee || !args.weekStart) return null;
+  const shifts = args.shifts || {};
+  const employee = args.employee;
+  const weekStart = args.weekStart;
+  const requests = args.requests || {};
+  const shiftTemplate = args.shiftTemplate || null;
+
+  const wpw = wpwOf(employee);
+  const avgHours = avgShiftHours(employee.preference, shiftTemplate);
+
+  // ── rolling28 ──
+  const r28From = addDays(weekStart, -21);
+  const r28To = addDays(weekStart, 6);
+  const r28FromIso = isoDate(r28From);
+  const r28ToIso = isoDate(r28To);
+  const r28Agg = aggregateShiftsInRange(shifts, employee.id, r28FromIso, r28ToIso);
+  const r28Holiday = holidayDayCountForEmployeeInRange(requests, employee.id, r28FromIso, r28ToIso);
+  const r28ShiftsTarget = Math.max(0, wpw * 4 - r28Holiday);
+  const r28HoursTarget = r28ShiftsTarget * avgHours;
+
+  // ── calendarMonth (the month containing weekStart's Monday) ──
+  const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1);
+  const monthEnd = new Date(weekStart.getFullYear(), weekStart.getMonth() + 1, 0);
+  const monthStartIso = isoDate(monthStart);
+  const monthEndIso = isoDate(monthEnd);
+  const monthDayCount = monthEnd.getDate();
+  const monthAgg = aggregateShiftsInRange(shifts, employee.id, monthStartIso, monthEndIso);
+  const monthHoliday = holidayDayCountForEmployeeInRange(requests, employee.id, monthStartIso, monthEndIso);
+  // Pro-rated target: workingDaysPerWeek averaged across the month length.
+  // E.g. wpw=5 in a 31-day month → 5 × 31/7 ≈ 22.14 → rounded to 22.
+  const monthShiftsTargetRaw = wpw * (monthDayCount / 7);
+  const monthShiftsTarget = Math.max(0, Math.round(monthShiftsTargetRaw) - monthHoliday);
+  const monthHoursTarget = monthShiftsTarget * avgHours;
+  const monthLabel = monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+  // ── perWeek (4 buckets ending at focus week's Sunday) ──
+  const perWeek = [];
+  for (let offset = -3; offset <= 0; offset++) {
+    const wkStart = addDays(weekStart, offset * 7);
+    const wkEnd = addDays(wkStart, 6);
+    const wkFromIso = isoDate(wkStart);
+    const wkToIso = isoDate(wkEnd);
+    const agg = aggregateShiftsInRange(shifts, employee.id, wkFromIso, wkToIso);
+    const wkHoliday = holidayDayCountForEmployeeInRange(requests, employee.id, wkFromIso, wkToIso);
+    const wkTarget = Math.max(0, wpw - wkHoliday);
+    perWeek.push({
+      label: offset === 0 ? "this wk" : "wk " + offset,
+      weekStartIso: wkFromIso,
+      weekEndIso: wkToIso,
+      shiftsCount: agg.shiftsCount,
+      hoursTotal: agg.hoursTotal,
+      shiftsTarget: wkTarget,
+    });
+  }
+
+  return {
+    rolling28: {
+      shiftsCount: r28Agg.shiftsCount,
+      hoursTotal: r28Agg.hoursTotal,
+      shiftsTarget: r28ShiftsTarget,
+      hoursTarget: r28HoursTarget,
+      holidayDays: r28Holiday,
+      dateFromIso: r28FromIso,
+      dateToIso: r28ToIso,
+    },
+    calendarMonth: {
+      monthLabel: monthLabel,
+      monthStartIso: monthStartIso,
+      monthEndIso: monthEndIso,
+      shiftsCount: monthAgg.shiftsCount,
+      hoursTotal: monthAgg.hoursTotal,
+      shiftsTarget: monthShiftsTarget,
+      hoursTarget: monthHoursTarget,
+      holidayDays: monthHoliday,
+    },
+    perWeek: perWeek,
+  };
+}
+
 // ── Consecutive days off check (v1.2.0, cross-week v1.8.0) ───────────────
 // Labour wellness rule: every employee needs at least N consecutive days
 // off per calendar week (Mon..Sun). v1.2.0 ships with N=2.
