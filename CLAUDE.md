@@ -1138,16 +1138,26 @@ separate Firebase project, same UI conventions).
         translucent `--bg-soft` / `--bg-card` surfaces underneath.
         Name button became content-sized with 4×8 padding so the
         hover card fits snug around name+counts.
-      - **R5 (FINAL).** Wrapper padding dropped to 0; name button
-        padding bumped to 4×10 (matching the `<WeeklyShiftSummary>`
-        pill rhythm of `padding: "4px 10px"`). Previous rounds
-        stacked wrapper padding + button padding, doubling the
-        visual mass; the row was noticeably taller than the
-        Shifts assigned pills above. Wrapper still hosts the
-        selected green tint at full row width — hover and
-        selected have intentionally different extents (hover
-        snug around the click target; selected paints the full
-        row as the "lit" identity).
+      - **R5** dropped wrapper padding to 0 and bumped button
+        padding to 4×10 to match the `<WeeklyShiftSummary>` pill
+        rhythm — row ended up shorter than the reference visual
+        and density still felt off.
+      - **R6** reverted the row layout to the first v1.13.0
+        commit (wrapper padding 6×8, name button `flex: 1` no
+        padding) — but lost the snug-hover behaviour the manager
+        had confirmed was correct.
+      - **R7 (FINAL).** Combines R4's snug-hover layout (wrapper
+        padding 6×8, name button content-sized with 4×8 px inner
+        padding, delta bar pushed right via `marginLeft: auto`)
+        with the **font-size fix**: `fontSize: 12` + `color:
+        var(--text-primary)` restored on `wrapStyle`. The first
+        commit's `baseRowStyle` had those; they got lost in the
+        intermediate refactors, leaving the name span inheriting
+        the body's default 16 px while the shifts/hours spans
+        kept their explicit 12 px — the actual visual mismatch
+        the manager was flagging. With this restored all three
+        columns render at one consistent 12 px size, matching the
+        first commit's look exactly.
   - **Active-only fairness rows.** `<MonthlyFairnessPanel>` skips
     `emp.active === false` employees entirely (was: skip-archived-
     with-zero-shifts, which still surfaced orphan shifts on archived
@@ -2381,32 +2391,33 @@ megustastu-scheduling/
         │                           past-week navigation does NOT gate it
         │                           (informational only).
         │                           v1.13.0 polish (in-DEV review,
-        │                           five iteration rounds — final
+        │                           seven iteration rounds — final
         │                           state described here):
-        │                           (a) Row layout & density. Wrapper
-        │                           has NO padding (the name button
-        │                           alone carries the 4×10 px padding,
-        │                           matching the <WeeklyShiftSummary>
-        │                           pill rhythm). Earlier rounds
-        │                           stacked wrapper padding + button
-        │                           padding, doubling the visual mass;
-        │                           round 5 matches the Shifts assigned
-        │                           section's density.
-        │                           (b) Hover. Name button is content-
-        │                           sized (NOT `flex: 1`), so the
-        │                           `.mgt-hover-scale` hover card fits
-        │                           snugly around just name+counts.
-        │                           Delta bar pushed right via
-        │                           `marginLeft: auto`. Hover bg is
-        │                           the new theme-aware
+        │                           (a) Row layout. Wrapper padding
+        │                           6×8 px + selected green tint at
+        │                           full row width. Name button is
+        │                           CONTENT-sized (NOT `flex: 1`)
+        │                           with 4×8 px inner padding so the
+        │                           `.mgt-hover-scale` hover card
+        │                           fits snugly around just name+
+        │                           counts. Delta bar pushed right
+        │                           via `marginLeft: auto`.
+        │                           (b) Font size. wrapStyle sets
+        │                           `fontSize: 12, color: var(--text-
+        │                           primary)`. Without these the
+        │                           name span (which doesn't set
+        │                           its own fontSize) inherits the
+        │                           body's default 16 px while
+        │                           shifts/hours stay at explicit
+        │                           12 px — making the name visibly
+        │                           larger than the muted columns.
+        │                           Lost in intermediate refactors;
+        │                           restored to match the first
+        │                           commit's baseRowStyle.
+        │                           (c) Hover bg is the theme-aware
         │                           `--bg-hover-card` (fully opaque —
         │                           #ffffff light / rgb(50,50,53) dark)
-        │                           defined in index.html alongside
-        │                           the .mgt-hover-scale rule.
-        │                           (c) Selected. Wrapper still hosts
-        │                           the green tint at FULL row width
-        │                           — hover and selected have
-        │                           intentionally different extents.
+        │                           defined in index.html.
         │                           (b) + onJumpToWeek prop. When set,
         │                           forwards a wrapped handler to
         │                           <EmployeeFairnessModal> that calls

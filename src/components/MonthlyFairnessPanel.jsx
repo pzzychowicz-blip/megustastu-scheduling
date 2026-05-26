@@ -35,18 +35,23 @@
 //     three sections (28-day rolling, calendar month, per-week
 //     sparkline).
 //
-// v1.13.0 polish (in-DEV review feedback, final state after five
+// v1.13.0 polish (in-DEV review feedback, final state after seven
 // iteration rounds):
-//   - Row layout & density. Wrapper carries the selected green tint
-//     at full row width but NO padding of its own — the name button
-//     alone carries the 4×10 px padding (matching the
-//     <WeeklyShiftSummary> pill rhythm), so the row height matches
-//     the Shifts assigned section. Earlier rounds stacked wrapper
-//     padding + button padding which doubled the visual mass.
-//   - Hover snug around content. The name button is content-sized
-//     (not flex:1), so .mgt-hover-scale's hover card fits snugly
-//     around just name+counts. The delta bar is pushed right via
-//     `marginLeft: auto`.
+//   - Wrapper padding 6×8 px + selected green tint full row width
+//     (first-commit value).
+//   - Name button is CONTENT-SIZED (not `flex: 1`) with 4×8 px
+//     inner padding; the `.mgt-hover-scale` hover card paints
+//     snugly around name+counts only. Delta bar is pushed right
+//     via `marginLeft: auto`.
+//   - Hover bg uses the theme-aware `--bg-hover-card` token
+//     (fully opaque per theme), defined in index.html.
+//   - Font size 12 is set on the wrapper. The name span doesn't
+//     set its own fontSize, so without this it inherited the
+//     body's default 16 px while shifts/hours stayed at their
+//     explicit 12 px — making the name visibly larger than the
+//     muted columns. The first commit's `baseRowStyle` had
+//     fontSize 12; that was lost in earlier refactors and is
+//     restored here.
 //   - Per-week sparkline jump-to-week. New `onJumpToWeek` prop
 //     (forwarded by ScheduleGrid). When set, the modal's WeekBars
 //     become clickable buttons that navigate the schedule to the
@@ -244,29 +249,22 @@ export default function MonthlyFairnessPanel({
         {rows.map(function (r) {
           const isSelected = highlightedEmployeeId === r.id;
 
-          // v1.13.0 polish (second pass — in-DEV review feedback):
-          //   - The selected green tint lives on the wrapper again so it
-          //     extends across the full row width (matches the first
-          //     v1.13.0 commit, restored at the manager's request).
-          //   - Row padding bumped from the original 6×8 → 8×12 for a
-          //     little more breathing room without making the row tall.
-          //   - The name button gets `.mgt-hover-scale .mgt-hover-soft`
-          //     — the soft variant (defined in index.html) halves the
-          //     usual opaque hover-card fill and drops the shadow,
-          //     giving a subtle "I'm hovered" cue instead of the
-          //     strong card-pop reported as too loud.
-          //   - The name button stays `flex: 1` so the hover surface
-          //     covers the click target. The delta bar sits on the
-          //     right, with its own (regular) hover-scale.
-          // v1.13.0 polish round 5: the row's total height now matches
-          // a <WeeklyShiftSummary> pill (~25 px). Achieved by REMOVING
-          // the wrapper's outer padding entirely — the name button
-          // alone carries the visual padding (4 × 10 px, matching the
-          // pill's BTN.base + padding), so the row stops adding a
-          // second padding shell on top of the button. The wrapper is
-          // now just a flex container that hosts the selected green
-          // tint at full row width; the button's hover stays snug
-          // around name+counts only.
+          // v1.13.0 polish round 7 — final state. Combines:
+          //   - Round 4's snug-hover layout (name button is content-
+          //     sized with 4×8 px padding, delta bar pushed right via
+          //     `marginLeft: auto`). User confirmed this hover
+          //     behaviour was correct.
+          //   - Round 4's wrapper padding 6×8 (full-row selected
+          //     green tint, ~28 px row height).
+          //   - **Font fix** — wrapStyle now sets `fontSize: 12,
+          //     color: var(--text-primary)` (first commit's
+          //     baseRowStyle had these; they were dropped in the
+          //     refactor, leaving the name span inheriting the
+          //     body's default 16px). The shifts/hours spans set
+          //     fontSize 12 explicitly, so before this fix the name
+          //     was visibly LARGER than the muted columns. Restoring
+          //     the inherited 12 brings all three columns to one
+          //     consistent size, matching the original first commit.
           const nameContent = (
             <span style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <span
@@ -289,7 +287,7 @@ export default function MonthlyFairnessPanel({
           const nameBtnStyle = {
             background: "transparent",
             border: "none",
-            padding: "4px 10px",
+            padding: "4px 8px",
             margin: 0,
             cursor: "pointer",
             color: "inherit",
@@ -311,7 +309,7 @@ export default function MonthlyFairnessPanel({
               {nameContent}
             </button>
           ) : (
-            <div style={{ padding: "4px 10px" }}>{nameContent}</div>
+            <div style={{ padding: "4px 8px" }}>{nameContent}</div>
           );
 
           const barBlock = canDrillDown ? (
@@ -339,22 +337,26 @@ export default function MonthlyFairnessPanel({
             <span style={{ marginLeft: "auto", flexShrink: 0 }}>{deltaBar(r)}</span>
           );
 
-          // Wrapper: no padding (the name button carries it). Selected
-          // green tint paints flush across the full row width; the
-          // box-shadow ring (when selected) extends just outside the
-          // wrapper bounds so the highlight still reads clearly.
           const wrapStyle = {
             display: "flex",
             alignItems: "center",
             gap: 12,
             flexWrap: "wrap",
             width: "100%",
-            padding: 0,
+            padding: "6px 8px",
             borderRadius: 8,
             border: isSelected ? "1px solid var(--border-active-on)" : "1px solid transparent",
             background: isSelected ? "var(--bg-active-on)" : "transparent",
             boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : "none",
             boxSizing: "border-box",
+            // Font defaults — restored from the first commit's
+            // baseRowStyle. The name span doesn't set fontSize, so
+            // it inherits this; without this the name was rendering
+            // at the body's default 16px while shifts/hours stayed
+            // at their explicit 12px (which the user reported as
+            // the actual visual mismatch).
+            fontSize: 12,
+            color: "var(--text-primary)",
           };
 
           return (
