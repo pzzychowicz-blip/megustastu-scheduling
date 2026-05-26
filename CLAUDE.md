@@ -1122,20 +1122,26 @@ separate Firebase project, same UI conventions).
     Clicking "this wk" is a no-op navigationally (weekStart already
     matches) but still closes the modal — accepted minor cost for
     interaction consistency across all four bars.
-  - **Row layout (in-DEV review polish).** The first cut of the
-    fairness row made the name+counts area `flex: 1`, which meant
-    the hover background and the selected green tint extended across
-    the full row width — well past the hours info, almost reaching
-    the delta bar. Fixed by making the name `<button>` size to its
-    content with Settings-header-style 12 × 14 px padding; the delta
-    bar sits at the right via `marginLeft: auto`. Both the hover
-    surface and the selected highlight now fit snugly around the
-    clickable name area. Important inline-style nuance — the un-
-    selected branch uses `background: undefined` (NOT
-    `"transparent"`) so the v1.9.0 sixth-commit `.mgt-hover-scale:
-    hover` CSS rule actually paints. An explicit `"transparent"`
-    inline would beat the CSS rule (inline-wins-over-rule) and the
-    hover affordance would silently disappear.
+  - **Row layout (in-DEV review polish, second pass).** The first
+    cut of the fairness row made the name+counts area `flex: 1`,
+    which meant the hover background and the selected green tint
+    extended across the full row width. The first polish pass
+    over-corrected — name button sized to its content with 12 × 14
+    px padding made the row tall and the green tint too small. The
+    second pass (Q-bundle: "full row width" + "subtle hover") puts
+    the selected green back on the wrapper at full row width and
+    introduces a new `.mgt-hover-soft` CSS utility (defined in
+    `index.html`) that pairs with `.mgt-hover-scale` to halve the
+    standard opaque hover-card fill (via
+    `color-mix(in srgb, var(--bg-overlay-sheet) 50%, transparent)`)
+    and drop the shadow. The two-class selector
+    `.mgt-hover-scale.mgt-hover-soft:hover` raises specificity so it
+    wins over the standard hover-scale rule regardless of source
+    order. Wrapper padding settled at 8 × 12 px — a small bump from
+    the original 6 × 8 for breathing room without making the row
+    tall. The soft variant is also applied to the per-week sparkline
+    bars in `<EmployeeFairnessModal>` so the two surfaces share one
+    interaction language.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -2362,27 +2368,26 @@ megustastu-scheduling/
         │                           compute on open). Modal is read-only —
         │                           past-week navigation does NOT gate it
         │                           (informational only).
-        │                           v1.13.0 polish (same PR, in-DEV
-        │                           review feedback):
-        │                           (a) Row layout refined. The name
-        │                           button is no longer `flex: 1` — it
-        │                           sizes to its content + Settings-
-        │                           header-style 12×14 px padding, so
-        │                           both the hover background AND the
-        │                           selected green tint fit snugly
-        │                           around name+counts. The delta-bar
-        │                           block is pushed to the right via
-        │                           `marginLeft: auto`. Earlier full-
-        │                           width wrapper highlight was reported
-        │                           as "extending too far past the hours
-        │                           info." Important detail: the un-
-        │                           selected branch sets
-        │                           `background: undefined` (NOT
-        │                           "transparent") so the v1.9.0 sixth-
-        │                           commit `.mgt-hover-scale:hover` bg
-        │                           rule actually paints — an inline
-        │                           "transparent" would beat the CSS and
-        │                           the hover surface would never appear.
+        │                           v1.13.0 polish (in-DEV review,
+        │                           landed in two passes):
+        │                           (a) Row layout — final state. The
+        │                           wrapper holds the selected green
+        │                           tint at full row width (restored
+        │                           after the first polish pass shrank
+        │                           it to the name+counts area only —
+        │                           the manager wanted the wider extent
+        │                           back). Wrapper padding bumped from
+        │                           the original 6×8 → 8×12 for a small
+        │                           breathing-room win without making
+        │                           the row tall. The name button (the
+        │                           highlight-toggle target) uses
+        │                           `.mgt-hover-scale .mgt-hover-soft`
+        │                           — the soft variant (NEW in v1.13.0,
+        │                           defined in index.html) halves the
+        │                           standard opaque hover-card fill via
+        │                           color-mix and drops the shadow, so
+        │                           the on-hover affordance reads as
+        │                           subtle instead of a strong card-pop.
         │                           (b) + onJumpToWeek prop. When set,
         │                           forwards a wrapped handler to
         │                           <EmployeeFairnessModal> that calls
@@ -2416,8 +2421,10 @@ megustastu-scheduling/
         │                           v1.13.0 polish: + optional
         │                           onJumpToWeek(weekStartIso) prop. When
         │                           set, each WeekBar becomes a
-        │                           `<button>` (hover-scale + cursor +
-        │                           tooltip "Click to open this week")
+        │                           `<button>` (`.mgt-hover-scale
+        │                           .mgt-hover-soft` — the same subtle
+        │                           half-opacity hover treatment used on
+        │                           the fairness panel rows, no shadow)
         │                           that fires the handler with its
         │                           weekStartIso. When unset, bars
         │                           render as plain `<div>`s (the

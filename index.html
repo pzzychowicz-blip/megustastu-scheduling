@@ -318,6 +318,19 @@
         position: relative;
         z-index: 2;
       }
+      /* v1.13.0 polish: subtle-hover variant. Pair with .mgt-hover-scale
+         on rows where the standard opaque hover card reads as too strong
+         — currently the <MonthlyFairnessPanel> rows and the per-week
+         sparkline bars in <EmployeeFairnessModal>. Two-class selector
+         (.mgt-hover-scale.mgt-hover-soft) raises specificity so it wins
+         over .mgt-hover-scale:hover regardless of source order.
+         color-mix at 50% gives the same color at half the perceived
+         intensity; the shadow is suppressed entirely so the lift cue
+         comes purely from the scale transform + the faint bg. */
+      .mgt-hover-scale.mgt-hover-soft:hover:not(:disabled) {
+        background-color: color-mix(in srgb, var(--bg-overlay-sheet) 50%, transparent);
+        box-shadow: none;
+      }
     </style>
   </head>
   <body>

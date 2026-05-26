@@ -35,20 +35,24 @@
 //     three sections (28-day rolling, calendar month, per-week
 //     sparkline).
 //
-// v1.13.0 polish (same PR, follow-up to in-DEV review):
-//   - Row layout refined. The name-button is no longer `flex: 1` —
-//     it sizes to its content + Settings-style 12×14 px padding, so
-//     both the hover background AND the selected green tint fit
-//     snugly around name+counts. The delta bar is pushed to the
-//     right via `marginLeft: auto` on its block. Earlier full-width
-//     wrapper highlight was reported as "extending too far past the
-//     hours info."
+// v1.13.0 polish (in-DEV review feedback):
+//   - Row layout. Wrapper holds the selected green tint at full row
+//     width (restored after the first polish pass shrank it to the
+//     name+counts area — the manager wanted the wider extent back).
+//     Wrapper padding bumped from the original 6×8 → 8×12 for a
+//     small breathing-room win without making the row tall. The
+//     name button (which is the highlight-toggle target) uses
+//     `.mgt-hover-scale .mgt-hover-soft` — the soft variant
+//     (defined in index.html) halves the standard hover-card fill
+//     opacity and drops the shadow, giving a subtle "I'm hovered"
+//     cue instead of the strong card-pop that read as too loud.
 //   - Per-week sparkline jump-to-week. New `onJumpToWeek` prop
 //     (forwarded by ScheduleGrid). When set, the modal's WeekBars
 //     become clickable buttons that navigate the schedule to the
 //     chosen week. We wrap the upstream handler locally so a
 //     successful jump also auto-closes the modal — the manager
-//     wants to see the week they picked.
+//     wants to see the week they picked. The bars also use
+//     `.mgt-hover-soft` for the same subtle hover treatment.
 //
 // Props:
 //   employees             ({ [id]: employee })
@@ -234,17 +238,22 @@ export default function MonthlyFairnessPanel({
         {rows.map(function (r) {
           const isSelected = highlightedEmployeeId === r.id;
 
-          // v1.13.0 polish — the row's wrapper is now an unstyled flex
-          // container; the highlight visuals (hover background + green
-          // selected state) live on the name-button so they sit flush
-          // around the name+counts area instead of extending across the
-          // full row width. The delta bar is pushed to the right via
-          // `marginLeft: auto`. Matches the user feedback that the
-          // earlier full-width green panel "extended too far past the
-          // hours info." Padding on the name button matches the
-          // Settings section-header rhythm (12 × 14 px).
+          // v1.13.0 polish (second pass — in-DEV review feedback):
+          //   - The selected green tint lives on the wrapper again so it
+          //     extends across the full row width (matches the first
+          //     v1.13.0 commit, restored at the manager's request).
+          //   - Row padding bumped from the original 6×8 → 8×12 for a
+          //     little more breathing room without making the row tall.
+          //   - The name button gets `.mgt-hover-scale .mgt-hover-soft`
+          //     — the soft variant (defined in index.html) halves the
+          //     usual opaque hover-card fill and drops the shadow,
+          //     giving a subtle "I'm hovered" cue instead of the
+          //     strong card-pop reported as too loud.
+          //   - The name button stays `flex: 1` so the hover surface
+          //     covers the click target. The delta bar sits on the
+          //     right, with its own (regular) hover-scale.
           const nameContent = (
-            <>
+            <span style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, flexWrap: "wrap" }}>
               <span
                 style={{
                   fontWeight: isSelected ? 700 : 600,
@@ -260,56 +269,37 @@ export default function MonthlyFairnessPanel({
               <span style={{ ...S.muted, fontSize: 12 }}>
                 {fmtHours(r.hoursTotal)} / {fmtHours(r.hoursTarget)}
               </span>
-            </>
+            </span>
           );
 
-          // Highlight-area visuals. `background: undefined` (NOT
-          // "transparent") on the un-selected branch is deliberate —
-          // the `.mgt-hover-scale:hover` global rule (v1.9.0 sixth
-          // commit) only fills in a background when the inline value
-          // is absent, so leaving it undefined lets the hover bg paint.
-          // An inline "transparent" would beat the CSS rule and the
-          // hover surface would never appear.
-          const highlightStyle = isSelected
-            ? {
-                background: "var(--bg-active-on)",
-                border: "1px solid var(--border-active-on)",
-                boxShadow: "0 0 0 2px var(--bg-active-on)",
-              }
-            : {
-                background: undefined,
-                border: "1px solid transparent",
-                boxShadow: undefined,
-              };
-
-          const nameAreaStyle = {
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-            padding: "12px 14px",
-            borderRadius: 10,
+          const nameBtnStyle = {
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            margin: 0,
+            cursor: "pointer",
             color: "inherit",
             fontFamily: "inherit",
             fontSize: "inherit",
             textAlign: "left",
-            cursor: interactiveHighlight ? "pointer" : "default",
-            ...highlightStyle,
+            flex: 1,
+            minWidth: 0,
+            borderRadius: 8,
           };
 
           const nameNode = interactiveHighlight ? (
             <button
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-hover-soft"
               onClick={function () { onHighlight(isSelected ? null : r.id); }}
               aria-pressed={isSelected ? "true" : "false"}
               title={(r.archived ? r.name + " (archived)" : r.name) + " — click to highlight"}
-              style={nameAreaStyle}
+              style={nameBtnStyle}
             >
               {nameContent}
             </button>
           ) : (
-            <div style={nameAreaStyle}>{nameContent}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>{nameContent}</div>
           );
 
           const barBlock = canDrillDown ? (
@@ -322,7 +312,6 @@ export default function MonthlyFairnessPanel({
                 border: "none",
                 padding: 0,
                 margin: 0,
-                marginLeft: "auto",
                 cursor: "pointer",
                 display: "inline-block",
                 lineHeight: 0,
@@ -334,24 +323,30 @@ export default function MonthlyFairnessPanel({
               {deltaBar(r)}
             </button>
           ) : (
-            <span style={{ marginLeft: "auto", flexShrink: 0 }}>
-              {deltaBar(r)}
-            </span>
+            <span style={{ flexShrink: 0 }}>{deltaBar(r)}</span>
           );
 
+          // Selected = full-row green tint on the wrapper. Per Q1 the
+          // user wants the v1.13.0-first extent back (covers the full
+          // row including the delta bar area), not the narrower
+          // around-name treatment from the first polish pass.
+          const wrapStyle = {
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            width: "100%",
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: isSelected ? "1px solid var(--border-active-on)" : "1px solid transparent",
+            background: isSelected ? "var(--bg-active-on)" : "transparent",
+            boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : "none",
+            opacity: r.archived ? 0.6 : 1,
+            boxSizing: "border-box",
+          };
+
           return (
-            <div
-              key={r.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                flexWrap: "wrap",
-                width: "100%",
-                opacity: r.archived ? 0.6 : 1,
-                boxSizing: "border-box",
-              }}
-            >
+            <div key={r.id} style={wrapStyle}>
               {nameNode}
               {barBlock}
             </div>

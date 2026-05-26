@@ -103,9 +103,10 @@ function StatRow({ label, value, delta }) {
 // surplus on a fully-held week still reads green).
 //
 // v1.13.0 polish: optional `onClick` prop. When provided the whole row
-// becomes a `<button>` (hover-scale + tabular-nums cursor cue) that
-// navigates ScheduleGrid to the bar's week. The parent modal then
-// auto-closes via its own onJumpToWeek wrapper.
+// becomes a `<button>` (`.mgt-hover-scale .mgt-hover-soft` — subtle
+// half-opacity hover card, no shadow) that navigates ScheduleGrid to
+// the bar's week. The parent modal then auto-closes via its own
+// onJumpToWeek wrapper.
 function WeekBar({ row, onClick }) {
   const target = row.shiftsTarget;
   const actual = row.shiftsCount;
@@ -176,7 +177,7 @@ function WeekBar({ row, onClick }) {
     return (
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-hover-soft"
         onClick={onClick}
         title={rowTitle}
         aria-label={"Open " + rangeStr + " in the schedule"}

@@ -89,14 +89,25 @@ an entry. Newest first.
   one is all-employees and feeds the generator + panel; the drill-
   down is one-off and consumer-local.
 
-**In-DEV review polish (same PR, follow-up commit):**
-- **Row layout fix.** The first cut made the name+counts area
-  `flex: 1`, so the hover background and selected green tint stretched
-  across the full row width — well past the hours info, almost reaching
-  the delta bar. Fixed: name `<button>` is now sized to its content with
-  Settings-header-style 12 × 14 px padding; delta bar pushed to the
-  right via `marginLeft: auto`. Both hover and selected states now sit
-  flush around the clickable name area.
+**In-DEV review polish (same PR, two follow-up commits):**
+- **Row layout — final state (second pass).** First pass tried sizing
+  the name button to its content with 12 × 14 px padding; the row
+  became too tall and the green selected state shrank. Second pass
+  (per manager feedback) restored the wrapper-as-highlight pattern so
+  the selected green tint extends across the full row width again,
+  with wrapper padding settled at 8 × 12 px (a small bump from the
+  original 6 × 8 for breathing room, kept compact). The name button
+  uses the new `.mgt-hover-soft` variant — see below.
+- **NEW `.mgt-hover-soft` CSS utility.** Defined in `index.html` to
+  pair with the existing `.mgt-hover-scale`. The two-class selector
+  `.mgt-hover-scale.mgt-hover-soft:hover` halves the standard opaque
+  hover-card fill via
+  `color-mix(in srgb, var(--bg-overlay-sheet) 50%, transparent)` and
+  drops the shadow. Higher specificity (two classes) guarantees it
+  wins over the standard hover-scale rule regardless of source order.
+  Applied to (a) fairness panel rows and (b) per-week sparkline bars
+  in `<EmployeeFairnessModal>` — single interaction language across
+  both surfaces.
 - **Per-week sparkline jump-to-week.** Each WeekBar in
   `<EmployeeFairnessModal>` is now a clickable `<button>` (when
   ScheduleGrid provides the new `onJumpToWeek` prop). Click → navigate
@@ -107,12 +118,6 @@ an entry. Newest first.
   navigation AND the modal close. Helper text below the sparkline
   conditionally announces the affordance ("Click a bar to open that
   week in the schedule.").
-- **Inline-style nuance worth flagging.** The un-selected branch of
-  the highlight visuals sets `background: undefined`, NOT
-  `"transparent"`. The v1.9.0 sixth-commit `.mgt-hover-scale:hover`
-  CSS rule only fills in a hover bg when the inline value is absent —
-  an explicit `"transparent"` inline would beat the CSS (inline-wins-
-  over-rule) and the hover affordance would silently disappear.
 
 **Verification:** local DEV (`npm run dev`) on the standard manual QA
 flow. `npm run build` clean.
