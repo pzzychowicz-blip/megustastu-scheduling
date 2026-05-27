@@ -121,9 +121,23 @@ export default function AppShell({ user, signOut, isMobile, appVersion, useGlass
   if (!ready) {
     return (
       <div style={S.appShell}>
-        <div style={S.card}>
-          <p style={S.muted}>Loading data…</p>
-        </div>
+        {useGlass ? (
+          <GlassSurface
+            style={{
+              ...S_GLASS.glassRegularV2,
+              borderRadius: 22,
+              width: "100%",
+              maxWidth: 720,
+            }}
+            contentStyle={{ padding: 20 }}
+          >
+            <p style={S.muted}>Loading data…</p>
+          </GlassSurface>
+        ) : (
+          <div style={S.card}>
+            <p style={S.muted}>Loading data…</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -312,14 +326,42 @@ export default function AppShell({ user, signOut, isMobile, appVersion, useGlass
     );
   }
 
+  // ── Outer app card ─────────────────────────────────────────────────────
+  // SPIKE: in glass mode, the dominant visual surface (the card holding
+  // all four tabs) becomes a <GlassSurface> with the v2 layered lens
+  // distortion. Everything inside it (tab nav, panels, lists, grid
+  // cells) layers on top of the glass effect. The translucent inner
+  // surfaces partially show through, giving the whole app the
+  // "stained-glass cathedral" feel the user asked for.
+  const cardMaxWidth = tab === "schedule" ? 1100 : 820;
+  const cardContents = (
+    <>
+      {header}
+      {warningBanner}
+      {tabNav}
+      {body}
+    </>
+  );
+
   return (
     <div style={S.appShell}>
-      <div style={{ ...S.card, maxWidth: tab === "schedule" ? 1100 : 820 }}>
-        {header}
-        {warningBanner}
-        {tabNav}
-        {body}
-      </div>
+      {useGlass ? (
+        <GlassSurface
+          style={{
+            ...S_GLASS.glassRegularV2,
+            borderRadius: 22,
+            width: "100%",
+            maxWidth: cardMaxWidth,
+          }}
+          contentStyle={{ padding: 20 }}
+        >
+          {cardContents}
+        </GlassSurface>
+      ) : (
+        <div style={{ ...S.card, maxWidth: cardMaxWidth }}>
+          {cardContents}
+        </div>
+      )}
     </div>
   );
 }

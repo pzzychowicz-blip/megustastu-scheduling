@@ -93,6 +93,27 @@ export default function App() {
     }
   }, [useGlass]);
 
+  // SPIKE: data-mgt-glass on <html> drives the global light-glass CSS
+  // rules in index.html. The rules use `[data-mgt-glass="on"]
+  // [style*="var(--bg-soft)"]` style attribute selectors to add a
+  // specular highlight + crisper border + lifted shadow to every
+  // translucent inner surface (panels, list rows, pills, schedule
+  // cells) WITHOUT adding new backdrop-filter instances. Single source
+  // of truth for "the glass aesthetic everywhere"; perf-safe because
+  // it never compounds the blur budget. Mirrors the existing
+  // data-theme pattern from v0.11.0.
+  useEffect(function () {
+    if (typeof document === "undefined") return undefined;
+    if (useGlass) {
+      document.documentElement.setAttribute("data-mgt-glass", "on");
+    } else {
+      document.documentElement.removeAttribute("data-mgt-glass");
+    }
+    return function () {
+      document.documentElement.removeAttribute("data-mgt-glass");
+    };
+  }, [useGlass]);
+
   function toggleGlass() {
     setUseGlass(function (cur) {
       const next = !cur;

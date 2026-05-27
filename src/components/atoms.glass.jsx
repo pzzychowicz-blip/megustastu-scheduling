@@ -112,18 +112,17 @@ export function GlassSurface({
 }
 
 // ── Overlay (glass) ──────────────────────────────────────────────────────
-// Modal/sheet shell — same signature as production Overlay. Backdrop
-// upgraded to v2 layered glass (heavier blur + lens refraction). The
-// sheet itself stays solid (it's content); only the backdrop is the
-// nav-layer glass surface.
+// Modal/sheet shell — same signature as production Overlay. v2 wave 2
+// (user request, 2026-05-27): BOTH the backdrop AND the desktop sheet
+// are now glass. The backdrop is a viewport-scale GlassSurface (lens
+// distortion over whatever's beneath); the desktop sheet floats above
+// it as its own GlassSurface (a "card floating on frosted glass" look).
 //
-// The backdrop's `position: fixed` + `inset: 0` makes it a viewport-
-// sized glass surface. The lens filter at `scale: 50` produces a
-// distinctive refraction over the underlying content — exactly the
-// reference HTML/CSS effect.
-//
-// Mobile vs desktop branching matches production exactly: full-sheet
-// mobile, centered 560px desktop card.
+// Mobile keeps the SOLID full-sheet for GPU economy — a full-viewport
+// glass sheet stacked on top of the full-viewport glass backdrop would
+// be two `feDisplacementMap` filters running at viewport scale, which
+// pushes weaker GPUs over the edge. Mobile users get the solid-card
+// modal they had pre-spike.
 export function Overlay({ open, onClose, title, isMobile, children }) {
   if (!open) return null;
 
@@ -137,10 +136,10 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
     padding: isMobile ? 0 : 24,
   };
 
-  // The GlassSurface IS the backdrop — its 4 layer divs fill the
-  // viewport; the modal sheet renders inside its .glass-content child.
-  // Click handling: detect click on the .glass-content area (closest
-  // to the user's actual click target) outside the sheet itself.
+  // Backdrop GlassSurface — the lens distortion runs over whatever's
+  // beneath the modal. Click on the backdrop area closes the modal
+  // (handler is on the outer div; backdrop has `pointer-events: none`
+  // via the .glass-* CSS so click pierces through to the outer).
   const backdropStyle = {
     position: "absolute",
     inset: 0,
@@ -151,30 +150,47 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
     overflow: "hidden",
   };
 
-  const sheetStyle = isMobile
-    ? {
-        width: "100%",
-        height: "100%",
-        background: "var(--bg-overlay-sheet)",
-        borderRadius: 0,
-        padding: 16,
-        overflow: "auto",
-        position: "relative",
-        zIndex: 1,
-      }
-    : {
-        width: "100%",
-        maxWidth: 560,
-        background: "var(--bg-overlay-sheet)",
-        border: "1px solid var(--border-overlay-sheet)",
-        borderRadius: 22,
-        padding: 20,
-        boxShadow: "var(--shadow-overlay)",
-        maxHeight: "80vh",
-        overflow: "visible",
-        position: "relative",
-        zIndex: 1,
-      };
+  // Mobile sheet — solid (GPU economy).
+  const mobileSheetStyle = {
+    width: "100%",
+    height: "100%",
+    background: "var(--bg-overlay-sheet)",
+    borderRadius: 0,
+    padding: 16,
+    overflow: "auto",
+    position: "relative",
+    zIndex: 1,
+  };
+
+  // Desktop sheet outer — minimal wrapper so the GlassSurface inside
+  // picks up the centering / max-width / max-height. The actual glass
+  // wrap is the next layer.
+  const desktopSheetWrapStyle = {
+    position: "relative",
+    zIndex: 1,
+    width: "100%",
+    maxWidth: 560,
+    maxHeight: "80vh",
+  };
+
+  // Desktop sheet inner (the GlassSurface) — picks up the layered
+  // glass treatment. Padding goes on contentStyle so the four sibling
+  // divs paint without padding interfering with the lens filter.
+  const desktopSheetGlassStyle = {
+    ...S_GLASS.glassRegularV2,
+    borderRadius: 22,
+    boxShadow: "var(--shadow-overlay), 0 8px 24px var(--lg-shadow-drop)",
+    overflow: "visible",
+  };
+
+  const sheetInner = (
+    <>
+      {title ? (
+        <div style={{ ...S_GLASS.h2, marginBottom: 12 }}>{title}</div>
+      ) : null}
+      {children}
+    </>
+  );
 
   return (
     <div
@@ -184,15 +200,26 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
       }}
     >
       <GlassSurface style={backdropStyle} />
-      <div
-        style={sheetStyle}
-        onClick={function (e) { e.stopPropagation(); }}
-      >
-        {title ? (
-          <div style={{ ...S_GLASS.h2, marginBottom: 12 }}>{title}</div>
-        ) : null}
-        {children}
-      </div>
+      {isMobile ? (
+        <div
+          style={mobileSheetStyle}
+          onClick={function (e) { e.stopPropagation(); }}
+        >
+          {sheetInner}
+        </div>
+      ) : (
+        <div
+          style={desktopSheetWrapStyle}
+          onClick={function (e) { e.stopPropagation(); }}
+        >
+          <GlassSurface
+            style={desktopSheetGlassStyle}
+            contentStyle={{ padding: 20, maxHeight: "calc(80vh - 4px)", overflow: "visible" }}
+          >
+            {sheetInner}
+          </GlassSurface>
+        </div>
+      )}
     </div>
   );
 }

@@ -453,6 +453,62 @@
         transition-duration: 80ms;
       }
 
+      /* ── Light-glass aesthetic (SPIKE-ONLY) ─────────────────────────────
+         When useGlass is on, App.jsx sets `data-mgt-glass="on"` on the
+         <html> element (mirrors the v0.11.0 data-theme pattern). These
+         rules use inline-style attribute matchers to lift every
+         translucent surface in the app to the "glass aesthetic"
+         WITHOUT adding any new backdrop-filter instances — the
+         specular highlight + crisper outer border + soft lifted
+         shadow give the visual identity of glass without the GPU cost.
+         Heavy glass (backdrop-filter + lens distortion) stays
+         restricted to the handful of large surfaces wrapped in
+         <GlassSurface>; the rest of the app gets light glass via
+         these rules so the whole UI feels uniformly glassy when the
+         spike is on.
+
+         The `!important` on box-shadow is load-bearing — most consumers
+         set boxShadow inline via `var(--shadow-soft)` or similar; we
+         override those with the specular treatment. Edge case
+         deliberately accepted: a component that intentionally sets
+         `boxShadow: "none"` would gain the specular too — visually
+         fine for a spike, easy to add an exclusion if it ever bites.
+      ──────────────────────────────────────────────────────────────────── */
+      [data-mgt-glass="on"] [style*="--bg-soft"],
+      [data-mgt-glass="on"] [style*="--bg-pill"],
+      [data-mgt-glass="on"] [style*="--bg-chip"],
+      [data-mgt-glass="on"] [style*="--bg-row-soft"],
+      [data-mgt-glass="on"] [style*="--bg-overlay-sheet"],
+      [data-mgt-glass="on"] [style*="--bg-segment"] {
+        box-shadow:
+          inset 0 1px 0 var(--lg-highlight-soft),
+          inset 0 -1px 0 var(--lg-shadow-bottom),
+          0 4px 12px var(--lg-shadow-drop) !important;
+        border-color: var(--lg-border-outer) !important;
+      }
+
+      /* Schedule grid cells with role-coloured backgrounds (rgba
+         composed from --role-*-rgb triplets). Lighter shadow than the
+         primary surfaces above so cells read as nested, not
+         independent floating cards. */
+      [data-mgt-glass="on"] [style*="rgba(var(--role-"] {
+        box-shadow:
+          inset 0 1px 0 var(--lg-highlight-soft),
+          0 2px 6px var(--lg-shadow-drop) !important;
+      }
+
+      /* Status-coloured pills + tints (--status-*, --accent-tint-*).
+         Subtler than the role-cell treatment — these are smaller,
+         denser elements where a heavy shadow would crowd them. */
+      [data-mgt-glass="on"] [style*="--status-"],
+      [data-mgt-glass="on"] [style*="--accent-tint"],
+      [data-mgt-glass="on"] [style*="--bg-active-on"],
+      [data-mgt-glass="on"] [style*="--bg-active-off"] {
+        box-shadow:
+          inset 0 1px 0 var(--lg-highlight-soft),
+          0 1px 3px var(--lg-shadow-drop) !important;
+      }
+
       /* ── Accessibility fallback chain (per spike-notes.md) ──────────────
          Apple auto-handles three system settings on iOS 26 / macOS
          Tahoe; the web spike emulates two of the three with CSS media
