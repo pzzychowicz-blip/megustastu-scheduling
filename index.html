@@ -147,6 +147,29 @@
         /* Misc shadows */
         --shadow-tab-active: 0 1px 3px rgba(0,0,0,0.08);
         --shadow-login-card: 0 20px 50px rgba(0,0,0,0.10);
+
+        /* ── Liquid Glass spike (SPIKE-ONLY tokens) ────────────────────
+           Only consumed by `*.glass.*` files on
+           spike/liquid-glass-redesign. Production code never references
+           `--lg-*` tokens. Listed here next to the production tokens
+           so the dark-mode override below stays a single block. */
+        --lg-bg-regular: rgba(255,255,255,0.42);
+        --lg-bg-clear: rgba(255,255,255,0.16);
+        --lg-bg-ghost: rgba(255,255,255,0.30);
+        --lg-bg-prominent: rgba(0,122,255,0.85);
+        --lg-bg-danger: rgba(255,59,48,0.85);
+        --lg-text-prominent: #ffffff;
+        --lg-text-ghost: #1c1c1e;
+        --lg-highlight: rgba(255,255,255,0.65);
+        --lg-highlight-soft: rgba(255,255,255,0.50);
+        --lg-shadow-bottom: rgba(0,0,0,0.04);
+        --lg-border-outer: rgba(255,255,255,0.35);
+        --lg-shadow-drop: rgba(0,0,0,0.08);
+        --lg-shadow-drop-clear: rgba(0,0,0,0.12);
+        --lg-shadow-drop-prominent: rgba(0,122,255,0.25);
+        --lg-shadow-drop-danger: rgba(255,59,48,0.25);
+        /* Overlay layer fill consumed by .glass-overlay child div */
+        --lg-bg-color: rgba(255,255,255,0.25);
       }
 
       [data-theme="dark"] {
@@ -273,6 +296,27 @@
         /* Shadows */
         --shadow-tab-active: 0 1px 3px rgba(0,0,0,0.40);
         --shadow-login-card: 0 20px 50px rgba(0,0,0,0.40);
+
+        /* ── Liquid Glass spike (SPIKE-ONLY) — dark recipe ────────────
+           Specular highlight stays bright but at lower alpha; pure
+           white on dark reads too sharp. Drop shadows deepen to keep
+           floating glass surfaces readable above dark body. */
+        --lg-bg-regular: rgba(28,28,30,0.42);
+        --lg-bg-clear: rgba(28,28,30,0.20);
+        --lg-bg-ghost: rgba(28,28,30,0.30);
+        --lg-bg-prominent: rgba(10,132,255,0.85);
+        --lg-bg-danger: rgba(255,69,58,0.85);
+        --lg-text-prominent: #ffffff;
+        --lg-text-ghost: #f2f2f7;
+        --lg-highlight: rgba(255,255,255,0.40);
+        --lg-highlight-soft: rgba(255,255,255,0.30);
+        --lg-shadow-bottom: rgba(0,0,0,0.20);
+        --lg-border-outer: rgba(255,255,255,0.18);
+        --lg-shadow-drop: rgba(0,0,0,0.30);
+        --lg-shadow-drop-clear: rgba(0,0,0,0.40);
+        --lg-shadow-drop-prominent: rgba(10,132,255,0.30);
+        --lg-shadow-drop-danger: rgba(255,69,58,0.30);
+        --lg-bg-color: rgba(28,28,30,0.40);
       }
 
       html, body, #root { height: 100%; margin: 0; }
@@ -341,6 +385,97 @@
         border-radius: 12px;
         position: relative;
         z-index: 2;
+      }
+
+      /* ── Liquid Glass spike (SPIKE-ONLY) ────────────────────────────────
+         Layered glass primitive used by GlassSurface in atoms.glass.jsx.
+         Four sibling divs paint into a relatively-positioned parent:
+           1. .glass-filter   — backdrop-filter blur + url(#mgtLensFilter)
+                                refraction. The SVG filter is mounted via
+                                React (atoms.glass.jsx → LensFilterDefs,
+                                rendered once by AppShell when the glass
+                                toggle is on).
+           2. .glass-overlay  — translucent fill (--lg-bg-color)
+           3. .glass-specular — inset white-on-edge highlight box-shadow
+           4. .glass-content  — actual child content on z-index: 3
+
+         The parent element must own `position: relative` + `overflow:
+         hidden` so the absolutely-positioned layers clip to its border
+         radius. S_GLASS.glassRegularV2 sets these.
+
+         Production code never references these classes — they're inert
+         in any non-glass surface.
+      ──────────────────────────────────────────────────────────────────── */
+      .glass-filter, .glass-overlay, .glass-specular {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+      }
+      .glass-filter {
+        z-index: 0;
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        filter: url(#mgtLensFilter) saturate(120%) brightness(1.15);
+      }
+      .glass-overlay {
+        z-index: 1;
+        background: var(--lg-bg-color);
+      }
+      .glass-specular {
+        z-index: 2;
+        box-shadow:
+          inset 1px 1px 0 var(--lg-highlight),
+          inset 0 0 5px var(--lg-highlight);
+      }
+      .glass-content {
+        position: relative;
+        z-index: 3;
+      }
+
+      /* Glass variant of the hover-scale utility. Drops the opaque
+         bg-color override (which would paint a solid card OVER the
+         glass effect, defeating the layered look) but keeps scale,
+         soft shadow, and the rounded-card border-radius. Apply via
+         `className="mgt-hover-scale--glass"` instead of
+         `mgt-hover-scale` on glass-wrapped interactive surfaces. */
+      .mgt-hover-scale--glass {
+        transition: transform 120ms ease, box-shadow 120ms ease;
+      }
+      .mgt-hover-scale--glass:hover:not(:disabled) {
+        transform: scale(1.08);
+        box-shadow: var(--shadow-soft);
+        position: relative;
+        z-index: 2;
+      }
+      .mgt-hover-scale--glass:active:not(:disabled) {
+        transform: scale(0.96);
+        transition-duration: 80ms;
+      }
+
+      /* ── Accessibility fallback chain (per spike-notes.md) ──────────────
+         Apple auto-handles three system settings on iOS 26 / macOS
+         Tahoe; the web spike emulates two of the three with CSS media
+         queries (Increased Contrast is unused so far — glass surfaces
+         carry their own .glass-specular border).
+      ──────────────────────────────────────────────────────────────────── */
+      @media (prefers-reduced-transparency: reduce) {
+        /* Drop the lens filter + overlay tint entirely; use the
+           production overlay-sheet token so glass surfaces become
+           solid cards. Specular highlight stays disabled — the
+           1-px border that GlassSurface inherits via its outer
+           style still gives definition. */
+        .glass-filter { display: none; }
+        .glass-overlay { background: var(--bg-overlay-sheet); }
+        .glass-specular { display: none; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .mgt-hover-scale--glass,
+        .mgt-hover-scale--glass:hover:not(:disabled),
+        .mgt-hover-scale--glass:active:not(:disabled) {
+          transition: none !important;
+          transform: none !important;
+        }
       }
     </style>
   </head>

@@ -25,7 +25,11 @@ import {
 import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
+import ScheduleGridGlass from "./ScheduleGrid.glass.jsx";
 import Settings from "./Settings.jsx";
+import SettingsGlass from "./Settings.glass.jsx";
+import { S_GLASS } from "../lib/constants.glass.js";
+import { GlassSurface } from "./atoms.glass.jsx";
 
 // Tab keys + display order. Add new tabs here when they land.
 const TABS = [
@@ -55,7 +59,7 @@ function readStoredTab() {
   }
 }
 
-export default function AppShell({ user, signOut, isMobile, appVersion }) {
+export default function AppShell({ user, signOut, isMobile, appVersion, useGlass }) {
   const { data, ready, writeWarning, clearWriteWarning, actions } = usePersistence();
   // v1.5.0: lazy initializer reads the last-open tab from sessionStorage.
   // First visit / fresh browser tab → "schedule".
@@ -180,51 +184,91 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   );
 
   // ── Tab nav ────────────────────────────────────────────────────────────
-  const tabNav = (
-    <div
-      style={{
-        display: "flex",
-        gap: 4,
-        marginBottom: 16,
-        padding: 4,
-        background: "var(--bg-segment)",
-        borderRadius: 12,
-        overflowX: "auto",
-      }}
-    >
-      {TABS.map(function (t) {
-        const on = tab === t.key;
-        return (
-          <button
-            key={t.key}
-            type="button"
-            className="mgt-hover-scale"
-            onClick={function () { setTab(t.key); }}
-            style={{
-              ...BTN.base,
-              flex: 1,
-              minWidth: 90,
-              padding: "8px 12px",
-              fontSize: 13,
-              borderRadius: 8,
-              background: on ? "var(--bg-tab-active)" : "transparent",
-              color: on ? "var(--accent)" : "var(--text-secondary)",
-              border: "1px solid transparent",
-              boxShadow: on ? "var(--shadow-tab-active)" : "none",
-            }}
-          >
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
-  );
+  // SPIKE: when `useGlass` is true, the tab pill row is wrapped in a single
+  // <GlassSurface> (one blur instance, capsule shape) and the active tab
+  // gains the accent-tint pill from the spike's `glassTabActive` token.
+  // Production behaviour is byte-identical when `useGlass` is false.
+  const tabButtons = TABS.map(function (t) {
+    const on = tab === t.key;
+    if (useGlass) {
+      const style = {
+        ...S_GLASS.glassTab,
+        ...(on ? S_GLASS.glassTabActive : null),
+      };
+      return (
+        <button
+          key={t.key}
+          type="button"
+          className="mgt-hover-scale--glass"
+          onClick={function () { setTab(t.key); }}
+          style={style}
+        >
+          {t.label}
+        </button>
+      );
+    }
+    return (
+      <button
+        key={t.key}
+        type="button"
+        className="mgt-hover-scale"
+        onClick={function () { setTab(t.key); }}
+        style={{
+          ...BTN.base,
+          flex: 1,
+          minWidth: 90,
+          padding: "8px 12px",
+          fontSize: 13,
+          borderRadius: 8,
+          background: on ? "var(--bg-tab-active)" : "transparent",
+          color: on ? "var(--accent)" : "var(--text-secondary)",
+          border: "1px solid transparent",
+          boxShadow: on ? "var(--shadow-tab-active)" : "none",
+        }}
+      >
+        {t.label}
+      </button>
+    );
+  });
+
+  const tabNav = useGlass
+    ? (
+      <GlassSurface
+        style={S_GLASS.glassTabBar}
+        contentStyle={{ display: "flex", flex: 1, gap: 4, overflowX: "auto" }}
+      >
+        {tabButtons}
+      </GlassSurface>
+    )
+    : (
+      <div
+        style={{
+          display: "flex",
+          gap: 4,
+          marginBottom: 16,
+          padding: 4,
+          background: "var(--bg-segment)",
+          borderRadius: 12,
+          overflowX: "auto",
+        }}
+      >
+        {tabButtons}
+      </div>
+    );
 
   // ── Tab body ───────────────────────────────────────────────────────────
+  // SPIKE: when `useGlass` is true, Schedule + Settings route to their
+  // glass forks (ScheduleGridGlass adds GlassSurface wrappers around
+  // the week-nav bar + result banner via production's wrap-prop hooks;
+  // SettingsGlass wraps the 5 accordions in a shared glassContainer).
+  // Employees + Requests tabs render production unchanged — they're
+  // pure content surfaces with no nav-layer affordance to glass-ify.
+  const ScheduleComponent = useGlass ? ScheduleGridGlass : ScheduleGrid;
+  const SettingsComponent = useGlass ? SettingsGlass : Settings;
   let body;
   if (tab === "schedule") {
     body = (
-      <ScheduleGrid
+      <ScheduleComponent
         shifts={data.shifts}
         employees={data.employees}
         requests={data.requests}
@@ -257,7 +301,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
     // paths; Settings.jsx owns both forms and routes Save to the right
     // write helper based on which form is dirty.
     body = (
-      <Settings
+      <SettingsComponent
         shiftTemplate={data.shiftTemplate}
         saveShiftTemplate={actions.saveShiftTemplate}
         settings={data.settings}

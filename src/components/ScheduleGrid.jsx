@@ -73,7 +73,23 @@ function isSectionBoundary(prevSlot, slot) {
   return prevSlot.section !== slot.section || prevSlot.dayPart !== slot.dayPart;
 }
 
-export default function ScheduleGrid({ shifts, employees, requests, shiftTemplate, settings, actions, isMobile }) {
+// SPIKE HOOK: `glassNavBarWrap` and `glassResultBannerWrap` are optional
+// wrapper functions used ONLY by the Liquid Glass spike fork. They wrap
+// the rendered JSX of the week-nav bar and the Generate/Clear/Undo
+// result banner respectively. Defaults are identity functions, so when
+// the spike is off (production) behaviour is byte-identical. The
+// glass spike ships ScheduleGrid.glass.jsx as a 20-line shim that
+// re-renders ScheduleGrid with wrappers that mount `<GlassSurface>`
+// around those two sections. Forking the full 1500-line component
+// just to wrap two JSX trees would be expensive and rot-prone; this
+// extension point is the architectural compromise.
+const identityWrap = function (node) { return node; };
+
+export default function ScheduleGrid({
+  shifts, employees, requests, shiftTemplate, settings, actions, isMobile,
+  glassNavBarWrap = identityWrap,
+  glassResultBannerWrap = identityWrap,
+}) {
   // Active template — DB-customized values when present, defaults otherwise.
   const template = shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
 
@@ -906,7 +922,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   }
 
   // ── Week-nav bar (shared) ────────────────────────────────────────────
-  const navBar = (
+  // The outer JSX tree is wrapped by `glassNavBarWrap` (default identity
+  // for production; the glass spike fork wraps in <GlassSurface>).
+  const navBar = glassNavBarWrap(
     <div
       style={{
         display: "flex",
@@ -1263,8 +1281,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // unfilledCells / clearedReasons / mode field — they're a different
   // shape entirely ({cleared, kind}), with no detail metadata to show.
   const bannerHasDetails = Boolean(resultBanner && resultBanner.mode);
+  // Wrapped by `glassResultBannerWrap` (default identity for production;
+  // the glass spike fork wraps in <GlassSurface>).
   const generateBanner = resultBanner
-    ? (
+    ? glassResultBannerWrap(
       <div
         style={{
           marginBottom: 12,
