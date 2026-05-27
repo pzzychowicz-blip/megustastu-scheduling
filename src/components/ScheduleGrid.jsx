@@ -54,6 +54,7 @@ import {
   findSameDayShift,
   isPastWeek,
   build28DayAggregates,
+  buildCalendarMonthAggregates,
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
@@ -233,6 +234,22 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // window is wider than one week.
   const monthlyAggregates = useMemo(function () {
     return build28DayAggregates({
+      shifts: shifts,
+      employees: employees,
+      weekStart: weekStart,
+      requests: requests,
+      shiftTemplate: shiftTemplate,
+    });
+  }, [shifts, employees, weekStart, requests, shiftTemplate]);
+
+  // v1.14.0: calendar-month aggregates per employee. Sibling to
+  // monthlyAggregates (28-day rolling) — anchored to the calendar month
+  // containing weekStart's Monday. Forwarded only to <GenerateButton>;
+  // <MonthlyFairnessPanel> stays visually 28-day. The generator sums
+  // both windows' deficits in rankCandidates so balance respects both
+  // the rolling-recency view AND the payroll-month boundary.
+  const calendarMonthAggregates = useMemo(function () {
+    return buildCalendarMonthAggregates({
       shifts: shifts,
       employees: employees,
       weekStart: weekStart,
@@ -940,6 +957,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           maxConsecutiveWorkingDays={maxConsecutiveWorkingDays}
           dayRequiredRoles={dayRequiredRoles}
           monthlyAggregates={monthlyAggregates}
+          calendarMonthAggregates={calendarMonthAggregates}
           isMobile={isMobile}
           actions={actions}
           onResult={handleGenerateResult}
@@ -1286,6 +1304,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           {bannerHasDetails ? (
             <button
               type="button"
+              className="mgt-hover-scale"
               onClick={function () { setShowResultsModal(true); }}
               style={{
                 ...BTN.base,
@@ -1301,6 +1320,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           ) : null}
           <button
             type="button"
+            className="mgt-hover-scale"
             onClick={dismissResultBanner}
             aria-label="Dismiss"
             style={{

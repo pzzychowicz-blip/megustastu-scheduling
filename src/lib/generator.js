@@ -203,17 +203,29 @@ function compareWorklistEntries(a, b, rarity) {
 // on the same idea, the deficit calc is just a more accurate version
 // over a longer horizon). currentShifts is still threaded through for
 // future use but isn't consulted at the moment.
-function rankCandidates(candidates, currentShifts, monthlyAggregates, prevAssigneeId) {
+//
+// v1.14.0: `calendarMonthAggregates` is a SECOND map of the same shape,
+// produced by `buildCalendarMonthAggregates` in schedule-logic.js. Per-
+// candidate hours/shifts deficits are SUMMED across the rolling 28-day
+// window AND the calendar-month window before the deficit DESC sort.
+// Recent under-utilization naturally weights more heavily because the
+// last few days appear in both windows; under-utilization that's only
+// visible across the month boundary still contributes a smaller but
+// non-zero signal. Missing map → that side contributes 0 (legacy
+// callers passing only monthlyAggregates get byte-identical behaviour
+// to v1.13.0).
+function rankCandidates(candidates, currentShifts, monthlyAggregates, prevAssigneeId, calendarMonthAggregates) {
   // currentShifts param retained for backward signature parity with
   // pre-v1.12.0 callers; not consulted directly. eslint-disable-next-line no-unused-vars
   void currentShifts;
   function deficitsFor(emp) {
-    const a = monthlyAggregates && monthlyAggregates[emp.id];
-    if (!a) return { hours: 0, shifts: 0 };
-    return {
-      hours: Number.isFinite(a.hoursDeficit) ? a.hoursDeficit : 0,
-      shifts: Number.isFinite(a.shiftsDeficit) ? a.shiftsDeficit : 0,
-    };
+    const r = monthlyAggregates && monthlyAggregates[emp.id];
+    const m = calendarMonthAggregates && calendarMonthAggregates[emp.id];
+    const rH = r && Number.isFinite(r.hoursDeficit)  ? r.hoursDeficit  : 0;
+    const rS = r && Number.isFinite(r.shiftsDeficit) ? r.shiftsDeficit : 0;
+    const mH = m && Number.isFinite(m.hoursDeficit)  ? m.hoursDeficit  : 0;
+    const mS = m && Number.isFinite(m.shiftsDeficit) ? m.shiftsDeficit : 0;
+    return { hours: rH + mH, shifts: rS + mS };
   }
   return candidates.slice().sort(function (a, b) {
     const aP = a.schedulingPriority === true ? 0 : 1;
@@ -583,6 +595,13 @@ export function generateWeek(args) {
   // makes the sort degrade to specialists + name (and the prior-week
   // deficit cap at step 5 still applies independently via priorActualByEmp).
   const monthlyAggregates = args.monthlyAggregates || null;
+  // v1.14.0: calendar-month aggregates per employee. Same shape as
+  // monthlyAggregates but anchored to the calendar month containing
+  // weekStart's Monday (see buildCalendarMonthAggregates in
+  // schedule-logic.js). rankCandidates sums both windows' deficits.
+  // Missing → the calendar-month side contributes 0 to the rank, so
+  // pre-v1.14.0 callers get byte-identical behaviour to v1.13.0.
+  const calendarMonthAggregates = args.calendarMonthAggregates || null;
 
   // No template → nothing meaningful to do. Caller should ensure this is
   // populated (AppShell waits for `ready`), but stay defensive.
@@ -705,7 +724,7 @@ export function generateWeek(args) {
       continue;
     }
     const prevAssigneeId = previousAssignees[entry.dateIso + "|" + slot.key];
-    const ranked = rankCandidates(built.eligible, pendingShifts, monthlyAggregates, prevAssigneeId);
+    const ranked = rankCandidates(built.eligible, pendingShifts, monthlyAggregates, prevAssigneeId, calendarMonthAggregates);
     const winner = ranked[0];
 
     // v1.8.1: if the wipe-pass preserved a time/role override for this

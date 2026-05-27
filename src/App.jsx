@@ -1,3 +1,14 @@
+/**
+ * Me Gustas Tú — Staff Scheduling System
+ * Copyright © 2026 Patryk Zychowicz. All rights reserved.
+ *
+ * This source code is proprietary and confidential.
+ * Unauthorized copying, distribution, modification, or use
+ * is strictly prohibited. See the LICENSE file in the repo root.
+ *
+ * Author:  Patryk Zychowicz
+ * Contact: pz.zychowicz@gmail.com
+ */
 // src/App.jsx
 // Orchestration layer. Three top-level states:
 //   1. !auth.ready          → loading splash (auth state hasn't resolved yet)
@@ -20,10 +31,21 @@ import LoginScreen from "./components/LoginScreen.jsx";
 import AppShell from "./components/AppShell.jsx";
 
 // ── App signature ────────────────────────────────────────────────────────
+// v1.14.0: extended with author / contact / copyright / license fields
+// alongside the existing version / build / sha. Module-level identity
+// record; the strings below remain readable in any deployed bundle
+// (bundler can't tree-shake — referenced by the boot banner below).
+// Forensic evidence of origin if this code appears in an unauthorized
+// deployment. Mirrors MGT Bookings' __APP_SIGNATURE__ structure.
 export const __APP_SIGNATURE__ = Object.freeze({
-  version: "1.13.0",
-  build: "2026-05-27",
-  sha: "fairness-panel-highlight-deltabar-drilldown",
+  app: "Me Gustas Tú Staff Scheduling System",
+  version: "1.14.0",
+  build: "2026-05-28",
+  sha: "calendar-month-fairness-ip-layer",
+  author: "Patryk Zychowicz",
+  contact: "pz.zychowicz@gmail.com",
+  copyright: "© 2026 Patryk Zychowicz. All rights reserved.",
+  license: "Proprietary — All rights reserved. See LICENSE.",
 });
 
 // Expose for DevTools / debugging.
@@ -32,11 +54,22 @@ if (typeof window !== "undefined") {
 }
 
 // ── Boot banner ──────────────────────────────────────────────────────────
+// v1.14.0: extended with two extra lines (copyright + unauthorized-use
+// notice). Visible to anyone opening DevTools. Mirrors the three-line
+// pattern from MGT Bookings.
 function logBootBanner() {
   const sig = __APP_SIGNATURE__;
   console.log(
     "%c[mgt-sched] v" + sig.version + " (" + sig.build + " · " + sig.sha + ")",
     "background:#007AFF;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold;"
+  );
+  console.log(
+    "%c" + sig.copyright,
+    "color:#9ca3af;font-size:13px;font-family:Menlo,Monaco,Consolas,monospace;"
+  );
+  console.log(
+    "%cUnauthorized use, copying, redistribution, or modification is prohibited.",
+    "color:#9ca3af;font-size:12px;font-family:Menlo,Monaco,Consolas,monospace;"
   );
 }
 

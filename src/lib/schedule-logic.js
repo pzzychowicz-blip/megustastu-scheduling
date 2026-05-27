@@ -826,6 +826,99 @@ export function build28DayAggregates(args) {
   return out;
 }
 
+// ── Calendar-month fairness aggregates (v1.14.0) ────────────────────────
+// Parallel to build28DayAggregates, but anchored to the calendar month
+// containing the focus week's Monday (1st → last day of that month).
+// Same return shape so consumers stay symmetric: both maps key off
+// employeeId and expose { shiftsCount, hoursTotal, shiftsTarget,
+// hoursTarget, shiftsDeficit, hoursDeficit }.
+//
+// Target formula mirrors the calendarMonth block in
+// buildEmployeeFairnessDetail so the drill-down modal's numbers and
+// the generator's input stay in lockstep:
+//
+//   monthShiftsTargetRaw = workingDaysPerWeek × monthLength / 7
+//   monthShiftsTarget    = max(0, round(monthShiftsTargetRaw) − monthHolidays)
+//   monthHoursTarget     = monthShiftsTarget × avgShiftHours(preference, shiftTemplate)
+//
+// Holiday handling: only `type === "holiday"` requests subtract from
+// the target (v1.9.0 decision). Day-OFF requests still HARD-block
+// the date at assignment time via findRequestConflict but DO NOT
+// shrink the monthly cap. Identical to the rolling-28 path.
+//
+// Consumed by generator.js → rankCandidates alongside the rolling-28
+// aggregates so both windows' deficits feed the candidate sort. The
+// MonthlyFairnessPanel stays visually 28-day-rolling and does NOT
+// consume this map.
+export function buildCalendarMonthAggregates(args) {
+  const out = {};
+  if (!args || !args.employees || !args.weekStart) return out;
+  const shifts = args.shifts || {};
+  const employees = args.employees;
+  const weekStart = args.weekStart;
+  const requests = args.requests || {};
+  const shiftTemplate = args.shiftTemplate || null;
+
+  const empList = Object.values(employees);
+  if (empList.length === 0) return out;
+
+  // Month containing weekStart's Monday. monthLength is the
+  // number of days; we build a dense ISO set so the shift loop is
+  // a single O(shifts) pass with O(1) date membership tests.
+  const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1);
+  const monthEnd = new Date(weekStart.getFullYear(), weekStart.getMonth() + 1, 0);
+  const monthLength = monthEnd.getDate();
+  const dates = [];
+  for (let i = 0; i < monthLength; i++) dates.push(addDays(monthStart, i));
+  const dateIsoSet = {};
+  for (let i = 0; i < dates.length; i++) dateIsoSet[isoDate(dates[i])] = true;
+
+  // Dense per-employee accumulators. Match build28DayAggregates so
+  // callers can iterate `employees` and never miss a row.
+  const accum = {};
+  empList.forEach(function (e) { accum[e.id] = { shiftDates: {}, hours: 0 }; });
+
+  const allShifts = Object.values(shifts);
+  for (let i = 0; i < allShifts.length; i++) {
+    const s = allShifts[i];
+    if (!s || !s.employeeId || !s.date) continue;
+    if (!dateIsoSet[s.date]) continue;
+    if (!accum[s.employeeId]) continue;
+    accum[s.employeeId].shiftDates[s.date] = true;
+    accum[s.employeeId].hours += hoursBetween(s.start, s.end);
+  }
+
+  // Same helper as build28DayAggregates — works for any dates array,
+  // filters `type === "holiday"` only.
+  const holidayCounts = holidayDaysInWeekByEmployee(requests, dates);
+
+  empList.forEach(function (e) {
+    const a = accum[e.id];
+    const shiftsCount = Object.keys(a.shiftDates).length;
+    const hoursTotal = a.hours;
+    const wpw = Number.isFinite(e.workingDaysPerWeek) && e.workingDaysPerWeek >= 1
+      ? Math.min(7, Math.round(e.workingDaysPerWeek))
+      : 5;
+    const holiday = holidayCounts[e.id] || 0;
+    // Pro-rated target: workingDaysPerWeek averaged across the month length.
+    // E.g. wpw=5 in a 31-day month → 5 × 31/7 ≈ 22.14 → rounded to 22 → minus
+    // holiday days. Floored at 0 so a long holiday can't produce a negative
+    // target. Mirrors buildEmployeeFairnessDetail's calendarMonth path.
+    const shiftsTargetRaw = wpw * (monthLength / 7);
+    const shiftsTarget = Math.max(0, Math.round(shiftsTargetRaw) - holiday);
+    const hoursTarget = shiftsTarget * avgShiftHours(e.preference, shiftTemplate);
+    out[e.id] = {
+      shiftsCount: shiftsCount,
+      hoursTotal: hoursTotal,
+      shiftsTarget: shiftsTarget,
+      hoursTarget: hoursTarget,
+      shiftsDeficit: Math.max(0, shiftsTarget - shiftsCount),
+      hoursDeficit: Math.max(0, hoursTarget - hoursTotal),
+    };
+  });
+  return out;
+}
+
 // ── Per-employee fairness drill-down (v1.13.0) ──────────────────────────
 // Powers the EmployeeFairnessModal that opens when the manager clicks a
 // row's delta bar on <MonthlyFairnessPanel>. Three views over the same
@@ -943,6 +1036,11 @@ export function buildEmployeeFairnessDetail(args) {
       shiftsCount: agg.shiftsCount,
       hoursTotal: agg.hoursTotal,
       shiftsTarget: wkTarget,
+      // v1.14.0: expose the per-bucket holiday count so the Reasoning
+      // view can show "wpw (5) − holiday (2) = target (3)" inline.
+      // Recovering this from shiftsTarget alone is lossy (wkHoliday ≥ wpw
+      // floors target at 0 and loses the original count).
+      holidayDays: wkHoliday,
     });
   }
 

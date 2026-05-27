@@ -5,6 +5,134 @@ an entry. Newest first.
 
 ---
 
+## v1.14.0 — Calendar-month fairness in generator + Reasoning toggle + IP layer
+
+**Date:** 2026-05-28
+
+**Behavioural change:** Yes — the auto-generator's `rankCandidates`
+picks differ in some scenarios. Previously the sort considered only
+the rolling 28-day window's hours and shifts deficits; now both the
+rolling 28-day AND a calendar-month deficit are summed before the
+deficit DESC sort. Same sort order otherwise (priority → hours →
+shifts → specialists → prevAssignee → name). For weeks where every
+employee is at-or-near both targets, behaviour is byte-identical to
+v1.13.0; for weeks where calendar-month-to-date totals have drifted
+out of balance, the picker now corrects that drift in addition to
+the rolling-recency signal.
+
+Five bundled changes:
+
+1. **Generator considers both windows.** New
+   `buildCalendarMonthAggregates({shifts, employees, weekStart,
+   requests, shiftTemplate})` in `schedule-logic.js` mirrors
+   `build28DayAggregates`'s shape but targets the calendar month
+   containing the focus week's Monday. Same pro-rated target formula
+   `buildEmployeeFairnessDetail`'s calendarMonth path uses
+   (`round(wpw × monthLength/7) − holidays`). Threaded through
+   `<ScheduleGrid>` → `<GenerateButton>` → `generateWeek(...)`. Inside
+   `rankCandidates` the per-candidate `deficitsFor` helper now sums
+   the two maps' `hoursDeficit` and `shiftsDeficit` before the sort.
+   Missing calendar-month map → that side contributes 0 (legacy
+   callers behave identically to v1.13.0). Holiday handling identical
+   to the rolling-28 path (only `type === "holiday"` requests
+   subtract — v1.9.0 rule).
+
+2. **Reasoning toggle inside `<EmployeeFairnessModal>`.** A
+   left-aligned "Reasoning" button in the footer (sibling to the
+   existing right-aligned Close) toggles the modal between the
+   original three stat Sections and three matching Reasoning
+   Sections that show the formulas with the employee's actual
+   plugged-in values (e.g. `wpw (5) × 4 weeks − holidays (2) =
+   target (18)`). Button label flips between "Reasoning" and
+   "Show data" so it names the action, not the state.
+   `buildEmployeeFairnessDetail`'s `perWeek` buckets gained a
+   `holidayDays` field so the per-bucket reasoning subtraction is
+   exact (the existing `shiftsTarget` alone is lossy when
+   `holidays >= wpw`).
+
+3. **Author-rights / IP layer.** Mirrors MGT Bookings' five-piece
+   deterrent: (a) `LICENSE` at repo root — proprietary, "all
+   rights reserved", verbatim copy of Bookings'. (b) JSDoc header
+   block above `src/App.jsx`'s file comment. (c) `__APP_SIGNATURE__`
+   gained `app` / `author` / `contact` / `copyright` / `license`
+   fields. (d) `logBootBanner` extended with two extra console
+   lines (copyright + unauthorized-use notice). (e) Centred plain
+   footer below the Settings accordion: `version 1.14.0` + `© 2026
+   Patryk Zychowicz — MGT Staff Scheduling`, themed via
+   `var(--text-muted)`.
+
+4. **Holiday-handling audit.** Confirmed every fairness surface
+   uses `type === "holiday"` filtering consistently — pill,
+   `build28DayAggregates`, new `buildCalendarMonthAggregates`,
+   `buildEmployeeFairnessDetail`'s three blocks all subtract only
+   holidays from the target. `aggregateShiftsInRange` counts actual
+   shifts worked without excluding holiday-date shifts (deliberate:
+   holiday requests HARD-block via `findRequestConflict` upstream,
+   so a shift on a holiday only exists via deliberate manager
+   override, in which case the count should reflect reality).
+
+5. **Result-banner buttons hover-scale.** The Generate / Regenerate
+   / Clear result banner's "Details" and dismiss `×` buttons gained
+   `className="mgt-hover-scale"` — closes a v1.9.0 hover-utility
+   gap (the original three waves didn't reach these two).
+
+**Files changed:**
+- `src/lib/schedule-logic.js` — `+ buildCalendarMonthAggregates`
+  (≈70 lines, mirrors `build28DayAggregates` structure). `+ holidayDays`
+  field on each `buildEmployeeFairnessDetail` perWeek bucket.
+- `src/lib/generator.js` — `rankCandidates` signature gained 5th
+  positional arg `calendarMonthAggregates`; `deficitsFor` rewritten
+  to sum both windows. `generateWeek` extracts and forwards the
+  new arg from `args.calendarMonthAggregates`.
+- `src/components/ScheduleGrid.jsx` — `+ calendarMonthAggregates`
+  `useMemo` next to the existing rolling-28 memo (same dep array).
+  Forwarded as a new prop to `<GenerateButton>`. + `mgt-hover-scale`
+  className on the result-banner Details and dismiss × buttons.
+- `src/components/GenerateButton.jsx` — accepts new prop; forwards
+  verbatim into `generateWeek({...})`.
+- `src/components/EmployeeFairnessModal.jsx` — `+ view` state
+  (`"data"` | `"reasoning"`); existing three Sections hoisted into
+  a `dataView` JSX expression; new `reasoningView` expression with
+  formula explainers using small inline `Num` and `FormulaRow`
+  helpers. Footer reworked to space-between flex row with the
+  Reasoning toggle on the left and Close on the right. Imports
+  `avgShiftHours` for the inline preference-weighted hours formula.
+- `src/App.jsx` — top-of-file JSDoc copyright block; `__APP_SIGNATURE__`
+  extended; `logBootBanner` gained two extra console.log lines.
+  Version bumped to 1.14.0, sha "calendar-month-fairness-ip-layer".
+- `src/components/Settings.jsx` — centred footer below the
+  accordion. Imports `__APP_SIGNATURE__` from `../App.jsx` for the
+  version label.
+- `LICENSE` (NEW) — proprietary licence file at repo root.
+- `CLAUDE.md` — new "Calendar-month fairness", "Reasoning toggle",
+  "Author-rights / IP protection layer", "Holiday-handling audit",
+  "Result-banner buttons hover-scale" sub-blocks under Functional.
+  File-structure title bumped to v1.14.0; per-file annotations
+  added for App.jsx, schedule-logic.js, generator.js,
+  ScheduleGrid.jsx, GenerateButton.jsx, EmployeeFairnessModal.jsx,
+  Settings.jsx. New LICENSE row in the tree.
+
+**Verification:** DEV server (`npm run dev`) confirms:
+- Console boot shows three lines (version banner, copyright,
+  unauthorized-use notice).
+- Settings tab footer renders `version 1.14.0` + `© 2026 Patryk
+  Zychowicz — MGT Staff Scheduling` below the Reset to defaults
+  button, with muted colour adapting to light/dark theme.
+- `<EmployeeFairnessModal>`: clicking "Reasoning" flips the three
+  Section blocks to formula explainers; button label becomes
+  "Show data"; clicking again restores the data view. Esc closes
+  the modal from either view.
+- Holiday-deficit math matches between `<WeeklyShiftSummary>`
+  pill and the modal's rolling-28 + calendar-month + per-week
+  rows for the same employee.
+- Generator pick order with two employees, one at calendar-month
+  surplus + 28-day deficit and one at 28-day surplus + calendar-
+  month deficit: both float to the top above at-target peers
+  (summed deficit > 0), with the magnitude determining order.
+- Bundle build: `npm run build` succeeds with no warnings.
+
+---
+
 ## v1.13.0 — Monthly Fairness Panel polish (highlight sync, delta bar, drill-down popover)
 
 **Date:** 2026-05-27
