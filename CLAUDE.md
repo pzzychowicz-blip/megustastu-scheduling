@@ -1165,6 +1165,95 @@ separate Firebase project, same UI conventions).
     just above the panel; this surface is for active-roster
     balancing.
 
+- **Calendar-month fairness in the auto-generator (v1.14.0):** the
+  generator's `rankCandidates` now sums hours/shifts deficits across
+  **two** windows — the existing rolling 28-day aggregates AND a new
+  calendar-month aggregate — before applying the deficit DESC sort.
+  Sort order unchanged: schedulingPriority → hoursDeficit DESC →
+  shiftsDeficit DESC → specialists → prevAssigneeId → name. Combining
+  by addition means recent under-utilization weights more heavily
+  (the last few days appear in both windows). Under-utilization that
+  shows up only at the payroll-month boundary still contributes a
+  smaller-but-non-zero signal. Missing calendar-month aggregates on
+  any sibling caller → the calendar-month side contributes 0 to the
+  rank, so pre-v1.14.0 callers behave byte-identically to v1.13.0.
+  New helper `buildCalendarMonthAggregates({shifts, employees,
+  weekStart, requests, shiftTemplate})` lives in `schedule-logic.js`
+  and mirrors `build28DayAggregates`'s shape. Pro-rated target:
+  `wpw × monthLength / 7 − holidays` (same formula
+  `buildEmployeeFairnessDetail`'s calendarMonth block already uses,
+  so the drill-down modal and the generator stay in lockstep).
+  ScheduleGrid memoises the new map next to the existing
+  monthlyAggregates memo and forwards it to `<GenerateButton>` only —
+  `<MonthlyFairnessPanel>` stays visually 28-day-rolling. Holiday
+  handling identical: only `type === "holiday"` requests subtract
+  from the target (v1.9.0 rule).
+
+- **Reasoning toggle on `<EmployeeFairnessModal>` (v1.14.0):** the
+  drill-down modal gained a left-aligned "Reasoning" button in its
+  footer (sibling to the right-aligned Close). Clicking it flips a
+  local `view` state from `"data"` (the original three stat
+  Sections) to `"reasoning"` (three matching Section blocks with the
+  formulas and the employee's actual plugged-in values: shifts target
+  = `wpw × 4 − holidays`, hours target = `target × avgShiftHours`,
+  etc.). Button label flips in lockstep ("Reasoning" ↔ "Show data")
+  so it always names the action, not the current state. Single
+  Overlay, single Close — no nested modal, no view-state machine
+  beyond the binary toggle. `buildEmployeeFairnessDetail`'s perWeek
+  buckets gained a `holidayDays` field so the reasoning view can
+  show the per-bucket `wpw − holiday = target` subtraction (the
+  shiftsTarget alone is lossy when holidays exceed wpw).
+
+- **Author-rights / IP protection layer (v1.14.0):** mirrors MGT
+  Bookings' five-piece deterrent layer.
+  - **LICENSE** at repo root — proprietary, "all rights reserved",
+    licensed exclusively to the restaurant Me Gustas Tú for internal
+    operational use. Verbatim copy of the Bookings LICENSE.
+  - **Source-header copyright block** at the top of `src/App.jsx` —
+    JSDoc block with copyright, author, contact, LICENSE pointer.
+    Survives in any deployed bundle.
+  - **`__APP_SIGNATURE__` extension** — added `app` / `author` /
+    `contact` / `copyright` / `license` fields alongside the
+    existing `version` / `build` / `sha`. Exposed via
+    `window.__MGT_SCHED_BUILD__`. Module-level identity record;
+    bundler can't tree-shake it because the boot banner references
+    it. Forensic evidence in any unauthorised deployment.
+  - **Console boot banner** extended with two extra `console.log`
+    calls below the existing version banner — one for the copyright
+    line, one for the "Unauthorized use, copying, redistribution,
+    or modification is prohibited." notice. Visible to anyone who
+    opens DevTools.
+  - **Visible Settings footer** — centred plain footer below the
+    accordion (outside any Collapsible) inside the Settings tab.
+    Two lines: `version 1.14.0` + `© 2026 Patryk Zychowicz — MGT
+    Staff Scheduling`. Reads from `__APP_SIGNATURE__` so a version
+    bump propagates here automatically. Uses `var(--text-muted)`
+    (NOT Bookings' hardcoded greys) to respect the v0.11.0 theming
+    model — colour adapts to light/dark theme.
+
+- **Holiday-handling audit (v1.14.0):** confirmed consistent across
+  every fairness surface. `holidayDaysInWeekByEmployee` and
+  `holidayDayCountForEmployeeInRange` both filter `r.type !==
+  "holiday"`. Used by `<WeeklyShiftSummary>`'s effective-quota pill,
+  `build28DayAggregates`, `buildCalendarMonthAggregates` (new), and
+  `buildEmployeeFairnessDetail`'s rolling28 + calendarMonth + perWeek
+  paths. `aggregateShiftsInRange` counts actual shifts worked
+  without excluding holiday-date shifts on purpose (holiday requests
+  HARD-block via `findRequestConflict` upstream; a shift on a
+  holiday only exists via deliberate manager override, in which
+  case the count should reflect reality). v1.9.0 rule preserved:
+  only holiday requests subtract from target; day-OFF requests still
+  HARD-block the date at assignment time but the employee remains
+  available for the full quota across remaining open dates.
+
+- **Result-banner buttons hover-scale (v1.14.0):** the Generate /
+  Regenerate / Clear result banner above the schedule grid renders a
+  "Details" button (when the banner has a `mode`) and a dismiss `×`
+  button. Both now carry `className="mgt-hover-scale"` matching every
+  other interactive surface in the app. Closes a v1.9.0 hover-utility
+  gap (the original second/fifth/eighth-wave commits didn't reach
+  these two buttons).
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -1181,12 +1270,18 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.13.0)
+## File structure (current — v1.14.0)
 
 ```
 megustastu-scheduling/
 ├── CLAUDE.md                       this file
 ├── REFACTOR_LOG.md                 version history + decisions
+├── LICENSE                         v1.14.0: proprietary licence file at
+│                                   repo root. Verbatim copy of the MGT
+│                                   Bookings LICENSE — "© 2026 Patryk
+│                                   Zychowicz. All rights reserved",
+│                                   licensed exclusively to the
+│                                   restaurant for internal use.
 ├── package.json                    React 19, Vite, Firebase, jsPDF
 ├── vite.config.js                  @vitejs/plugin-react (automatic JSX)
 ├── index.html                      Vite entry. Hosts the theme token
@@ -1238,6 +1333,19 @@ megustastu-scheduling/
     │                                 v1.13.0: → 1.13.0, sha
     │                                 "fairness-panel-highlight-deltabar-
     │                                 drilldown".
+    │                                 v1.14.0: → 1.14.0, sha
+    │                                 "calendar-month-fairness-ip-layer".
+    │                                 IP-layer additions: source-header
+    │                                 JSDoc block above the existing
+    │                                 file comment with copyright +
+    │                                 author + LICENSE pointer.
+    │                                 __APP_SIGNATURE__ gained `app` /
+    │                                 `author` / `contact` / `copyright` /
+    │                                 `license` fields. logBootBanner
+    │                                 extended with two extra console.log
+    │                                 lines (copyright + unauthorized-use
+    │                                 notice). Mirrors MGT Bookings'
+    │                                 App.jsx top-of-file structure.
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1490,6 +1598,34 @@ megustastu-scheduling/
     │   │                           aggregateShiftsInRange. Helper is
     │   │                           informational only — never feeds the
     │   │                           generator.
+    │   │                           v1.14.0: + buildCalendarMonthAggregates
+    │   │                           ({shifts, employees, weekStart, requests,
+    │   │                           shiftTemplate}) — sibling to
+    │   │                           build28DayAggregates but anchored to
+    │   │                           the calendar month containing
+    │   │                           weekStart's Monday. Same shape per
+    │   │                           employee: {shiftsCount, hoursTotal,
+    │   │                           shiftsTarget, hoursTarget,
+    │   │                           shiftsDeficit, hoursDeficit}. Target =
+    │   │                           max(0, round(wpw × monthLen/7) −
+    │   │                           holidays) (same formula buildEmployee
+    │   │                           FairnessDetail's calendarMonth path
+    │   │                           uses, so drill-down stats and
+    │   │                           generator input stay in lockstep).
+    │   │                           Holiday handling identical to the
+    │   │                           rolling-28 path — only type==="holiday"
+    │   │                           requests subtract (v1.9.0 rule).
+    │   │                           Consumed by generator.js's
+    │   │                           rankCandidates alongside the rolling-
+    │   │                           28 map; both windows' deficits are
+    │   │                           SUMMED before the deficit DESC sort.
+    │   │                           Also: buildEmployeeFairnessDetail's
+    │   │                           perWeek buckets now expose
+    │   │                           holidayDays so the v1.14.0 Reasoning
+    │   │                           view can show the per-bucket wpw −
+    │   │                           holiday = target subtraction (the
+    │   │                           shiftsTarget alone is lossy when
+    │   │                           holidays exceed wpw).
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -1711,6 +1847,26 @@ megustastu-scheduling/
     │                               sort degrades to specialists + name
     │                               (legacy callers without monthly
     │                               context still work).
+    │                               v1.14.0: + generateWeek arg
+    │                               `calendarMonthAggregates` (sibling
+    │                               to `monthlyAggregates`, same shape).
+    │                               Threaded into rankCandidates as a
+    │                               5th positional arg. The deficitsFor
+    │                               helper now reads from BOTH maps and
+    │                               sums hoursDeficit / shiftsDeficit
+    │                               across rolling-28 and calendar-month
+    │                               before the existing deficit DESC
+    │                               sort. Missing calendar-month map →
+    │                               that side contributes 0 (legacy
+    │                               callers behave identically to
+    │                               v1.13.0). Rationale: rolling 28-day
+    │                               smooths recency but doesn't respect
+    │                               payroll-month boundaries; summing
+    │                               both windows lets the picker
+    │                               balance staff against both lenses
+    │                               at once. Recent days appear in both
+    │                               windows so recency naturally weights
+    │                               more heavily.
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -2061,6 +2217,20 @@ megustastu-scheduling/
         │                           sparkline in <EmployeeFairnessModal>.
         │                           No effect on the existing jumpToCell
         │                           or pill-highlight axes — orthogonal.
+        │                           v1.14.0: + calendarMonthAggregates
+        │                           memo via buildCalendarMonthAggregates
+        │                           (sibling to the existing 28-day
+        │                           monthlyAggregates memo). Forwarded
+        │                           only to <GenerateButton> as a new
+        │                           prop; <MonthlyFairnessPanel> stays
+        │                           visually 28-day-rolling. Same dep
+        │                           array as the rolling-28 memo (shifts,
+        │                           employees, weekStart, requests,
+        │                           shiftTemplate) so both invalidate
+        │                           together when data flips. + Result-
+        │                           banner Details + dismiss × buttons
+        │                           gained className="mgt-hover-scale"
+        │                           (closes a v1.9.0 hover-utility gap).
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.1.0: picker honours
@@ -2256,6 +2426,21 @@ megustastu-scheduling/
         │                           handleReset also updated to deep-clone
         │                           the new boolean-object shape (not
         │                           array.slice()).
+        │                           v1.14.0: + centred footer at the
+        │                           bottom of the Settings tab (outside
+        │                           the accordion / Collapsibles).
+        │                           Renders "version {sig.version}" +
+        │                           "© 2026 Patryk Zychowicz — MGT
+        │                           Staff Scheduling" using
+        │                           var(--text-muted) so the colour
+        │                           adapts to light + dark themes
+        │                           (v0.11.0 theming model). Imports
+        │                           __APP_SIGNATURE__ from App.jsx as
+        │                           the single source of truth for the
+        │                           version label — a version bump in
+        │                           App.jsx propagates here automatically.
+        │                           Mirrors MGT Bookings' Settings →
+        │                           General tab footer placement.
         ├── MonthlyFairnessPanel.jsx v1.12.0: NEW. Rolling 28-day fairness
         │                           summary, rendered below
         │                           <WeeklyRequestsPreview>. One row per
@@ -2389,6 +2574,31 @@ megustastu-scheduling/
         │                           "Click a bar to open that week in
         │                           the schedule." so the affordance is
         │                           discoverable.
+        │                           v1.14.0: + `view` local state
+        │                           ("data" | "reasoning") that toggles
+        │                           in-place between the three original
+        │                           stat Sections and three matching
+        │                           Reasoning Sections that show the
+        │                           formulas with the employee's
+        │                           actual plugged-in values. Footer
+        │                           reworked to space-between flex row:
+        │                           left-aligned Reasoning ghost button
+        │                           (label flips between "Reasoning" and
+        │                           "Show data"), right-aligned Close
+        │                           button. + small inline helpers `Num`
+        │                           (bolded values inside formula prose)
+        │                           and `FormulaRow` (label + formula
+        │                           pair on one wrapping flex row). +
+        │                           `avgShiftHours` imported from
+        │                           schedule-logic to compute the
+        │                           preference-weighted average inline
+        │                           in the reasoning copy. No new prop
+        │                           on the component — toggle is purely
+        │                           internal. Hook-rules note: useState
+        │                           sits ABOVE the "!open || !employee
+        │                           || !weekStart" early-return guard
+        │                           since hooks must run unconditionally
+        │                           every render.
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
@@ -2465,6 +2675,18 @@ megustastu-scheduling/
         │                           (!shiftTemplate || employeeCount === 0)
         │                           conditions; tooltip switches to
         │                           "Past weeks are read-only" when set.
+        │                           v1.14.0: + calendarMonthAggregates
+        │                           prop (sibling to monthlyAggregates,
+        │                           same shape; pre-built by ScheduleGrid
+        │                           via buildCalendarMonthAggregates).
+        │                           Forwarded verbatim into the
+        │                           generateWeek({...}) call alongside
+        │                           monthlyAggregates. Drives the
+        │                           v1.14.0 calendar-month-deficit
+        │                           addition in rankCandidates. Missing
+        │                           on legacy callers → that side
+        │                           contributes 0 to the rank (byte-
+        │                           identical to v1.13.0).
         ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
         │                           Overlay. Shows the bullet list of
         │                           what the generator will do +

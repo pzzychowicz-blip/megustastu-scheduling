@@ -87,6 +87,9 @@ import {
   resolveDayRequiredRoles,
 } from "../lib/schedule-logic.js";
 import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
+// v1.14.0: footer credit reads version directly from the single source
+// of truth so a version bump propagates here automatically.
+import { __APP_SIGNATURE__ } from "../App.jsx";
 
 // ── Deep-clone the template for local edit state ─────────────────────────
 // DEFAULT_SHIFT_TEMPLATE is shallow-frozen; nested objects are not. Cloning
@@ -1328,6 +1331,36 @@ export default function Settings({
           onClick: handleReset,
           children: "Reset to defaults",
         })}
+      </div>
+
+      {/* v1.14.0: visible author / version credit. Mirrors MGT Bookings'
+          Settings → General tab footer. Reads from __APP_SIGNATURE__
+          so the version label updates wherever the signature is bumped.
+          Uses var(--text-muted) so light + dark themes resolve correctly
+          (Bookings hardcodes #5a6474/#8a94a3; the v0.11.0 theming model
+          here mandates CSS vars for every colour). */}
+      <div style={{ padding: "28px 12px", textAlign: "center" }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--text-muted)",
+            letterSpacing: "0.02em",
+          }}
+        >
+          version {__APP_SIGNATURE__.version}
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 500,
+            color: "var(--text-muted)",
+            letterSpacing: "0.02em",
+            marginTop: 8,
+          }}
+        >
+          © 2026 Patryk Zychowicz — MGT Staff Scheduling
+        </div>
       </div>
     </div>
   );

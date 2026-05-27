@@ -53,6 +53,7 @@ export default function GenerateButton({
   shiftTemplate, openingDays, strictPreference,
   minConsecutiveDaysOff, maxConsecutiveWorkingDays, dayRequiredRoles,
   monthlyAggregates,
+  calendarMonthAggregates,
   isMobile, actions, onResult,
   onUndoableOp,
   disabled: disabledByParent,
@@ -118,6 +119,12 @@ export default function GenerateButton({
           // deficit sort. Shared with MonthlyFairnessPanel so the
           // panel and the generator stay in lockstep.
           monthlyAggregates: monthlyAggregates,
+          // v1.14.0: calendar-month aggregates (sibling map, same
+          // shape). rankCandidates sums deficits across both windows
+          // so the picker respects both rolling-recency AND month
+          // boundary fairness. Missing → calendar-month contributes
+          // 0 to the rank (legacy fallback).
+          calendarMonthAggregates: calendarMonthAggregates,
           // v1.8.1: preserve-on-regenerate policy. Ignored when mode is
           // "fill-empty". Both default to true on the modal — wiring
           // through unchanged forwards that default.
