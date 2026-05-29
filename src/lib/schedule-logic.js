@@ -713,7 +713,9 @@ export function holidayDaysInWeekByEmployee(requestsMap, dates) {
 //   shiftsTarget = workingDaysPerWeek × 4 − holiday days in the 28-day
 //                  window (Math.max floor at 0). Holiday subtraction
 //                  mirrors v1.9.0's per-week effective-cap math.
-//   hoursTarget  = shiftsTarget × avgShiftHours(preference, shiftTemplate)
+//   hoursTarget  = shiftsTarget × avgShiftHours(emp, shiftTemplate,
+//                  dayRequiredRoles)  (v1.15.0: per-employee eligible-
+//                  slot average — see avgShiftHours above)
 //
 // Deficits are non-negative (max(0, target − actual)). Over-target
 // employees register 0 deficit; they sort with the same "no fairness
@@ -733,33 +735,46 @@ function hoursBetween(startStr, endStr) {
   return minutes > 0 ? minutes / 60 : 0;
 }
 
-// Average hours per shift the employee would take, given their
-// preference and the active template. "day" averages the day-blocks
-// (FoH day + Kitchen day per-slot times); "evening" averages the
-// evening-blocks; "either" / unset averages across all blocks. Used
-// only by the monthly fairness target — the picker / generator pick
-// per-cell hours, not averages.
-export function avgShiftHours(preference, shiftTemplate) {
-  if (!shiftTemplate) return 0;
-  const blocks = [];
-  const wantDay = preference === "day" || preference === "either" || !preference;
-  const wantEve = preference === "evening" || preference === "either" || !preference;
-  if (wantDay) {
-    if (shiftTemplate.foh && shiftTemplate.foh.day) blocks.push(shiftTemplate.foh.day);
-    if (shiftTemplate.kitchen && shiftTemplate.kitchen.day) blocks.push(shiftTemplate.kitchen.day);
-  }
-  if (wantEve) {
-    if (shiftTemplate.foh && shiftTemplate.foh.evening) blocks.push(shiftTemplate.foh.evening);
-    if (shiftTemplate.kitchen && shiftTemplate.kitchen.evening) blocks.push(shiftTemplate.kitchen.evening);
-  }
+// Average hours per shift this employee would actually be assigned to,
+// given their role-set, preference, and the active template. Filters
+// the slot list to ONLY the slots the employee can fill via the same
+// role + preference rules the generator uses (roleMatchesSlot from
+// above), then averages those slot durations. Returns 0 when no
+// slots are eligible — fairness target collapses to zero, which is
+// correct (an employee with no viable assignments has no hours
+// expectation).
+//
+// Pre-v1.14.0 follow-up: this function used to take just the
+// preference string and average across every slot in the matching
+// dayParts, flattening per-slot variation (e.g. FoH Evening 1 = 6h
+// vs FoH Evening 2 = 5h would BOTH go into the average even for a
+// Bar-only employee, who would also count Kitchen evening's Chef /
+// Plating / Pot slots — none of which they could fill). The
+// flattened number drove the hours-deficit signal in
+// rankCandidates, distorting fairness for any employee whose
+// role-set was narrower than the section's full coverage.
+//
+// dayRequiredRoles is optional — when present, threaded into
+// slotsForDay so per-section day-role configuration matches what
+// the generator's eligibility filter sees. Bare callers (passing
+// undefined) get the SECTIONS defaults via slotsForDay's existing
+// fallback.
+export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles) {
+  if (!shiftTemplate || !emp) return 0;
+  const slots = slotsForDay(shiftTemplate, dayRequiredRoles);
+  if (slots.length === 0) return 0;
+  const pref = emp.preference;
+  const wantDay = pref === "day" || pref === "either" || !pref;
+  const wantEve = pref === "evening" || pref === "either" || !pref;
   let total = 0;
   let count = 0;
-  for (let i = 0; i < blocks.length; i++) {
-    const times = Array.isArray(blocks[i].times) ? blocks[i].times : [];
-    for (let j = 0; j < times.length; j++) {
-      const h = hoursBetween(times[j].start, times[j].end);
-      if (h > 0) { total += h; count++; }
-    }
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i];
+    if (s.isDay && !wantDay) continue;
+    if (!s.isDay && !wantEve) continue;
+    if (!roleMatchesSlot(emp, s)) continue;
+    const h = hoursBetween(s.defaultStart, s.defaultEnd);
+    if (h > 0) { total += h; count++; }
   }
   return count > 0 ? total / count : 0;
 }
@@ -772,6 +787,11 @@ export function build28DayAggregates(args) {
   const weekStart = args.weekStart;
   const requests = args.requests || {};
   const shiftTemplate = args.shiftTemplate || null;
+  // v1.14.0 follow-up: per-section dayRequiredRoles override drives
+  // slotsForDay inside avgShiftHours so the eligible-slot list
+  // matches what the generator sees. Optional — bare callers fall
+  // back to SECTIONS defaults via slotsForDay's existing path.
+  const dayRequiredRoles = args.dayRequiredRoles || null;
 
   const empList = Object.values(employees);
   if (empList.length === 0) return out;
@@ -813,7 +833,7 @@ export function build28DayAggregates(args) {
       : 5;
     const holiday = holidayCounts[e.id] || 0;
     const shiftsTarget = Math.max(0, wpw * 4 - holiday);
-    const hoursTarget = shiftsTarget * avgShiftHours(e.preference, shiftTemplate);
+    const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles);
     out[e.id] = {
       shiftsCount: shiftsCount,
       hoursTotal: hoursTotal,
@@ -839,7 +859,8 @@ export function build28DayAggregates(args) {
 //
 //   monthShiftsTargetRaw = workingDaysPerWeek × monthLength / 7
 //   monthShiftsTarget    = max(0, round(monthShiftsTargetRaw) − monthHolidays)
-//   monthHoursTarget     = monthShiftsTarget × avgShiftHours(preference, shiftTemplate)
+//   monthHoursTarget     = monthShiftsTarget × avgShiftHours(emp,
+//                          shiftTemplate, dayRequiredRoles)  (v1.15.0)
 //
 // Holiday handling: only `type === "holiday"` requests subtract from
 // the target (v1.9.0 decision). Day-OFF requests still HARD-block
@@ -858,6 +879,11 @@ export function buildCalendarMonthAggregates(args) {
   const weekStart = args.weekStart;
   const requests = args.requests || {};
   const shiftTemplate = args.shiftTemplate || null;
+  // v1.14.0 follow-up: per-employee avgShiftHours needs the
+  // per-section dayRequiredRoles configuration so eligibility
+  // filtering matches the generator. Optional; bare callers fall
+  // back to SECTIONS defaults via slotsForDay's existing path.
+  const dayRequiredRoles = args.dayRequiredRoles || null;
 
   const empList = Object.values(employees);
   if (empList.length === 0) return out;
@@ -906,7 +932,7 @@ export function buildCalendarMonthAggregates(args) {
     // target. Mirrors buildEmployeeFairnessDetail's calendarMonth path.
     const shiftsTargetRaw = wpw * (monthLength / 7);
     const shiftsTarget = Math.max(0, Math.round(shiftsTargetRaw) - holiday);
-    const hoursTarget = shiftsTarget * avgShiftHours(e.preference, shiftTemplate);
+    const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles);
     out[e.id] = {
       shiftsCount: shiftsCount,
       hoursTotal: hoursTotal,
@@ -990,9 +1016,13 @@ export function buildEmployeeFairnessDetail(args) {
   const weekStart = args.weekStart;
   const requests = args.requests || {};
   const shiftTemplate = args.shiftTemplate || null;
+  // v1.14.0 follow-up: forwarded into avgShiftHours so the helper's
+  // eligible-slot list matches what the generator's eligibility
+  // filter sees (configurable per-section day-role rules).
+  const dayRequiredRoles = args.dayRequiredRoles || null;
 
   const wpw = wpwOf(employee);
-  const avgHours = avgShiftHours(employee.preference, shiftTemplate);
+  const avgHours = avgShiftHours(employee, shiftTemplate, dayRequiredRoles);
 
   // ── rolling28 ──
   const r28From = addDays(weekStart, -21);

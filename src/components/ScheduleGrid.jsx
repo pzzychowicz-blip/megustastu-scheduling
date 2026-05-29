@@ -239,8 +239,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       weekStart: weekStart,
       requests: requests,
       shiftTemplate: shiftTemplate,
+      // v1.14.0 follow-up: per-employee avgShiftHours filters slots by
+      // role + preference; the per-section day-role configuration drives
+      // slotsForDay → roleMatchesSlot inside the helper.
+      dayRequiredRoles: dayRequiredRoles,
     });
-  }, [shifts, employees, weekStart, requests, shiftTemplate]);
+  }, [shifts, employees, weekStart, requests, shiftTemplate, dayRequiredRoles]);
 
   // v1.14.0: calendar-month aggregates per employee. Sibling to
   // monthlyAggregates (28-day rolling) — anchored to the calendar month
@@ -255,8 +259,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       weekStart: weekStart,
       requests: requests,
       shiftTemplate: shiftTemplate,
+      dayRequiredRoles: dayRequiredRoles,
     });
-  }, [shifts, employees, weekStart, requests, shiftTemplate]);
+  }, [shifts, employees, weekStart, requests, shiftTemplate, dayRequiredRoles]);
 
   // ── Modal state ──────────────────────────────────────────────────────
   const [modalCell, setModalCell] = useState(null);  // { dateIso, slotDef, shift } or null
@@ -1498,6 +1503,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         requests={requests}
         weekStart={weekStart}
         shiftTemplate={shiftTemplate}
+        dayRequiredRoles={dayRequiredRoles}
         highlightedEmployeeId={highlightedEmployeeId}
         onHighlight={onHighlight}
         onJumpToWeek={jumpToWeek}

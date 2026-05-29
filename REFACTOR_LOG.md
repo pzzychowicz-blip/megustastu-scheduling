@@ -5,6 +5,91 @@ an entry. Newest first.
 
 ---
 
+## v1.15.0 — Per-employee avgShiftHours + EmployeeFairnessModal scroll fix
+
+**Date:** 2026-05-28
+
+**Behavioural change:** Yes — the auto-generator's `rankCandidates`
+picks shift for any employee whose role-set is narrower than their
+section's full coverage (i.e. most real employees). Previously the
+`hoursDeficit` signal that drives the ranking was computed from a
+flat all-slots average; now it's computed from the slots the
+employee can actually fill. Weeks where every employee covers every
+section role are byte-identical to v1.14.0.
+
+Two fixes, both follow-ups to v1.14.0's fairness + Reasoning work:
+
+1. **Per-employee `avgShiftHours`.** Signature changed from
+   `(preference, shiftTemplate)` to
+   `(emp, shiftTemplate, dayRequiredRoles)`. The old version averaged
+   slot durations across every slot in the matching dayParts —
+   regardless of which slots the employee could fill. A Bar-only
+   evening employee's hours-target counted FoH Evening 1 + 2 AND
+   Kitchen Evening Chef / Plating / Pot (all five), and a Chef-only
+   employee's target was diluted by the team average instead of the
+   Chef slot's true duration. Both errors fed `hoursDeficit` into
+   `rankCandidates` and distorted fairness. The new version filters
+   the `slotsForDay` list by `roleMatchesSlot(emp, slot)` + the
+   employee's preference, then averages only those eligible slots.
+   Returns 0 when no slots are eligible (correct — no viable
+   assignments → no hours expectation). The three fairness aggregate
+   helpers (`build28DayAggregates`, `buildCalendarMonthAggregates`,
+   `buildEmployeeFairnessDetail`) gained an optional `dayRequiredRoles`
+   arg threaded into `avgShiftHours`; ScheduleGrid forwards its
+   settings-derived `dayRequiredRoles` into both aggregate memos and
+   down through `<MonthlyFairnessPanel>` → `<EmployeeFairnessModal>`
+   so the drill-down's inline reasoning matches the generator.
+
+2. **`<EmployeeFairnessModal>` inner scroll wrapper.** The Reasoning
+   view (added v1.14.0) is taller than the data view — multi-line
+   formulas + 4 per-week rows — and spilled past the Overlay sheet
+   (which uses `overflow: visible` since the v1.9.0 hover-scale fix),
+   pushing the "Show data" / "Close" footer buttons off the backdrop
+   (reported via screenshot). Wrapped the data/reasoning render block
+   in a `maxHeight` + `overflowY: auto` container
+   (`min(60vh, 480px)` desktop, `55vh` mobile) with the negative-
+   margin + matching-padding clip-breathing-room trick. Mirrors the
+   v1.9.4 `<GenerateResultsModal>` fix. The archived-employee notice,
+   the footer flex row, and the trailing footnote stay outside the
+   scroller so they anchor to the visible sheet edges.
+
+**Files changed:**
+- `src/lib/schedule-logic.js` — `avgShiftHours` rewritten
+  `(emp, shiftTemplate, dayRequiredRoles)`; reuses `slotsForDay` +
+  `roleMatchesSlot` (both already exported). `build28DayAggregates`,
+  `buildCalendarMonthAggregates`, `buildEmployeeFairnessDetail` each
+  read `args.dayRequiredRoles` and forward it.
+- `src/components/ScheduleGrid.jsx` — both aggregate memos pass
+  `dayRequiredRoles` (added to dep arrays); forwarded as a prop to
+  `<MonthlyFairnessPanel>`.
+- `src/components/MonthlyFairnessPanel.jsx` — accepts +
+  forwards `dayRequiredRoles` to `<EmployeeFairnessModal>`.
+- `src/components/EmployeeFairnessModal.jsx` — accepts
+  `dayRequiredRoles`; passes it into `buildEmployeeFairnessDetail`
+  + the inline `avgShiftHours` call; Reasoning copy updated to
+  describe the per-employee eligible-slot scope; data/reasoning
+  block wrapped in the inner scroll container.
+- `src/App.jsx` — version → 1.15.0, sha
+  "per-employee-avg-shift-hours-modal-scroll".
+- `CLAUDE.md` — v1.15.0 locked-decision blocks + file-structure
+  annotations (schedule-logic, ScheduleGrid, MonthlyFairnessPanel,
+  EmployeeFairnessModal, App.jsx signature line, title bump).
+
+**Verification:**
+- `npm run build` succeeds.
+- `<EmployeeFairnessModal>` Reasoning view for a Chef-only evening
+  employee shows avg shift hours = the Kitchen Evening Chef slot's
+  duration (not the team average); Bar-only evening employee shows
+  the FoH Evening slots' average; "either" multi-section employee
+  averages all eligible slots.
+- Reasoning view scrolls internally; "Show data" + "Close" stay
+  visible at the bottom on both desktop and mobile sheet sizes.
+- Generator: a Chef-only employee whose true hours-target was
+  previously understated now ranks higher (larger `hoursDeficit`)
+  in `rankCandidates`.
+
+---
+
 ## v1.14.0 — Calendar-month fairness in generator + Reasoning toggle + IP layer
 
 **Date:** 2026-05-28

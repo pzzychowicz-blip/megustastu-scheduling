@@ -1254,6 +1254,49 @@ separate Firebase project, same UI conventions).
   gap (the original second/fifth/eighth-wave commits didn't reach
   these two buttons).
 
+- **Per-employee avg-shift-hours for fairness (v1.15.0):**
+  `avgShiftHours` signature changed from
+  `(preference, shiftTemplate)` to
+  `(emp, shiftTemplate, dayRequiredRoles)`. It used to average slot
+  durations across every slot in the matching dayParts, regardless
+  of which slots the employee could actually fill — so a Bar-only
+  evening employee's hours-target counted FoH Evening 1 + 2 AND
+  Kitchen Evening Chef / Plating / Pot (none of which they can
+  fill), and a Chef-only employee's target was diluted by the
+  team-wide average instead of the Chef slot's true hours. Both
+  errors fed `hoursDeficit` into the generator's `rankCandidates`
+  and distorted fairness. v1.15.0 filters the slot list (via the
+  existing `slotsForDay` + `roleMatchesSlot` helpers) to ONLY the
+  slots the employee is role-eligible AND preference-eligible for,
+  then averages those durations. Returns 0 when no eligible slots
+  (correct — no viable assignments → no hours expectation). All
+  three fairness aggregate helpers (`build28DayAggregates`,
+  `buildCalendarMonthAggregates`, `buildEmployeeFairnessDetail`)
+  gained an optional `dayRequiredRoles` arg threaded into
+  `avgShiftHours`; ScheduleGrid forwards its settings-derived
+  `dayRequiredRoles` into both aggregate memos and down through
+  `<MonthlyFairnessPanel>` → `<EmployeeFairnessModal>` so the
+  drill-down's inline reasoning matches the generator. Behavioural
+  change: generator picks shift for any employee whose role-set is
+  narrower than their section's full coverage (most real
+  employees). The Reasoning view copy in `<EmployeeFairnessModal>`
+  was updated to describe the per-employee eligible-slot scope.
+
+- **EmployeeFairnessModal inner scroll wrapper (v1.15.0):** the
+  drill-down modal's body (the data view OR the taller Reasoning
+  view) is now wrapped in a `maxHeight` + `overflowY: auto`
+  container — `min(60vh, 480px)` desktop, `55vh` mobile — with the
+  negative-margin + matching-padding clip-breathing-room trick
+  (`margin: 0 -16px; padding: 4px 16px`) so hover-scaled rows don't
+  clip. Mirrors the v1.9.4 `<GenerateResultsModal>` fix. Root cause:
+  the Overlay desktop sheet uses `overflow: visible` (v1.9.0
+  hover-scale fix), so the Reasoning view's multi-line formulas + 4
+  per-week rows spilled past the sheet and pushed the "Show data" /
+  "Close" footer buttons off the backdrop (reported via screenshot).
+  The archived-employee notice, the footer flex row, and the
+  trailing footnote stay OUTSIDE the scroller so they stay anchored
+  to the visible sheet edges regardless of body height.
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -1270,7 +1313,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.14.0)
+## File structure (current — v1.15.0)
 
 ```
 megustastu-scheduling/
@@ -1346,6 +1389,9 @@ megustastu-scheduling/
     │                                 lines (copyright + unauthorized-use
     │                                 notice). Mirrors MGT Bookings'
     │                                 App.jsx top-of-file structure.
+    │                                 v1.15.0: → 1.15.0, sha
+    │                                 "per-employee-avg-shift-hours-
+    │                                 modal-scroll".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1626,6 +1672,23 @@ megustastu-scheduling/
     │   │                           holiday = target subtraction (the
     │   │                           shiftsTarget alone is lossy when
     │   │                           holidays exceed wpw).
+    │   │                           v1.15.0: avgShiftHours signature
+    │   │                           changed (preference, shiftTemplate) →
+    │   │                           (emp, shiftTemplate, dayRequiredRoles).
+    │   │                           Now filters the slotsForDay list by
+    │   │                           roleMatchesSlot(emp, slot) + the
+    │   │                           employee's preference and averages
+    │   │                           ONLY the eligible slots' durations —
+    │   │                           not a flat all-slots average. Fixes
+    │   │                           biased hours-targets for employees
+    │   │                           whose role-set is narrower than the
+    │   │                           section. Returns 0 when no eligible
+    │   │                           slots. All three aggregate helpers
+    │   │                           (build28DayAggregates,
+    │   │                           buildCalendarMonthAggregates,
+    │   │                           buildEmployeeFairnessDetail) gained
+    │   │                           an optional args.dayRequiredRoles
+    │   │                           forwarded into avgShiftHours.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -2231,6 +2294,16 @@ megustastu-scheduling/
         │                           banner Details + dismiss × buttons
         │                           gained className="mgt-hover-scale"
         │                           (closes a v1.9.0 hover-utility gap).
+        │                           v1.15.0: both aggregate memos
+        │                           (build28DayAggregates +
+        │                           buildCalendarMonthAggregates) now
+        │                           pass dayRequiredRoles (settings-
+        │                           derived const) so per-employee
+        │                           avgShiftHours filters slots
+        │                           consistently with the generator.
+        │                           dayRequiredRoles added to both memo
+        │                           dep arrays + forwarded to
+        │                           <MonthlyFairnessPanel> as a prop.
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.1.0: picker honours
@@ -2537,6 +2610,11 @@ megustastu-scheduling/
         │                           lives on <WeeklyShiftSummary> right
         │                           above; this surface is for active-
         │                           roster balancing.
+        │                           v1.15.0: + dayRequiredRoles prop
+        │                           (from ScheduleGrid) forwarded into
+        │                           <EmployeeFairnessModal> so the
+        │                           drill-down's per-employee
+        │                           avgShiftHours matches the generator.
         ├── EmployeeFairnessModal.jsx v1.13.0: NEW. Read-only drill-down
         │                           popover opened from a MonthlyFairness
         │                           Panel row's delta-bar click. Overlay-
@@ -2599,6 +2677,28 @@ megustastu-scheduling/
         │                           || !weekStart" early-return guard
         │                           since hooks must run unconditionally
         │                           every render.
+        │                           v1.15.0: + dayRequiredRoles prop,
+        │                           threaded into buildEmployeeFairnessDetail
+        │                           + the inline avgShiftHours(employee,
+        │                           shiftTemplate, dayRequiredRoles) call
+        │                           so the Reasoning view matches the
+        │                           generator. Reasoning copy updated to
+        │                           describe the per-employee eligible-
+        │                           slot scope (Chef-only → Kitchen
+        │                           Evening Chef slot only; Bar-only →
+        │                           FoH Evening slots only). The
+        │                           data/reasoning render block wrapped
+        │                           in a maxHeight + overflowY:auto inner
+        │                           scroll container (min(60vh,480px)
+        │                           desktop / 55vh mobile, with the
+        │                           negative-margin clip-breathing-room
+        │                           trick) so the taller Reasoning view
+        │                           scrolls internally instead of
+        │                           spilling past the overflow:visible
+        │                           Overlay sheet (the footer buttons
+        │                           were being pushed off the backdrop).
+        │                           empArchived note + footer + footnote
+        │                           stay outside the scroller.
         ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
         │                           disabled until every cell on every
         │                           open day is filled.
