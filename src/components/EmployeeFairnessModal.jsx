@@ -251,7 +251,17 @@ function FormulaRow({ label, formula }) {
 }
 
 export default function EmployeeFairnessModal({
-  open, employee, weekStart, shifts, requests, shiftTemplate, isMobile, onClose,
+  open, employee, weekStart, shifts, requests, shiftTemplate,
+  // v1.14.0 follow-up: per-employee avgShiftHours needs the
+  // per-section dayRequiredRoles configuration so the eligible-slot
+  // list matches what the generator's eligibility filter sees.
+  // Optional — bare callers fall back to SECTIONS defaults via
+  // slotsForDay's existing path.
+  dayRequiredRoles,
+  // v1.15.0 (2nd commit): weights avgShiftHours by day-part open
+  // frequency so the Reasoning view matches the generator.
+  openingDays,
+  isMobile, onClose,
   onJumpToWeek,
 }) {
   // v1.14.0: in-place toggle between "data" (the original three stat
@@ -274,6 +284,8 @@ export default function EmployeeFairnessModal({
     weekStart: weekStart,
     requests: requests,
     shiftTemplate: shiftTemplate,
+    dayRequiredRoles: dayRequiredRoles,
+    openingDays: openingDays,
   });
   if (!detail) return null;
 
@@ -290,7 +302,7 @@ export default function EmployeeFairnessModal({
   // clamp to [1..7] with a 5 fallback.
   const wpwRaw = employee.workingDaysPerWeek;
   const wpw = Number.isFinite(wpwRaw) && wpwRaw >= 1 ? Math.min(7, Math.round(wpwRaw)) : 5;
-  const avgHours = avgShiftHours(employee.preference, shiftTemplate);
+  const avgHours = avgShiftHours(employee, shiftTemplate, dayRequiredRoles, openingDays);
   const prefLabel = employee.preference === "day"
     ? "day shifts only"
     : employee.preference === "evening"
@@ -420,9 +432,14 @@ export default function EmployeeFairnessModal({
           Only <em>holiday</em> requests subtract from the target — day-off requests
           still HARD-block their dates but the employee remains available for the
           full quota across the remaining open dates (v1.9.0 rule). Avg shift hours
-          averages every template slot's duration weighted by the employee's
-          preference. Both hours-deficit and shifts-deficit feed the auto-generator's
-          ranking — most-behind picks first.
+          is the mean duration of the slots <em>this employee can actually fill</em> —
+          slots where their roles match AND the dayPart matches their preference. A
+          Chef-only evening employee's avg uses only the Kitchen Evening Chef slot;
+          a Bar-only evening employee averages just the FoH Evening slots. Each
+          slot is weighted by how many days a week its day-part is open, so a shift
+          that runs every day counts more than one that runs twice a week. Both
+          hours-deficit and shifts-deficit feed the auto-generator's ranking —
+          most-behind picks first.
         </div>
       </Section>
 
@@ -517,7 +534,28 @@ export default function EmployeeFairnessModal({
         </div>
       ) : null}
 
-      {view === "data" ? dataView : reasoningView}
+      {/* v1.15.0: inner scroll wrapper. The Overlay desktop sheet uses
+          overflow:visible (v1.9.0 hover-scale fix) so any content
+          taller than maxHeight:80vh spills past the sheet. The
+          Reasoning view's multi-line formulas + 4 per-week rows is
+          taller than the data view and overflows. Cap the body
+          height and re-introduce internal scroll for the Section
+          stack only. empArchived note + footer + footnote stay
+          OUTSIDE the scroller so they always stick to the visible
+          sheet's top/bottom edges. Negative horizontal margin +
+          matching padding gives hover-scaled rows 16 px of clip
+          breathing room (same pattern as ScheduleGrid's outer
+          wrapper and GenerateResultsModal's section wrapper). */}
+      <div
+        style={{
+          maxHeight: isMobile ? "55vh" : "min(60vh, 480px)",
+          overflowY: "auto",
+          padding: "4px 16px",
+          margin: "0 -16px",
+        }}
+      >
+        {view === "data" ? dataView : reasoningView}
+      </div>
 
       {/* v1.14.0: footer with the Reasoning toggle on the left and
           Close on the right. justify-content: space-between achieves

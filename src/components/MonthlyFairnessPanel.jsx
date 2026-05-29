@@ -88,6 +88,13 @@ import EmployeeFairnessModal from "./EmployeeFairnessModal.jsx";
 
 export default function MonthlyFairnessPanel({
   employees, monthlyAggregates, shifts, requests, weekStart, shiftTemplate,
+  // v1.14.0 follow-up: forwarded into <EmployeeFairnessModal> so the
+  // drill-down's avgShiftHours computation matches the generator's
+  // eligibility filter.
+  dayRequiredRoles,
+  // v1.15.0 (2nd commit): forwarded so the drill-down's avgShiftHours
+  // weights slots by day-part open frequency, matching the generator.
+  openingDays,
   highlightedEmployeeId, onHighlight, onJumpToWeek, isMobile,
 }) {
   const empMap = employees || {};
@@ -375,6 +382,8 @@ export default function MonthlyFairnessPanel({
         shifts={shifts}
         requests={requests}
         shiftTemplate={shiftTemplate}
+        dayRequiredRoles={dayRequiredRoles}
+        openingDays={openingDays}
         isMobile={isMobile}
         onClose={function () { setDetailEmployeeId(null); }}
         onJumpToWeek={typeof onJumpToWeek === "function" ? handleJumpToWeekFromModal : undefined}
