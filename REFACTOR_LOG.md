@@ -53,30 +53,73 @@ Two fixes, both follow-ups to v1.14.0's fairness + Reasoning work:
    the footer flex row, and the trailing footnote stay outside the
    scroller so they anchor to the visible sheet edges.
 
-**Files changed:**
+### Second commit (same PR #38, no version bump)
+
+Two more changes:
+
+3. **Opening-day-weighted `avgShiftHours`.** The 1st-commit per-employee
+   mean was still *flat* — every eligible slot weighed equally
+   regardless of how many days a week its day-part runs. Added a 4th
+   arg `openingDays`: each slot's hours are now weighted by the number
+   of weekdays its day-part is open (counted via `normalizeOpeningDays`
+   + `WEEKDAY_KEYS`). Opening days are per-dayPart (day / evening), so
+   every day slot shares one weight and every evening slot another. So
+   a shift that runs Mon–Sun (weight 7) counts more than one that runs
+   Sat–Sun (weight 2), and the hours-target reflects the expected
+   hours-per-shift the employee will actually be scheduled for.
+   Backward-compat: undefined `openingDays` → all weights 7 →
+   byte-identical to the flat mean; a fully-closed day-part → weight 0
+   → its slots drop out; all-zero → 0. The three aggregate helpers
+   gained an optional `openingDays` arg; ScheduleGrid threads its
+   `openingDays` const into both aggregate memos (+ dep arrays) and
+   through `<MonthlyFairnessPanel>` → `<EmployeeFairnessModal>`.
+
+4. **Clear shifts by shift-row.** `<ClearConfirmModal>` gained a third
+   scope group, "By shift row", below "Whole week" + "By day". One
+   button per slot in the `slotsForDay` ladder (Kitchen Day, Kitchen
+   Evening 1–3, FoH Day, FoH Evening 1–2), each showing the live count
+   of week shifts matching that `(section, dayPart, slotIndex)` row.
+   Picking one clears that slot-row across every open day — the
+   transpose of the per-day column scope. New scope shape
+   `{ kind: "slot", section, dayPart, slotIndex, label }`, a
+   `shiftsForSlot` count helper, and a `kind === "slot"` branch in
+   `<ClearButton>`'s delete-id filter. Undo op label is
+   `"Clear " + slot.humanLabel` (e.g. "Clear FoH Evening 1"). Reuses
+   the existing `scopeButton` helper + undo-op plumbing; `slots` is
+   forwarded from ScheduleGrid's existing `slots` memo.
+
+**Files changed (commits 1 + 2):**
 - `src/lib/schedule-logic.js` — `avgShiftHours` rewritten
   `(emp, shiftTemplate, dayRequiredRoles)`; reuses `slotsForDay` +
   `roleMatchesSlot` (both already exported). `build28DayAggregates`,
   `buildCalendarMonthAggregates`, `buildEmployeeFairnessDetail` each
   read `args.dayRequiredRoles` and forward it.
 - `src/components/ScheduleGrid.jsx` — both aggregate memos pass
-  `dayRequiredRoles` (added to dep arrays); forwarded as a prop to
-  `<MonthlyFairnessPanel>`.
+  `dayRequiredRoles` + `openingDays` (added to dep arrays); both
+  forwarded as props to `<MonthlyFairnessPanel>`; `slots` passed to
+  `<ClearButton>`.
 - `src/components/MonthlyFairnessPanel.jsx` — accepts +
-  forwards `dayRequiredRoles` to `<EmployeeFairnessModal>`.
+  forwards `dayRequiredRoles` + `openingDays` to
+  `<EmployeeFairnessModal>`.
 - `src/components/EmployeeFairnessModal.jsx` — accepts
-  `dayRequiredRoles`; passes it into `buildEmployeeFairnessDetail`
-  + the inline `avgShiftHours` call; Reasoning copy updated to
-  describe the per-employee eligible-slot scope; data/reasoning
-  block wrapped in the inner scroll container.
+  `dayRequiredRoles` + `openingDays`; passes them into
+  `buildEmployeeFairnessDetail` + the inline `avgShiftHours` call;
+  Reasoning copy describes the per-employee eligible-slot scope + the
+  open-day weighting; data/reasoning block wrapped in the inner scroll
+  container.
+- `src/components/ClearConfirmModal.jsx` — (2nd commit) "By shift
+  row" scope group + `shiftsForSlot` helper + `kind:"slot"` scope +
+  group sub-labels.
+- `src/components/ClearButton.jsx` — (2nd commit) `slots` prop;
+  `kind:"slot"` delete branch; per-row undo label.
 - `src/App.jsx` — version → 1.15.0, sha
-  "per-employee-avg-shift-hours-modal-scroll".
-- `CLAUDE.md` — v1.15.0 locked-decision blocks + file-structure
-  annotations (schedule-logic, ScheduleGrid, MonthlyFairnessPanel,
-  EmployeeFairnessModal, App.jsx signature line, title bump).
+  "per-employee-avg-shift-hours-modal-scroll" (unchanged across both
+  commits — same version).
+- `CLAUDE.md` — v1.15.0 locked-decision blocks (incl. opening-day
+  weighting + Clear-by-shift-row) + file-structure annotations.
 
 **Verification:**
-- `npm run build` succeeds.
+- `npm run build` succeeds (both commits).
 - `<EmployeeFairnessModal>` Reasoning view for a Chef-only evening
   employee shows avg shift hours = the Kitchen Evening Chef slot's
   duration (not the team average); Bar-only evening employee shows
@@ -87,6 +130,13 @@ Two fixes, both follow-ups to v1.14.0's fairness + Reasoning work:
 - Generator: a Chef-only employee whose true hours-target was
   previously understated now ranks higher (larger `hoursDeficit`)
   in `rankCandidates`.
+- (2nd commit) Opening-day weighting: closing FoH Day on several
+  weekdays shifts a versatile FoH "either" employee's avg toward the
+  evening slot durations; re-opening all days returns it to the flat
+  mean. Evening-only employee with evening closed all week → avg 0.
+- (2nd commit) Clear → "By shift row" → "FoH Evening 1" deletes only
+  that slot-row across all open days; other rows untouched; Undo
+  restores exactly those records ("Undid: Clear FoH Evening 1").
 
 ---
 

@@ -714,8 +714,9 @@ export function holidayDaysInWeekByEmployee(requestsMap, dates) {
 //                  window (Math.max floor at 0). Holiday subtraction
 //                  mirrors v1.9.0's per-week effective-cap math.
 //   hoursTarget  = shiftsTarget × avgShiftHours(emp, shiftTemplate,
-//                  dayRequiredRoles)  (v1.15.0: per-employee eligible-
-//                  slot average — see avgShiftHours above)
+//                  dayRequiredRoles, openingDays)  (v1.15.0: per-employee
+//                  eligible-slot average, weighted by day-part open
+//                  frequency — see avgShiftHours above)
 //
 // Deficits are non-negative (max(0, target − actual)). Over-target
 // employees register 0 deficit; they sort with the same "no fairness
@@ -759,24 +760,56 @@ function hoursBetween(startStr, endStr) {
 // the generator's eligibility filter sees. Bare callers (passing
 // undefined) get the SECTIONS defaults via slotsForDay's existing
 // fallback.
-export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles) {
+//
+// v1.15.0 (2nd commit): opening-day weighting. The mean is no longer
+// flat — each eligible slot's hours are weighted by how many weekdays
+// its day-part is open in the standing /settings.openingDays schedule.
+// A shift that runs every day (evening open Mon–Sun → weight 7) counts
+// more than one that runs twice a week (day open Sat–Sun → weight 2),
+// so the hours-target reflects the expected hours-per-shift the
+// employee will actually be scheduled for. Opening days are per-
+// dayPart (day / evening), not per-section, so every day slot shares
+// one weight and every evening slot shares another.
+//
+// Backward-compat: `openingDays` is optional. When undefined,
+// normalizeOpeningDays defaults every weekday to both-open → all
+// weights = 7 → the result is identical to the pre-v1.15.0(2) flat
+// mean. A fully-closed day-part gives its slots weight 0 → they drop
+// out of the average ("when they are off"). If every eligible slot
+// has weight 0 → returns 0.
+export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles, openingDays) {
   if (!shiftTemplate || !emp) return 0;
   const slots = slotsForDay(shiftTemplate, dayRequiredRoles);
   if (slots.length === 0) return 0;
   const pref = emp.preference;
   const wantDay = pref === "day" || pref === "either" || !pref;
   const wantEve = pref === "evening" || pref === "either" || !pref;
-  let total = 0;
-  let count = 0;
+
+  // Open-weekday counts per day-part. normalizeOpeningDays handles the
+  // legacy boolean shape AND a missing arg (defaults to both-open).
+  const norm = normalizeOpeningDays(openingDays);
+  let dayOpenCount = 0;
+  let eveOpenCount = 0;
+  for (let i = 0; i < WEEKDAY_KEYS.length; i++) {
+    const e = norm[WEEKDAY_KEYS[i]];
+    if (e && e.day) dayOpenCount++;
+    if (e && e.evening) eveOpenCount++;
+  }
+
+  let weightedTotal = 0;
+  let weightSum = 0;
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i];
     if (s.isDay && !wantDay) continue;
     if (!s.isDay && !wantEve) continue;
     if (!roleMatchesSlot(emp, s)) continue;
     const h = hoursBetween(s.defaultStart, s.defaultEnd);
-    if (h > 0) { total += h; count++; }
+    if (h <= 0) continue;
+    const weight = s.dayPart === "day" ? dayOpenCount : eveOpenCount;
+    weightedTotal += h * weight;
+    weightSum += weight;
   }
-  return count > 0 ? total / count : 0;
+  return weightSum > 0 ? weightedTotal / weightSum : 0;
 }
 
 export function build28DayAggregates(args) {
@@ -792,6 +825,9 @@ export function build28DayAggregates(args) {
   // matches what the generator sees. Optional — bare callers fall
   // back to SECTIONS defaults via slotsForDay's existing path.
   const dayRequiredRoles = args.dayRequiredRoles || null;
+  // v1.15.0 (2nd commit): openingDays weights avgShiftHours by how
+  // often each day-part runs. Optional — undefined → flat mean.
+  const openingDays = args.openingDays || null;
 
   const empList = Object.values(employees);
   if (empList.length === 0) return out;
@@ -833,7 +869,7 @@ export function build28DayAggregates(args) {
       : 5;
     const holiday = holidayCounts[e.id] || 0;
     const shiftsTarget = Math.max(0, wpw * 4 - holiday);
-    const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles);
+    const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles, openingDays);
     out[e.id] = {
       shiftsCount: shiftsCount,
       hoursTotal: hoursTotal,
@@ -860,7 +896,8 @@ export function build28DayAggregates(args) {
 //   monthShiftsTargetRaw = workingDaysPerWeek × monthLength / 7
 //   monthShiftsTarget    = max(0, round(monthShiftsTargetRaw) − monthHolidays)
 //   monthHoursTarget     = monthShiftsTarget × avgShiftHours(emp,
-//                          shiftTemplate, dayRequiredRoles)  (v1.15.0)
+//                          shiftTemplate, dayRequiredRoles, openingDays)
+//                          (v1.15.0: weighted by day-part open frequency)
 //
 // Holiday handling: only `type === "holiday"` requests subtract from
 // the target (v1.9.0 decision). Day-OFF requests still HARD-block
@@ -884,6 +921,9 @@ export function buildCalendarMonthAggregates(args) {
   // filtering matches the generator. Optional; bare callers fall
   // back to SECTIONS defaults via slotsForDay's existing path.
   const dayRequiredRoles = args.dayRequiredRoles || null;
+  // v1.15.0 (2nd commit): openingDays weights avgShiftHours by
+  // day-part open frequency. Optional — undefined → flat mean.
+  const openingDays = args.openingDays || null;
 
   const empList = Object.values(employees);
   if (empList.length === 0) return out;
@@ -932,7 +972,7 @@ export function buildCalendarMonthAggregates(args) {
     // target. Mirrors buildEmployeeFairnessDetail's calendarMonth path.
     const shiftsTargetRaw = wpw * (monthLength / 7);
     const shiftsTarget = Math.max(0, Math.round(shiftsTargetRaw) - holiday);
-    const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles);
+    const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles, openingDays);
     out[e.id] = {
       shiftsCount: shiftsCount,
       hoursTotal: hoursTotal,
@@ -1020,9 +1060,12 @@ export function buildEmployeeFairnessDetail(args) {
   // eligible-slot list matches what the generator's eligibility
   // filter sees (configurable per-section day-role rules).
   const dayRequiredRoles = args.dayRequiredRoles || null;
+  // v1.15.0 (2nd commit): openingDays weights avgShiftHours by
+  // day-part open frequency. Optional — undefined → flat mean.
+  const openingDays = args.openingDays || null;
 
   const wpw = wpwOf(employee);
-  const avgHours = avgShiftHours(employee, shiftTemplate, dayRequiredRoles);
+  const avgHours = avgShiftHours(employee, shiftTemplate, dayRequiredRoles, openingDays);
 
   // ── rolling28 ──
   const r28From = addDays(weekStart, -21);

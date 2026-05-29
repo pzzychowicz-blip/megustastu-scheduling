@@ -243,8 +243,11 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       // role + preference; the per-section day-role configuration drives
       // slotsForDay → roleMatchesSlot inside the helper.
       dayRequiredRoles: dayRequiredRoles,
+      // v1.15.0 (2nd commit): openingDays weights avgShiftHours by how
+      // often each day-part runs across the standing weekly schedule.
+      openingDays: openingDays,
     });
-  }, [shifts, employees, weekStart, requests, shiftTemplate, dayRequiredRoles]);
+  }, [shifts, employees, weekStart, requests, shiftTemplate, dayRequiredRoles, openingDays]);
 
   // v1.14.0: calendar-month aggregates per employee. Sibling to
   // monthlyAggregates (28-day rolling) — anchored to the calendar month
@@ -260,8 +263,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       requests: requests,
       shiftTemplate: shiftTemplate,
       dayRequiredRoles: dayRequiredRoles,
+      openingDays: openingDays,
     });
-  }, [shifts, employees, weekStart, requests, shiftTemplate, dayRequiredRoles]);
+  }, [shifts, employees, weekStart, requests, shiftTemplate, dayRequiredRoles, openingDays]);
 
   // ── Modal state ──────────────────────────────────────────────────────
   const [modalCell, setModalCell] = useState(null);  // { dateIso, slotDef, shift } or null
@@ -986,6 +990,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           weekStart={weekStart}
           weekDates={dates}
           weekShifts={weekShifts}
+          slots={slots}
           isMobile={isMobile}
           actions={actions}
           onResult={handleClearResult}
@@ -1504,6 +1509,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         weekStart={weekStart}
         shiftTemplate={shiftTemplate}
         dayRequiredRoles={dayRequiredRoles}
+        openingDays={openingDays}
         highlightedEmployeeId={highlightedEmployeeId}
         onHighlight={onHighlight}
         onJumpToWeek={jumpToWeek}

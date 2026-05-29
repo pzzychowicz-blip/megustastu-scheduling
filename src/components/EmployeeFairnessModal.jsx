@@ -258,6 +258,9 @@ export default function EmployeeFairnessModal({
   // Optional — bare callers fall back to SECTIONS defaults via
   // slotsForDay's existing path.
   dayRequiredRoles,
+  // v1.15.0 (2nd commit): weights avgShiftHours by day-part open
+  // frequency so the Reasoning view matches the generator.
+  openingDays,
   isMobile, onClose,
   onJumpToWeek,
 }) {
@@ -282,6 +285,7 @@ export default function EmployeeFairnessModal({
     requests: requests,
     shiftTemplate: shiftTemplate,
     dayRequiredRoles: dayRequiredRoles,
+    openingDays: openingDays,
   });
   if (!detail) return null;
 
@@ -298,7 +302,7 @@ export default function EmployeeFairnessModal({
   // clamp to [1..7] with a 5 fallback.
   const wpwRaw = employee.workingDaysPerWeek;
   const wpw = Number.isFinite(wpwRaw) && wpwRaw >= 1 ? Math.min(7, Math.round(wpwRaw)) : 5;
-  const avgHours = avgShiftHours(employee, shiftTemplate, dayRequiredRoles);
+  const avgHours = avgShiftHours(employee, shiftTemplate, dayRequiredRoles, openingDays);
   const prefLabel = employee.preference === "day"
     ? "day shifts only"
     : employee.preference === "evening"
@@ -431,7 +435,9 @@ export default function EmployeeFairnessModal({
           is the mean duration of the slots <em>this employee can actually fill</em> —
           slots where their roles match AND the dayPart matches their preference. A
           Chef-only evening employee's avg uses only the Kitchen Evening Chef slot;
-          a Bar-only evening employee averages just the FoH Evening slots. Both
+          a Bar-only evening employee averages just the FoH Evening slots. Each
+          slot is weighted by how many days a week its day-part is open, so a shift
+          that runs every day counts more than one that runs twice a week. Both
           hours-deficit and shifts-deficit feed the auto-generator's ranking —
           most-behind picks first.
         </div>

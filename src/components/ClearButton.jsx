@@ -13,6 +13,8 @@
 //   weekStart      (Date)             — current Monday
 //   weekDates      (Array<Date>)      — visibleWeekDates output (open days only)
 //   weekShifts     ({ [id]: shift })  — narrowed to current week
+//   slots          (Array<slotDef>)   — v1.15.0(2); slotsForDay ladder for
+//                                        the modal's "By shift row" buttons
 //   isMobile       (bool)
 //   actions        (object)           — usePersistence().actions; uses deleteShift
 //   disabled       (bool)             — v1.12.0; greys out the button and
@@ -30,7 +32,7 @@ import { formatWeekRange, isoDate } from "../lib/schedule-logic.js";
 import ClearConfirmModal from "./ClearConfirmModal.jsx";
 
 export default function ClearButton({
-  weekStart, weekDates, weekShifts, isMobile, actions, onResult, onUndoableOp,
+  weekStart, weekDates, weekShifts, slots, isMobile, actions, onResult, onUndoableOp,
   disabled: disabledByParent,
 }) {
   const [open, setOpen] = useState(false);
@@ -58,10 +60,21 @@ export default function ClearButton({
     if (busy) return;
     // Compute the id list locally so the modal stays dumb.
     const all = Object.values(weekShifts || {});
-    const ids = scope.kind === "week"
-      ? all.map(function (s) { return s.id; })
-      : all.filter(function (s) { return s.date === scope.dateIso; })
-          .map(function (s) { return s.id; });
+    let ids;
+    if (scope.kind === "week") {
+      ids = all.map(function (s) { return s.id; });
+    } else if (scope.kind === "day") {
+      ids = all.filter(function (s) { return s.date === scope.dateIso; })
+        .map(function (s) { return s.id; });
+    } else {
+      // v1.15.0(2): "slot" scope — every shift matching the
+      // (section, dayPart, slotIndex) row across all open days.
+      ids = all.filter(function (s) {
+        return s.section === scope.section
+          && s.dayPart === scope.dayPart
+          && (s.slotIndex || 0) === scope.slotIndex;
+      }).map(function (s) { return s.id; });
+    }
 
     if (ids.length === 0) {
       // Defensive: should be blocked by the modal's Confirm-disabled.
@@ -88,11 +101,14 @@ export default function ClearButton({
       }
       if (onResult) onResult({ cleared: ids.length, kind: scope.kind });
       if (onUndoableOp && restoreShifts.length > 0) {
-        // Label distinguishes whole-week vs single-day so the Undo button
-        // can advertise the scope before the manager clicks.
+        // Label distinguishes the scope so the Undo button can advertise
+        // it before the manager clicks. v1.15.0(2): slot scope uses the
+        // slot's human label (e.g. "Clear FoH Evening 1").
         const label = scope.kind === "week"
           ? "Clear week"
-          : "Clear day";
+          : scope.kind === "day"
+            ? "Clear day"
+            : "Clear " + (scope.label || "shift row");
         onUndoableOp({
           label: label,
           restoreShifts: restoreShifts,
@@ -131,6 +147,7 @@ export default function ClearButton({
         weekLabel={formatWeekRange(weekStart)}
         weekDates={weekDates}
         weekShifts={weekShifts}
+        slots={slots}
         busy={busy}
         isMobile={isMobile}
         onClose={handleClose}

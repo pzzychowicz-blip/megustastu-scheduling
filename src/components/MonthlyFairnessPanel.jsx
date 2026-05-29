@@ -92,6 +92,9 @@ export default function MonthlyFairnessPanel({
   // drill-down's avgShiftHours computation matches the generator's
   // eligibility filter.
   dayRequiredRoles,
+  // v1.15.0 (2nd commit): forwarded so the drill-down's avgShiftHours
+  // weights slots by day-part open frequency, matching the generator.
+  openingDays,
   highlightedEmployeeId, onHighlight, onJumpToWeek, isMobile,
 }) {
   const empMap = employees || {};
@@ -380,6 +383,7 @@ export default function MonthlyFairnessPanel({
         requests={requests}
         shiftTemplate={shiftTemplate}
         dayRequiredRoles={dayRequiredRoles}
+        openingDays={openingDays}
         isMobile={isMobile}
         onClose={function () { setDetailEmployeeId(null); }}
         onJumpToWeek={typeof onJumpToWeek === "function" ? handleJumpToWeekFromModal : undefined}
