@@ -111,8 +111,12 @@ export default function ClearConfirmModal({
         {label}
         <span
           style={{
-            marginLeft: 8,
             ...S.muted,
+            // marginLeft MUST come after the S.muted spread — S.muted
+            // carries `margin: 0` (a shorthand that resets margin-left),
+            // so spreading it after would clobber the gap (it did:
+            // "Mon 1 Jun5 shifts" with no space). Order matters.
+            marginLeft: 8,
             color: isSelected ? "rgba(255,255,255,0.8)" : "var(--text-muted)",
             fontSize: 11,
           }}
