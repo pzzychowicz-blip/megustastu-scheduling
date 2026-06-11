@@ -1,22 +1,26 @@
 // src/hooks/usePersistence.js
-// Firebase Realtime Database plumbing for all five app paths:
+// Firebase Realtime Database plumbing for all six app paths:
 //
-//   /employees/{id}     — keyed collection
-//   /shifts/{id}        — keyed collection
-//   /requests/{id}      — keyed collection
-//   /shiftTemplate      — singleton (null if never customized)
-//   /settings           — singleton (null if never customized)
+//   /employees/{id}       — keyed collection
+//   /shifts/{id}          — keyed collection
+//   /requests/{id}        — keyed collection
+//   /configRevisions/{id} — keyed collection (v15.1.0 — effective-dated
+//                           openingDays / shiftTemplate revisions; see
+//                           resolveConfigForWeek in schedule-logic.js)
+//   /shiftTemplate        — singleton (null if never customized)
+//   /settings             — singleton (null if never customized)
 //
 // API:
 //   const { data, ready, writeWarning, clearWriteWarning, actions } = usePersistence();
 //
-//   data.employees     : { [id]: employee }
-//   data.shifts        : { [id]: shift }
-//   data.requests      : { [id]: request }
-//   data.shiftTemplate : object | null   ← null means "never customized"
-//   data.settings      : object | null   ← null means "never customized"
+//   data.employees       : { [id]: employee }
+//   data.shifts          : { [id]: shift }
+//   data.requests        : { [id]: request }
+//   data.configRevisions : { [id]: revision }
+//   data.shiftTemplate   : object | null   ← null means "never customized"
+//   data.settings        : object | null   ← null means "never customized"
 //
-//   ready              : boolean — true once all five paths have completed
+//   ready              : boolean — true once all six paths have completed
 //                                  their first onValue callback. Consumers
 //                                  should render a loading state until then.
 //
@@ -55,7 +59,7 @@ import { ref, onValue, set, remove, push } from "firebase/database";
 import { db } from "../firebase.js";
 
 // ── Path metadata ────────────────────────────────────────────────────────
-const COLLECTION_PATHS = ["employees", "shifts", "requests"];
+const COLLECTION_PATHS = ["employees", "shifts", "requests", "configRevisions"];
 const SINGLETON_PATHS = ["shiftTemplate", "settings"];
 const ALL_PATHS = [...COLLECTION_PATHS, ...SINGLETON_PATHS];
 
@@ -64,6 +68,7 @@ export function usePersistence() {
   const [employees, setEmployees] = useState({});
   const [shifts, setShifts] = useState({});
   const [requests, setRequests] = useState({});
+  const [configRevisions, setConfigRevisions] = useState({});
   const [shiftTemplate, setShiftTemplate] = useState(null);
   const [settings, setSettings] = useState(null);
 
@@ -74,6 +79,7 @@ export function usePersistence() {
   const employeesLoaded = useRef(false);
   const shiftsLoaded = useRef(false);
   const requestsLoaded = useRef(false);
+  const configRevisionsLoaded = useRef(false);
   const templateLoaded = useRef(false);
   const settingsLoaded = useRef(false);
 
@@ -82,6 +88,7 @@ export function usePersistence() {
     employees: employeesLoaded,
     shifts: shiftsLoaded,
     requests: requestsLoaded,
+    configRevisions: configRevisionsLoaded,
     shiftTemplate: templateLoaded,
     settings: settingsLoaded,
   };
@@ -126,6 +133,7 @@ export function usePersistence() {
     subscribeCollection("employees", setEmployees, employeesLoaded);
     subscribeCollection("shifts", setShifts, shiftsLoaded);
     subscribeCollection("requests", setRequests, requestsLoaded);
+    subscribeCollection("configRevisions", setConfigRevisions, configRevisionsLoaded);
     subscribeSingleton("shiftTemplate", setShiftTemplate, templateLoaded);
     subscribeSingleton("settings", setSettings, settingsLoaded);
 
@@ -199,6 +207,12 @@ export function usePersistence() {
   const deleteShift    = function (id, isSilent)     { return deleteFromCollection("shifts", id, isSilent); };
   const upsertRequest  = function (record, isSilent) { return upsertCollection("requests", record, isSilent); };
   const deleteRequest  = function (id, isSilent)     { return deleteFromCollection("requests", id, isSilent); };
+  // v15.1.0: effective-dated config revisions. Records always carry
+  // `effectiveFrom` (ISO Monday) + at least one of openingDays /
+  // shiftTemplate — Settings.jsx is responsible for never writing an
+  // empty record (collections have no empty-object guard by design).
+  const upsertConfigRevision = function (record, isSilent) { return upsertCollection("configRevisions", record, isSilent); };
+  const deleteConfigRevision = function (id, isSilent)     { return deleteFromCollection("configRevisions", id, isSilent); };
 
   // ── Singletons: shiftTemplate / settings ───────────────────────────────
   // Singletons are object-replace. Empty-object writes are refused — that's
@@ -224,7 +238,7 @@ export function usePersistence() {
   }
 
   return {
-    data: { employees, shifts, requests, shiftTemplate, settings },
+    data: { employees, shifts, requests, configRevisions, shiftTemplate, settings },
     ready,
     writeWarning,
     clearWriteWarning,
@@ -232,6 +246,7 @@ export function usePersistence() {
       upsertEmployee, deleteEmployee,
       upsertShift, deleteShift,
       upsertRequest, deleteRequest,
+      upsertConfigRevision, deleteConfigRevision,
       saveShiftTemplate, saveSettings,
     },
   };

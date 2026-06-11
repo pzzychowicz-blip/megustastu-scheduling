@@ -144,6 +144,63 @@ export function visibleWeekDates(startDate, openingDays) {
   });
 }
 
+// ── Effective-dated config revisions (v15.1.0) ───────────────────────────
+// /configRevisions/{pushId} → { effectiveFrom: "YYYY-MM-DD" (an ISO
+// Monday), openingDays?: {...}, shiftTemplate?: {...} }. PER-AXIS PARTIAL
+// records — a revision may carry one or both axes. Partial-by-axis avoids
+// the full-snapshot update anomaly: editing one axis for week X never
+// freezes a stale copy of the other axis into a later revision.
+//
+// Resolution for a focus week, per axis INDEPENDENTLY: among revisions
+// whose effectiveFrom <= the week's Monday AND that carry the axis
+// (non-null), pick the greatest effectiveFrom (tiebreak: greatest push
+// id — deterministic if duplicate Mondays ever appear via hand-edits;
+// Settings merges per-Monday so it shouldn't happen). No matching
+// revision → that axis falls back to the legacy live singletons
+// (/settings.openingDays and /shiftTemplate), which act as the FROZEN
+// BASE. Zero revisions ⇒ behaviour is byte-identical to pre-v15.1.0.
+//
+// Returns references (no clones) and possibly-null axes — consumers keep
+// their own `|| DEFAULT_*` fallbacks (and GenerateButton's `!shiftTemplate`
+// disable semantics stay intact). The matched revision ids ride along so
+// Settings can tell "editing an existing scheduled change" from "next
+// edit creates one".
+export function resolveConfigForWeek(configRevisions, settings, shiftTemplate, weekStart) {
+  const mondayIso = isoDate(startOfWeek(weekStart));
+  let bestOpening = null;
+  let bestTemplate = null;
+  const map = configRevisions || {};
+  for (const id in map) {
+    const rev = map[id];
+    if (!rev || !rev.effectiveFrom) continue;
+    if (rev.effectiveFrom > mondayIso) continue;
+    if (rev.openingDays) {
+      if (
+        !bestOpening ||
+        rev.effectiveFrom > bestOpening.effectiveFrom ||
+        (rev.effectiveFrom === bestOpening.effectiveFrom && id > bestOpening.id)
+      ) {
+        bestOpening = { id: id, effectiveFrom: rev.effectiveFrom, value: rev.openingDays };
+      }
+    }
+    if (rev.shiftTemplate) {
+      if (
+        !bestTemplate ||
+        rev.effectiveFrom > bestTemplate.effectiveFrom ||
+        (rev.effectiveFrom === bestTemplate.effectiveFrom && id > bestTemplate.id)
+      ) {
+        bestTemplate = { id: id, effectiveFrom: rev.effectiveFrom, value: rev.shiftTemplate };
+      }
+    }
+  }
+  return {
+    openingDays: bestOpening ? bestOpening.value : (settings && settings.openingDays) || null,
+    shiftTemplate: bestTemplate ? bestTemplate.value : shiftTemplate || null,
+    openingDaysRevisionId: bestOpening ? bestOpening.id : null,
+    shiftTemplateRevisionId: bestTemplate ? bestTemplate.id : null,
+  };
+}
+
 // ── Display formatting ───────────────────────────────────────────────────
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -203,6 +260,20 @@ function isBlockMigrated(block) {
   // Lingering legacy fields would be dropped by a rewrite — flag them so
   // the eager migration cleans the record even if `times` is also valid.
   if ("start" in block || "end" in block || "secondPersonStart" in block) return false;
+  // v15.1.0: optional `soloTimes` axis (per-open-mode times). ABSENT is
+  // fine (feature off — most blocks). Present-but-malformed (not an array
+  // of {start,end} of length `count`) flags the block so the migration
+  // pass repairs it. A valid soloTimes array must NOT flag the block, or
+  // the eager migration would rewrite the doc every session.
+  if ("soloTimes" in block && block.soloTimes !== null) {
+    const solo = block.soloTimes;
+    if (!Array.isArray(solo)) return false;
+    if (solo.length !== block.count) return false;
+    for (let i = 0; i < solo.length; i++) {
+      const t = solo[i];
+      if (!t || !t.start || !t.end) return false;
+    }
+  }
   return true;
 }
 
@@ -237,6 +308,30 @@ export function materializeShiftTemplateBlock(block, sectionKey, dayPart) {
     }
     const legacyStart = i > 0 && fohEveningSecondStart ? fohEveningSecondStart : fallbackStart;
     times.push({ start: legacyStart, end: fallbackEnd });
+  }
+
+  // v15.1.0: preserve the optional `soloTimes` axis (per-open-mode times,
+  // used on weekdays where this block's day-part is the ONLY open one).
+  // Length-synced to count: missing entries extend from soloTimes' last
+  // valid entry, falling back to the normal times[i]. Absent / empty /
+  // non-array soloTimes → the key is OMITTED from the output entirely
+  // (never write [] — Firebase RTDB strips empty arrays to null, and an
+  // explicit-null round-trip would defeat the "absent = off" semantic).
+  const rawSolo = Array.isArray(block.soloTimes) ? block.soloTimes : null;
+  if (rawSolo && rawSolo.length > 0) {
+    const soloTimes = [];
+    let lastValid = null;
+    for (let i = 0; i < count; i++) {
+      const t = rawSolo[i];
+      if (t && t.start && t.end) {
+        soloTimes.push({ start: t.start, end: t.end });
+        lastValid = t;
+        continue;
+      }
+      const seed = lastValid || times[i];
+      soloTimes.push({ start: seed.start, end: seed.end });
+    }
+    return { count: count, times: times, soloTimes: soloTimes };
   }
   return { count: count, times: times };
 }
@@ -295,6 +390,19 @@ function slotTimeFor(block, sectionKey, dayPart, index) {
     start = block.secondPersonStart;
   }
   return { start: start, end: block.end };
+}
+
+// v15.1.0: per-open-mode ("solo") times. A block may carry an optional
+// `soloTimes` array (same length as count) holding the times used on
+// weekdays where this block's day-part is the ONLY open one (the sibling
+// day-part is closed). Returns the {start, end} for the slot index, or
+// null when the block has no usable solo entry — callers then fall back
+// to the normal per-slot times.
+function slotSoloTimeFor(block, index) {
+  if (!Array.isArray(block.soloTimes)) return null;
+  const t = block.soloTimes[index];
+  if (t && t.start && t.end) return { start: t.start, end: t.end };
+  return null;
 }
 
 // v1.12.0: resolver that takes a /settings.dayRequiredRoles value (which may
@@ -369,6 +477,10 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
   const kitDay = template.kitchen.day;
   for (let i = 0; i < kitDay.count; i++) {
     const t = slotTimeFor(kitDay, "kitchen", "day", i);
+    // v15.1.0: per-open-mode times — soloStart/soloEnd are non-null only
+    // when the block carries a valid soloTimes entry for this index.
+    // `slotTimesForDate` (below) picks between the two per date.
+    const st = slotSoloTimeFor(kitDay, i);
     slots.push({
       key: "kitchen-day-" + i,
       section: "kitchen",
@@ -376,6 +488,8 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
       slotIndex: i,
       defaultStart: t.start,
       defaultEnd: t.end,
+      soloStart: st ? st.start : null,
+      soloEnd: st ? st.end : null,
       defaultRole: null,
       sectionLabel: SECTIONS.kitchen.label,
       dayPartLabel: "Day",
@@ -399,6 +513,7 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
   const kitEve = template.kitchen.evening;
   for (let i = 0; i < kitEve.count; i++) {
     const t = slotTimeFor(kitEve, "kitchen", "evening", i);
+    const st = slotSoloTimeFor(kitEve, i);
     slots.push({
       key: "kitchen-evening-" + i,
       section: "kitchen",
@@ -406,6 +521,8 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
       slotIndex: i,
       defaultStart: t.start,
       defaultEnd: t.end,
+      soloStart: st ? st.start : null,
+      soloEnd: st ? st.end : null,
       defaultRole: defaultRoleForSlot("kitchen", "evening", i),
       sectionLabel: SECTIONS.kitchen.label,
       dayPartLabel: "Evening",
@@ -419,6 +536,7 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
   const fohDay = template.foh.day;
   for (let i = 0; i < fohDay.count; i++) {
     const t = slotTimeFor(fohDay, "foh", "day", i);
+    const st = slotSoloTimeFor(fohDay, i);
     slots.push({
       key: "foh-day-" + i,
       section: "foh",
@@ -426,6 +544,8 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
       slotIndex: i,
       defaultStart: t.start,
       defaultEnd: t.end,
+      soloStart: st ? st.start : null,
+      soloEnd: st ? st.end : null,
       defaultRole: null,
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Day",
@@ -444,6 +564,7 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
   const fohEve = template.foh.evening;
   for (let i = 0; i < fohEve.count; i++) {
     const t = slotTimeFor(fohEve, "foh", "evening", i);
+    const st = slotSoloTimeFor(fohEve, i);
     slots.push({
       key: "foh-evening-" + i,
       section: "foh",
@@ -451,6 +572,8 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
       slotIndex: i,
       defaultStart: t.start,
       defaultEnd: t.end,
+      soloStart: st ? st.start : null,
+      soloEnd: st ? st.end : null,
       defaultRole: defaultRoleForSlot("foh", "evening", i),
       sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Evening",
@@ -461,6 +584,35 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
   }
 
   return slots;
+}
+
+// ── Per-date slot times (v15.1.0) ────────────────────────────────────────
+// Resolve the default {start, end} a slot runs on a SPECIFIC date. When the
+// slot carries solo times (soloStart/soloEnd from the template's soloTimes
+// axis) AND the date's weekday has the slot's day-part open while the
+// SIBLING day-part is closed (restaurant runs afternoon-only or
+// evening-only that weekday), the solo times win. Every other case —
+// no solo times configured, both day-parts open, or even the slot's own
+// day-part closed (callers gate on isSlotOpenOnDate upstream, so that
+// branch is unreachable in practice) — returns the flat template defaults.
+//
+// Consumers: ScheduleGrid's renderCell (builds an "effective slot" whose
+// defaultStart/defaultEnd are per-date, which then flows into the cell
+// display, the * override marker, and ShiftFormModal via cellClick) and
+// generator.js (new-shift payload times + the Regenerate wipe pass's
+// override detection). PDF export deliberately does NOT use this — solo
+// cells printing their actual times as two-line cells is a feature.
+export function slotTimesForDate(slot, date, openingDays) {
+  if (!slot.soloStart || !slot.soloEnd) {
+    return { start: slot.defaultStart, end: slot.defaultEnd };
+  }
+  const norm = normalizeOpeningDays(openingDays);
+  const entry = norm[weekdayKeyForDate(date)];
+  const sibling = slot.dayPart === "day" ? "evening" : "day";
+  if (entry && entry[slot.dayPart] === true && entry[sibling] === false) {
+    return { start: slot.soloStart, end: slot.soloEnd };
+  }
+  return { start: slot.defaultStart, end: slot.defaultEnd };
 }
 
 // ── Role-match for an employee filling a slot (v1.7.0; lifted) ──────────
@@ -787,13 +939,30 @@ export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles, openingDays)
 
   // Open-weekday counts per day-part. normalizeOpeningDays handles the
   // legacy boolean shape AND a missing arg (defaults to both-open).
+  //
+  // v15.1.0: each day-part's open count splits into "both-open" weekdays
+  // (sibling day-part also open → slot runs its NORMAL times) and "solo"
+  // weekdays (sibling closed → slot runs its soloTimes when configured).
+  // The per-slot contribution weights each mode by its weekday count, so
+  // an evening shift that runs 16:00–23:00 five days a week but
+  // 13:00–23:00 on two evening-only days averages accordingly. Templates
+  // without soloTimes collapse to the v1.15.0 math exactly (hSolo ===
+  // hNormal, and cBoth + cSolo equals the old per-day-part open count).
   const norm = normalizeOpeningDays(openingDays);
-  let dayOpenCount = 0;
-  let eveOpenCount = 0;
+  let dayBothCount = 0;
+  let daySoloCount = 0;
+  let eveBothCount = 0;
+  let eveSoloCount = 0;
   for (let i = 0; i < WEEKDAY_KEYS.length; i++) {
     const e = norm[WEEKDAY_KEYS[i]];
-    if (e && e.day) dayOpenCount++;
-    if (e && e.evening) eveOpenCount++;
+    if (e && e.day) {
+      if (e.evening) dayBothCount++;
+      else daySoloCount++;
+    }
+    if (e && e.evening) {
+      if (e.day) eveBothCount++;
+      else eveSoloCount++;
+    }
   }
 
   let weightedTotal = 0;
@@ -803,11 +972,13 @@ export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles, openingDays)
     if (s.isDay && !wantDay) continue;
     if (!s.isDay && !wantEve) continue;
     if (!roleMatchesSlot(emp, s)) continue;
-    const h = hoursBetween(s.defaultStart, s.defaultEnd);
-    if (h <= 0) continue;
-    const weight = s.dayPart === "day" ? dayOpenCount : eveOpenCount;
-    weightedTotal += h * weight;
-    weightSum += weight;
+    const hNormal = hoursBetween(s.defaultStart, s.defaultEnd);
+    const hSolo = s.soloStart && s.soloEnd ? hoursBetween(s.soloStart, s.soloEnd) : hNormal;
+    if (hNormal <= 0 && hSolo <= 0) continue;
+    const cBoth = s.dayPart === "day" ? dayBothCount : eveBothCount;
+    const cSolo = s.dayPart === "day" ? daySoloCount : eveSoloCount;
+    weightedTotal += hNormal * cBoth + hSolo * cSolo;
+    weightSum += cBoth + cSolo;
   }
   return weightSum > 0 ? weightedTotal / weightSum : 0;
 }

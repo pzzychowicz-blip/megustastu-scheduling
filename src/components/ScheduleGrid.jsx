@@ -34,6 +34,7 @@ import {
   MAX_CONSECUTIVE_WORKING_DAYS_MIN,
   MAX_CONSECUTIVE_WORKING_DAYS_MAX,
   DEFAULT_DAY_REQUIRED_ROLES,
+  DEFAULT_PAST_WEEKS_LOCKED,
 } from "../lib/constants.js";
 import {
   startOfWeek,
@@ -55,6 +56,8 @@ import {
   isPastWeek,
   build28DayAggregates,
   buildCalendarMonthAggregates,
+  resolveConfigForWeek,
+  slotTimesForDate,
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
@@ -74,19 +77,11 @@ function isSectionBoundary(prevSlot, slot) {
   return prevSlot.section !== slot.section || prevSlot.dayPart !== slot.dayPart;
 }
 
-export default function ScheduleGrid({ shifts, employees, requests, shiftTemplate, settings, actions, isMobile }) {
-  // Active template — DB-customized values when present, defaults otherwise.
-  const template = shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
-
+export default function ScheduleGrid({ shifts, employees, requests, shiftTemplate, settings, configRevisions, actions, isMobile }) {
   // v0.9.0: role-pill visibility on schedule cells. Default ON when
   // /settings hasn't been written yet, OR when the field is missing
   // from an older saved object — only an explicit `false` hides them.
   const showRolePills = !settings || settings.showRolePills !== false;
-
-  // v0.12.0: opening-days filter. Settings.openingDays missing → fall back
-  // to DEFAULT_OPENING_DAYS (all true) so legacy /settings docs still
-  // render a full week.
-  const openingDays = (settings && settings.openingDays) || DEFAULT_OPENING_DAYS;
 
   // v1.0.0: auto-generator preference-strictness, read fresh on every
   // render. Generator passes it straight through to the algorithm.
@@ -143,23 +138,6 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       ? settings.dayRequiredRoles
       : DEFAULT_DAY_REQUIRED_ROLES;
 
-  // Slot definitions for the week (same every day until per-day overrides land).
-  // v1.11.0: pass dayRequiredRoles so the resulting slotDef.requiredRoles
-  // reflects the manager's per-section configuration. slotsForDay's bare-
-  // call behaviour is preserved (override is optional).
-  const slots = useMemo(
-    function () { return slotsForDay(template, dayRequiredRoles); },
-    [template, dayRequiredRoles]
-  );
-
-  // v1.4.0: slot lookup by key for the generator-results modal. Built off
-  // the same `slots` array so it stays in sync if the template changes.
-  const slotsByKey = useMemo(function () {
-    const m = {};
-    for (let i = 0; i < slots.length; i++) m[slots[i].key] = slots[i];
-    return m;
-  }, [slots]);
-
   // ── Week navigation ──────────────────────────────────────────────────
   // v1.5.0: persist the displayed week across refresh / Vite HMR within
   // the same browser tab via sessionStorage. The stored value is the
@@ -179,6 +157,49 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   useEffect(function () {
     try { sessionStorage.setItem("mgt-sched.weekStart", isoDate(weekStart)); } catch (_e) {}
   }, [weekStart]);
+
+  // ── Effective-dated config resolution (v15.1.0) ──────────────────────
+  // The focus week's openingDays + shiftTemplate resolve through the
+  // /configRevisions list (per-axis: latest revision effective at this
+  // week's Monday wins; no match → the live singletons act as the frozen
+  // base). EVERYTHING downstream — slots, dates, closed-cell rendering,
+  // generator props, ExportButton/PDF, fairness aggregates — reads the
+  // resolved values, so navigating across a revision boundary flips the
+  // whole grid to the configuration that applies to THAT week, and past
+  // weeks keep rendering as they did when they were current.
+  const resolvedConfig = useMemo(function () {
+    return resolveConfigForWeek(configRevisions, settings, shiftTemplate, weekStart);
+  }, [configRevisions, settings, shiftTemplate, weekStart]);
+
+  // Possibly-null resolved template — GenerateButton's `!shiftTemplate`
+  // disable semantics depend on the null surviving to the prop.
+  const resolvedShiftTemplate = resolvedConfig.shiftTemplate;
+
+  // Active template — resolved values when present, defaults otherwise.
+  const template = resolvedShiftTemplate || DEFAULT_SHIFT_TEMPLATE;
+
+  // v0.12.0: opening-days filter; v15.1.0: per-focus-week resolved value.
+  // Missing → DEFAULT_OPENING_DAYS (all open) so legacy docs render a
+  // full week.
+  const openingDays = resolvedConfig.openingDays || DEFAULT_OPENING_DAYS;
+
+  // Slot definitions for the week.
+  // v1.11.0: pass dayRequiredRoles so the resulting slotDef.requiredRoles
+  // reflects the manager's per-section configuration. slotsForDay's bare-
+  // call behaviour is preserved (override is optional).
+  const slots = useMemo(
+    function () { return slotsForDay(template, dayRequiredRoles); },
+    [template, dayRequiredRoles]
+  );
+
+  // v1.4.0: slot lookup by key for the generator-results modal. Built off
+  // the same `slots` array so it stays in sync if the template changes.
+  const slotsByKey = useMemo(function () {
+    const m = {};
+    for (let i = 0; i < slots.length; i++) m[slots[i].key] = slots[i];
+    return m;
+  }, [slots]);
+
   const dates = useMemo(
     function () { return visibleWeekDates(weekStart, openingDays); },
     [weekStart, openingDays]
@@ -196,7 +217,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // / Clear. Cells stay viewable; the manager can still inspect historical
   // assignments through the modal. Pill-highlight and jump-to-cell from
   // the generator-results modal also stay live (they're view-only).
-  const isReadOnly = isPastWeek(weekStart, todayIso);
+  //
+  // v15.1.0: the lockdown is switchable via /settings.pastWeeksLocked
+  // (Settings → Scheduling rules). Missing field reads as true so legacy
+  // docs keep the locked behaviour.
+  const pastWeeksLocked =
+    settings && typeof settings.pastWeeksLocked === "boolean"
+      ? settings.pastWeeksLocked
+      : DEFAULT_PAST_WEEKS_LOCKED;
+  const isReadOnly = pastWeeksLocked && isPastWeek(weekStart, todayIso);
 
   // v1.4.0: today's index within the displayed week (or -1 if today is
   // outside the visible range / closed). Consumed by the desktop grid's
@@ -232,13 +261,19 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // visibility surface below the request preview). Computed against
   // the FULL shifts map (not narrowed to the focus week) since the
   // window is wider than one week.
+  // v15.1.0 simplification (documented): the 28-day / calendar-month
+  // windows may straddle a config-revision boundary, but the aggregates
+  // use the FOCUS WEEK's resolved template + openingDays across the
+  // whole window. Only the fairness TARGETS are affected (actual hours
+  // come from the stored shift records, which are self-contained) —
+  // not worth per-date config resolution inside the aggregate loops.
   const monthlyAggregates = useMemo(function () {
     return build28DayAggregates({
       shifts: shifts,
       employees: employees,
       weekStart: weekStart,
       requests: requests,
-      shiftTemplate: shiftTemplate,
+      shiftTemplate: resolvedShiftTemplate,
       // v1.14.0 follow-up: per-employee avgShiftHours filters slots by
       // role + preference; the per-section day-role configuration drives
       // slotsForDay → roleMatchesSlot inside the helper.
@@ -247,7 +282,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       // often each day-part runs across the standing weekly schedule.
       openingDays: openingDays,
     });
-  }, [shifts, employees, weekStart, requests, shiftTemplate, dayRequiredRoles, openingDays]);
+  }, [shifts, employees, weekStart, requests, resolvedShiftTemplate, dayRequiredRoles, openingDays]);
 
   // v1.14.0: calendar-month aggregates per employee. Sibling to
   // monthlyAggregates (28-day rolling) — anchored to the calendar month
@@ -261,11 +296,11 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       employees: employees,
       weekStart: weekStart,
       requests: requests,
-      shiftTemplate: shiftTemplate,
+      shiftTemplate: resolvedShiftTemplate,
       dayRequiredRoles: dayRequiredRoles,
       openingDays: openingDays,
     });
-  }, [shifts, employees, weekStart, requests, shiftTemplate, dayRequiredRoles, openingDays]);
+  }, [shifts, employees, weekStart, requests, resolvedShiftTemplate, dayRequiredRoles, openingDays]);
 
   // ── Modal state ──────────────────────────────────────────────────────
   const [modalCell, setModalCell] = useState(null);  // { dateIso, slotDef, shift } or null
@@ -754,8 +789,20 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // ── Cell renderer (shared between layouts) ───────────────────────────
   function renderCell(date, slot) {
     const dIso = isoDate(date);
-    const existing = findShiftForSlot(weekShifts, dIso, slot);
-    const cell = deriveCellState(existing, slot);
+    // v15.1.0: effectivize the slot for THIS date — solo times apply on
+    // weekdays where the slot's day-part is the only open one. The
+    // effective slot flows into the cell display, the * override marker,
+    // and cellClick (→ ShiftFormModal's initial/reset times + the swap/
+    // move payload), so every downstream consumer sees per-date defaults
+    // without further changes. Same-reference shortcut when the times
+    // match keeps the common no-solo path allocation-free.
+    const effTimes = slotTimesForDate(slot, date, openingDays);
+    const effSlot =
+      effTimes.start !== slot.defaultStart || effTimes.end !== slot.defaultEnd
+        ? { ...slot, defaultStart: effTimes.start, defaultEnd: effTimes.end }
+        : slot;
+    const existing = findShiftForSlot(weekShifts, dIso, effSlot);
+    const cell = deriveCellState(existing, effSlot);
     const emp = cell.employeeId ? employees[cell.employeeId] : null;
     const empArchived = emp && emp.active === false;
 
@@ -787,8 +834,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       )
       : null;
 
+    // v15.1.0: compare against the per-date effective defaults — a cell
+    // stored at solo times on a solo weekday is NOT a manual override.
     const timeOverridden =
-      cell.hasRecord && (cell.start !== slot.defaultStart || cell.end !== slot.defaultEnd);
+      cell.hasRecord && (cell.start !== effSlot.defaultStart || cell.end !== effSlot.defaultEnd);
 
     // v1.7.0: visual states layered on top of the status palette.
     //   isHighlighted — this cell's employee is the currently lit pill.
@@ -847,7 +896,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         key={slot.key + "-" + dIso}
         type="button"
         className="mgt-hover-scale"
-        onClick={function () { cellClick(dIso, slot, existing); }}
+        onClick={function () { cellClick(dIso, effSlot, existing); }}
         style={{
           width: "100%",
           textAlign: "left",
@@ -959,7 +1008,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           nextWeekShifts={nextWeekShifts}
           employees={employees}
           requests={requests}
-          shiftTemplate={shiftTemplate}
+          shiftTemplate={resolvedShiftTemplate}
           openingDays={openingDays}
           strictPreference={strictPreference}
           minConsecutiveDaysOff={minConsecutiveDaysOff}
@@ -1122,6 +1171,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                 }}
               >
                 <div>{slot.humanLabel.replace(slot.sectionLabel + " ", "")}</div>
+                {/* v15.1.0: deliberately the FLAT template times — this is
+                    the reference column (mirrors the PDF row label). Solo
+                    weekdays show their per-date times inside the cells. */}
                 <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
                   {slot.defaultStart}–{slot.defaultEnd}
                 </div>
@@ -1507,7 +1559,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         shifts={shifts}
         requests={requests}
         weekStart={weekStart}
-        shiftTemplate={shiftTemplate}
+        shiftTemplate={resolvedShiftTemplate}
         dayRequiredRoles={dayRequiredRoles}
         openingDays={openingDays}
         highlightedEmployeeId={highlightedEmployeeId}
