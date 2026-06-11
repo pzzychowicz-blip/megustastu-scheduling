@@ -5,6 +5,97 @@ an entry. Newest first.
 
 ---
 
+## v15.1.0 — Effective-dated config revisions + solo shift times + past-week lock toggle
+
+**Date:** 2026-06-10
+
+**Versioning note:** the version jumps from 1.15.0 → **15.1.0** —
+realigned with the sibling MGT Bookings app's versioning pattern
+(user decision, session 25). Same MAJOR.MINOR.PATCH semantics from
+here on.
+
+**Behavioural change:** Only once the manager uses the new features.
+With zero `/configRevisions` records, no `soloTimes` on any template
+block, and no `pastWeeksLocked` field, every surface is byte-identical
+to v1.15.0 (verified by design: every new code path has an
+absent-value fallback that reproduces the old behaviour).
+
+**Files changed:** `constants.js`, `schedule-logic.js`,
+`usePersistence.js`, `generator.js`, `AppShell.jsx`,
+`ScheduleGrid.jsx`, `Settings.jsx`, `pdf-export.js` (comment-only),
+`App.jsx`, `CLAUDE.md`, `REFACTOR_LOG.md`.
+
+Three features:
+
+1. **Effective-dated config revisions.** Editing Opening days or the
+   FoH/Kitchen shift template no longer rewrites the live config —
+   it saves a `/configRevisions/{pushId}` record
+   (`{effectiveFrom: ISO Monday, openingDays?, shiftTemplate?}`,
+   per-axis partial) effective from the week picked in the new
+   "Changes take effect from" card at the top of Settings (default:
+   next Monday; clamped to ≥ current Monday). Past weeks keep
+   rendering under the configuration that applied back then: the new
+   `resolveConfigForWeek` helper resolves each axis independently
+   (latest revision ≤ the focus week's Monday; fallback = the live
+   singletons, now the *frozen base*). ScheduleGrid resolves once per
+   focus week and everything downstream (slots, visible dates,
+   generator, PDF/Export gating, fairness panels) inherits via
+   existing props. A "Scheduled changes" list in the card shows each
+   revision with axis badges and a Remove button. Aggregates
+   simplification (documented): the 28-day / calendar-month fairness
+   windows use the focus week's resolved config for targets.
+   Reset-to-defaults became a factory reset — it also deletes every
+   revision (leaving them would make the reset a no-op for weeks
+   at/after the earliest one).
+
+2. **Per-open-mode ("solo") shift times.** Template blocks gain an
+   optional `soloTimes` array (same length as `count`): the times a
+   slot runs on weekdays where its day-part is the ONLY open one
+   (e.g. evening staff starts earlier on evening-only days). New
+   `slotTimesForDate(slot, date, openingDays)` resolves per-date
+   defaults; ScheduleGrid effectivizes the slot at the renderCell
+   boundary (cell display, "*" override marker, and the modal /
+   swap-move payloads all inherit — zero ShiftFormModal changes);
+   the generator's new-shift payloads and Regenerate's
+   override-detection / reset targets use per-date times; the PDF
+   deliberately keeps the flat predicate so solo-day cells print
+   their actual hours two-line; `avgShiftHours` weights both-open vs
+   solo weekdays separately. Settings: per-block Toggle "Different
+   times on {day|evening}-only days" + per-slot "(solo)" rows;
+   `soloTimes` is OMITTED from the saved doc when off (never `[]` —
+   the v1.12.0 Firebase empty-array lesson). The v1.10.1 migration
+   helpers learned the axis as a pair: `materializeShiftTemplateBlock`
+   preserves valid soloTimes, `isBlockMigrated` flags only malformed
+   ones — the eager migration neither strips solo config nor loops.
+
+3. **Past-week lock toggle.** `/settings.pastWeeksLocked` (default
+   true) with an auto-save Toggle in Settings → Scheduling rules.
+   ScheduleGrid's v1.12.0 read-only gate became
+   `pastWeeksLocked && isPastWeek(...)` — OFF makes past weeks fully
+   editable (no banner, nav buttons live, modal editable).
+
+**Key design decisions:**
+- Per-axis partial revisions (not full snapshots) — editing one axis
+  never freezes a stale copy of the other into a later revision.
+- The live singletons become the frozen base; no data migration —
+  zero revisions ⇒ pre-v15.1.0 behaviour.
+- `operatingStart/End` stay live on /settings (validation window,
+  not a rendered surface).
+- Settings dirty baselines compare against the revision-resolved
+  config at the picker week; revision Remove re-seeds forms from a
+  locally-filtered map so the derived-dirty debounce can't resurrect
+  the deleted record before the Firebase echo lands.
+- No past-dated revisions from the UI (picker clamped to the current
+  Monday) — retroactive rewrites contradict the past-lock model.
+
+**Verification:** `npm run build` clean (main bundle 695.48 kB /
+gzip 176.71 kB). Manual QA on the DEV server: revision flow across
+week boundaries, solo times on an evening-only weekday (grid /
+modal / generator / PDF), past-week lock toggle both ways,
+zero-revision baseline.
+
+---
+
 ## v1.15.0 — Per-employee avgShiftHours + EmployeeFairnessModal scroll fix
 
 **Date:** 2026-05-28

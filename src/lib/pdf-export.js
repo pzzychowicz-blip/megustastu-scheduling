@@ -124,11 +124,17 @@ function buildTableBody(slots, dates, weekShifts, employees, openingDays) {
       // be defensive — a stale isWeekComplete call against an updated
       // shifts map could in theory let an empty cell slip through.
       if (!emp) return "";
-      // v1.9.0: time-override detection. Same predicate ScheduleGrid uses
-      // for the "*" cell-marker (ScheduleGrid.jsx — `timeOverridden`).
-      // When true, render a two-line cell so the manager reading the
-      // printed rota at the door can see the cell's actual start/end
-      // without cross-referencing the row header.
+      // v1.9.0: time-override detection. When true, render a two-line
+      // cell so the manager reading the printed rota at the door can see
+      // the cell's actual start/end without cross-referencing the row
+      // header.
+      // v15.1.0: this DELIBERATELY compares against the FLAT template
+      // defaults, not the per-date `slotTimesForDate` resolution the
+      // ScheduleGrid "*" marker uses. A cell on a solo (day-only /
+      // evening-only) weekday stored at its solo times then prints
+      // two-line with the actual hours — exactly what the printed sheet
+      // needs, since the row header shows the normal-times reference.
+      // Do NOT "fix" this to match ScheduleGrid's predicate.
       const timeOverridden =
         cell.start !== slot.defaultStart || cell.end !== slot.defaultEnd;
       if (!timeOverridden) return emp.name;

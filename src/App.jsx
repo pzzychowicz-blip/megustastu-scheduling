@@ -22,6 +22,8 @@
 //
 // __APP_SIGNATURE__ is the SINGLE source of truth for version, build, sha.
 // Schema: MAJOR.MINOR.PATCH. Bump patch on every meaningful change.
+// v15.1.0: versioning scheme realigned to match the sibling MGT Bookings
+// app's pattern — jumped from 1.15.0 to 15.1.0 (user decision, session 25).
 
 import { useEffect } from "react";
 import { S } from "./lib/constants.js";
@@ -39,9 +41,9 @@ import AppShell from "./components/AppShell.jsx";
 // deployment. Mirrors MGT Bookings' __APP_SIGNATURE__ structure.
 export const __APP_SIGNATURE__ = Object.freeze({
   app: "Me Gustas Tú Staff Scheduling System",
-  version: "1.15.0",
-  build: "2026-05-28",
-  sha: "per-employee-avg-shift-hours-modal-scroll",
+  version: "15.1.0",
+  build: "2026-06-10",
+  sha: "config-revisions-solo-times-past-week-lock",
   author: "Patryk Zychowicz",
   contact: "pz.zychowicz@gmail.com",
   copyright: "© 2026 Patryk Zychowicz. All rights reserved.",

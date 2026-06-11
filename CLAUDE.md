@@ -1332,6 +1332,118 @@ separate Firebase project, same UI conventions).
   trailing footnote stay OUTSIDE the scroller so they stay anchored
   to the visible sheet edges regardless of body height.
 
+- **Versioning scheme change (v15.1.0):** the version jumped from
+  1.15.0 → **15.1.0** to realign with the sibling MGT Bookings app's
+  versioning pattern (user decision, session 25). Same
+  MAJOR.MINOR.PATCH semantics from here on, just on the new number
+  line.
+
+- **Effective-dated config revisions (v15.1.0):** opening days +
+  shift template become versioned in time so PAST WEEKS KEEP
+  RENDERING under the configuration that applied back then. New
+  Firebase collection `/configRevisions/{pushId}` →
+  `{ effectiveFrom: "YYYY-MM-DD" (ISO Monday), openingDays?: {...},
+  shiftTemplate?: {...} }` — **per-axis partial** records (a revision
+  may carry one or both axes; partial-by-axis avoids the
+  full-snapshot update anomaly where editing one axis freezes a
+  stale copy of the other into a later revision). Resolution per
+  focus week, per axis independently:
+  `resolveConfigForWeek(configRevisions, settings, shiftTemplate,
+  weekStart)` in `schedule-logic.js` picks the latest revision with
+  `effectiveFrom <= the week's Monday` that carries the axis;
+  no match → the live singletons `/settings.openingDays` +
+  `/shiftTemplate` act as the **frozen base**. Zero revisions ⇒
+  byte-identical to pre-v15.1.0 (no migration). ScheduleGrid
+  resolves once per focus week (memo) and everything downstream
+  (slots, dates, generator props, ExportButton/PDF, fairness
+  aggregates, panels) inherits via existing props. Documented
+  simplification: the 28-day / calendar-month aggregates use the
+  focus week's resolved config across their whole window (targets
+  only — actual hours come from self-contained shift records).
+  Settings gains a **"Changes take effect from"** picker card ABOVE
+  the accordion (date input re-normalized to Monday via
+  `startOfWeek`; min/clamp = current Monday — no past-dated
+  revisions; default = NEXT Monday, reset on every mount) +
+  a **Scheduled changes** list (one row per revision: week range,
+  axis badges, Remove button with confirm; the Remove handler
+  re-seeds forms from a locally-filtered map so the derived-dirty
+  debounce can't resurrect the deleted revision before the Firebase
+  echo lands). The openingDays / template forms seed from the config
+  resolved AT the picker week and re-seed when it changes (mount-skip
+  ref; pending 800 ms debounce timers are cleared by
+  `effectiveFromIso` + `configRevisions` sitting in the save
+  effects' dep arrays). Dirty baselines compare against the
+  resolved-at-picker config, NOT the live singletons. The debounced
+  saves write `upsertRevisionAxis(axis, value)` — merge into the
+  existing record for that Monday (greatest-push-id tiebreak) or
+  push a fresh one; records always carry `effectiveFrom` + ≥1 axis.
+  `operatingStart`/`operatingEnd` stay LIVE on /settings (they're a
+  validation window, not a rendered surface) — the hours save
+  spreads `settings` so the singleton's openingDays is never
+  touched again (that's what freezes the base). `saveShiftTemplate`
+  remains in use only by Reset-to-defaults and the v1.10.1 eager
+  migration (both base-only). **Reset to defaults is a factory
+  reset:** it also deletes every configRevision (silent), resets
+  `pastWeeksLocked`, and moves the picker back to next Monday —
+  leaving revisions would make the reset a visible no-op for weeks
+  at/after the earliest revision.
+
+- **Per-open-mode ("solo") shift times (v15.1.0):** a template block
+  may carry an optional `soloTimes: [{start,end}, ...]` axis (same
+  length as `count`) — the times used on weekdays where the block's
+  day-part is the ONLY open one (the sibling day-part is closed in
+  the week's resolved openingDays; e.g. evening staff starts earlier
+  on evening-only days). Absent/null = feature off; the writer OMITS
+  the key entirely (never `[]` — Firebase strips empty arrays;
+  v1.12.0 lesson). `slotsForDay` attaches `soloStart`/`soloEnd` per
+  slot; the new `slotTimesForDate(slot, date, openingDays)` resolves
+  the per-date `{start, end}` (solo iff the date's weekday has the
+  slot's dayPart open AND the sibling closed). Consumers:
+  - **ScheduleGrid.renderCell** builds an *effective slot*
+    (`{...slot, defaultStart/End: per-date}`) used for the cell
+    display, the `*` override marker (a solo-day cell at solo times
+    is NOT an override), and `cellClick` — so ShiftFormModal's
+    initial/reset times and the swap/move payload inherit per-date
+    defaults with ZERO modal changes. The desktop left-label chip
+    deliberately keeps the flat template times (reference column).
+  - **generator.js** new-shift payloads default to
+    `slotTimesForDate(...)`; `wipeShiftsWithPolicy` gained an
+    `openingDays` param and `hasTimeOrRoleOverride(shift, slot,
+    effTimes)` compares against per-date times — "preserve times
+    OFF" resets solo cells to solo (not flat) times, and preserve-ON
+    no longer false-positive-preserves them.
+  - **pdf-export.js** DELIBERATELY keeps the flat-defaults predicate
+    — solo-day cells print two-line "Name + actual times" against
+    the normal-times row header (a feature; commented in the file).
+  - **avgShiftHours** splits each day-part's open-weekday count into
+    both-open vs solo weekdays and weights `hNormal×cBoth +
+    hSolo×cSolo` per eligible slot — no-solo templates collapse to
+    the v1.15.0 math exactly.
+  Settings UI: per (section, dayPart) block in FoH / Kitchen, a
+  Toggle "Different times on {day|evening}-only days"; ON seeds the
+  per-slot solo rows as a copy of the normal times, OFF stores null
+  in form state (stripped on save). `blockError` validates solo
+  entries with the same rules (+ "Solo shift N:" prefix);
+  `blockDirty` compares the solo axis; `onCountChange` grows /
+  truncates `soloTimes` in lockstep with `times`. The migration
+  helpers learned the axis together (load-bearing pair):
+  `materializeShiftTemplateBlock` preserves valid soloTimes
+  (length-synced, last-entry-extend) and omits the key otherwise;
+  `isBlockMigrated` flags only present-but-malformed soloTimes —
+  absent or valid stays migrated, so the v1.10.1 eager migration
+  neither strips solo config nor loops.
+
+- **Past-week lock toggle (v15.1.0):** `/settings.pastWeeksLocked`
+  (boolean; missing → true via `DEFAULT_PAST_WEEKS_LOCKED`). New
+  auto-save Toggle "Lock past weeks (read-only)" in Settings →
+  Scheduling rules. ScheduleGrid's gate became
+  `isReadOnly = pastWeeksLocked && isPastWeek(weekStart, todayIso)`
+  — single change point; the banner, all four nav-button disables,
+  the cellClick swap short-circuit, and ShiftFormModal's readOnly
+  all already key off `isReadOnly`. Default keeps the v1.12.0
+  locked behaviour; OFF makes past weeks fully editable (no banner,
+  buttons live).
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -1348,7 +1460,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v1.15.0)
+## File structure (current — v15.1.0)
 
 ```
 megustastu-scheduling/
@@ -1427,10 +1539,21 @@ megustastu-scheduling/
     │                                 v1.15.0: → 1.15.0, sha
     │                                 "per-employee-avg-shift-hours-
     │                                 modal-scroll".
+    │                                 v15.1.0: → 15.1.0, sha
+    │                                 "config-revisions-solo-times-
+    │                                 past-week-lock". Versioning scheme
+    │                                 realigned to MGT Bookings' pattern
+    │                                 (1.15.0 → 15.1.0 jump).
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
-    │   ├── usePersistence.js       Firebase RTDB reads + write-guarded CRUD
+    │   ├── usePersistence.js       Firebase RTDB reads + write-guarded CRUD.
+    │   │                           v15.1.0: + /configRevisions as a 6th
+    │   │                           path (4th collection). New state slice,
+    │   │                           loaded ref, subscription, ready-gate
+    │   │                           inclusion, and upsertConfigRevision /
+    │   │                           deleteConfigRevision actions via the
+    │   │                           existing collection CRUD machinery.
     │   ├── useThemeMode.js         dark/light resolver. Takes explicit
     │   │                           boolean (or undefined → follow system
     │   │                           pref live). Writes `data-theme` on
@@ -1522,6 +1645,9 @@ megustastu-scheduling/
     │   │                           path now goes through DEFAULT_DAY_REQUIRED_
     │   │                           ROLES; SECTIONS just lists per-section role
     │   │                           membership.
+    │   │                           v15.1.0: + DEFAULT_PAST_WEEKS_LOCKED
+    │   │                           (true) — fallback for
+    │   │                           /settings.pastWeeksLocked.
     │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
     │   │                           first) + cell-state derivation +
     │   │                           findRequestConflict + findSameDayShift
@@ -1734,6 +1860,29 @@ megustastu-scheduling/
     │   │                           closed day-part → weight 0 → slots
     │   │                           drop out. The 3 aggregate helpers
     │   │                           thread args.openingDays in too.
+    │   │                           v15.1.0: + resolveConfigForWeek(
+    │   │                           configRevisions, settings,
+    │   │                           shiftTemplate, weekStart) — per-axis
+    │   │                           revision resolution with the live
+    │   │                           singletons as the frozen base.
+    │   │                           + slotTimesForDate(slot, date,
+    │   │                           openingDays) — per-date {start,end};
+    │   │                           solo times win when the slot's
+    │   │                           day-part is the only open one that
+    │   │                           weekday. slotsForDay attaches
+    │   │                           soloStart/soloEnd per slot from
+    │   │                           block.soloTimes[i].
+    │   │                           materializeShiftTemplateBlock
+    │   │                           preserves valid soloTimes (length-
+    │   │                           synced) and omits the key otherwise;
+    │   │                           isBlockMigrated flags only present-
+    │   │                           but-malformed soloTimes (absent or
+    │   │                           valid stays migrated — eager-
+    │   │                           migration loop guard). avgShiftHours
+    │   │                           weighting split per day-part into
+    │   │                           both-open vs solo weekday counts
+    │   │                           (hNormal×cBoth + hSolo×cSolo);
+    │   │                           no-solo templates byte-identical.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -1755,6 +1904,13 @@ megustastu-scheduling/
     │   │                           (left column) and the per-cell
     │   │                           exception. Same predicate
     │   │                           ScheduleGrid uses for the "*" marker.
+    │   │                           v15.1.0 (comment-only): the two-line
+    │   │                           predicate DELIBERATELY stays on the
+    │   │                           flat template defaults (ScheduleGrid's
+    │   │                           "*" switched to per-date solo-aware
+    │   │                           comparison) — solo-day cells print
+    │   │                           their actual hours against the
+    │   │                           normal-times row header.
     │   └── generator.js            v1.0.0: NEW. Pure greedy auto-generator.
     │                               generateWeek({weekStart, weekShifts,
     │                               employees, requests, shiftTemplate,
@@ -1975,6 +2131,17 @@ megustastu-scheduling/
     │                               at once. Recent days appear in both
     │                               windows so recency naturally weights
     │                               more heavily.
+    │                               v15.1.0: per-date times. New-shift
+    │                               payloads default to slotTimesForDate(
+    │                               slot, date, openingDays) instead of
+    │                               slot.defaultStart/End. wipeShiftsWith
+    │                               Policy gained an openingDays param;
+    │                               hasTimeOrRoleOverride(shift, slot,
+    │                               effTimes) now compares against the
+    │                               per-date effective times, and the
+    │                               policy reset targets use them too —
+    │                               solo-day shifts at solo times are no
+    │                               longer false-positive "overrides".
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
@@ -2018,6 +2185,13 @@ megustastu-scheduling/
         │                           isSilent=true flag suppresses any
         │                           refusal banner (this is an auto-
         │                           effect, not user-initiated).
+        │                           v15.1.0: threads data.configRevisions
+        │                           to <ScheduleGrid>, and configRevisions
+        │                           + upsertConfigRevision +
+        │                           deleteConfigRevision to <Settings>.
+        │                           Eager-migration effect unchanged —
+        │                           it only ever touches the base
+        │                           /shiftTemplate singleton.
         ├── EmployeesList.jsx       roster list + Add button.
         │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.3.0: + small "Priority" badge
@@ -2356,6 +2530,27 @@ megustastu-scheduling/
         │                           forwarded to <MonthlyFairnessPanel>.
         │                           + slots passed to <ClearButton> for
         │                           the modal's "By shift row" group.
+        │                           v15.1.0: + configRevisions prop. New
+        │                           resolvedConfig memo (resolveConfigFor
+        │                           Week on [configRevisions, settings,
+        │                           shiftTemplate, weekStart]) — template
+        │                           + openingDays consts and the slots /
+        │                           slotsByKey memos moved BELOW the
+        │                           weekStart state so the resolution can
+        │                           key on the focus week. GenerateButton
+        │                           + MonthlyFairnessPanel + both
+        │                           aggregate memos receive the resolved
+        │                           (possibly-null) template; aggregates
+        │                           use the focus week's config across
+        │                           their whole window (documented
+        │                           simplification). isReadOnly gained
+        │                           the pastWeeksLocked gate. renderCell
+        │                           builds a per-date effective slot via
+        │                           slotTimesForDate (display, "*"
+        │                           marker, cellClick → modal + swap/move
+        │                           payloads all inherit); the desktop
+        │                           left-label chip keeps flat template
+        │                           times (reference column).
         ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
         │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.1.0: picker honours
@@ -2566,6 +2761,39 @@ megustastu-scheduling/
         │                           App.jsx propagates here automatically.
         │                           Mirrors MGT Bookings' Settings →
         │                           General tab footer placement.
+        │                           v15.1.0: effective-dated config. +
+        │                           configRevisions / upsertConfigRevision
+        │                           / deleteConfigRevision props. New
+        │                           "Changes take effect from" picker card
+        │                           ABOVE the accordion (date input
+        │                           normalized to Monday, clamped to ≥
+        │                           current Monday, default next Monday)
+        │                           + Scheduled-changes list (axis badges
+        │                           + Remove with confirm; Remove re-seeds
+        │                           forms from a locally-filtered map so
+        │                           the debounce can't resurrect the
+        │                           revision). openingDays + template
+        │                           forms seed from resolveConfigForWeek
+        │                           at the picker week and re-seed on
+        │                           picker change (mount-skip +
+        │                           reset-skip refs); dirty baselines
+        │                           compare against the resolved-at-
+        │                           picker config. Auto-save split:
+        │                           hours-only → live /settings (spread
+        │                           preserves the frozen openingDays
+        │                           base); openingDays + template →
+        │                           upsertRevisionAxis (merge per
+        │                           Monday). + solo-times UI per FoH /
+        │                           Kitchen block (Toggle + per-slot
+        │                           "(solo)" rows; blockError /
+        │                           blockDirty / onCountChange extended;
+        │                           serializeTemplateForSave omits the
+        │                           key when off). + "Lock past weeks"
+        │                           Toggle in Scheduling rules
+        │                           (pastWeeksLocked, auto-save).
+        │                           handleReset = factory reset: deletes
+        │                           all revisions (silent), resets
+        │                           pastWeeksLocked + picker.
         ├── MonthlyFairnessPanel.jsx v1.12.0: NEW. Rolling 28-day fairness
         │                           summary, rendered below
         │                           <WeeklyRequestsPreview>. One row per
@@ -3146,15 +3374,34 @@ megustastu-scheduling/
       active }
 
 /shiftTemplate                                              // v1.9.0 shape
-  → { foh:     { day:     { count, times: [{start,end},...] },
-                 evening: { count, times: [{start,end},...] } },
-      kitchen: { day:     { count, times: [{start,end},...] },
-                 evening: { count, times: [{start,end},...] } } }
+  → { foh:     { day:     { count, times: [{start,end},...],
+                            soloTimes?: [{start,end},...] },   // v15.1.0
+                 evening: { count, times: [...], soloTimes?: [...] } },
+      kitchen: { day:     { count, times: [...], soloTimes?: [...] },
+                 evening: { count, times: [...], soloTimes?: [...] } } }
    // Per-slot times — each shift in a section/dayPart has its own
    // start/end. `times.length === count`. Pre-v1.9.0 docs with the
    // legacy `{start,end,count,secondPersonStart?}` shape still read
    // correctly via the slotsForDay fallback; Settings rewrites to the
    // new shape on the next Save.
+   // v15.1.0: optional soloTimes (same length as count) — alternate
+   // times used on weekdays where this day-part is the ONLY open one.
+   // Absent = feature off (the writer omits the key; never []).
+   // v15.1.0: this singleton is the FROZEN BASE — edits in Settings
+   // write /configRevisions records instead. Only Reset-to-defaults
+   // and the v1.10.1 eager migration still write here.
+
+/configRevisions/{revisionId}                                // v15.1.0
+  → { effectiveFrom: "YYYY-MM-DD",       // ISO Monday (normalized via
+                                          // startOfWeek on write)
+      openingDays?: { mon: {day,evening}, ... },  // axis 1 (optional)
+      shiftTemplate?: { foh: {...}, kitchen: {...} } } // axis 2 (optional)
+   // PER-AXIS PARTIAL revisions — a record carries one or both axes,
+   // always ≥1. Resolution per focus week, per axis independently:
+   // latest effectiveFrom <= the week's Monday wins; no match → the
+   // live singletons act as the frozen base (zero revisions =
+   // pre-v15.1.0 behaviour). See resolveConfigForWeek in
+   // schedule-logic.js. One record per Monday (Settings merges).
 
 /shifts/{shiftId}
   → { date, section: "foh"|"kitchen", dayPart: "day"|"evening",
@@ -3208,7 +3455,7 @@ megustastu-scheduling/
         foh:     { Bar: bool, Floor: bool },          // per-section per-role
         kitchen: { Chef: bool, Plating: bool,         // boolean object.
                    Pot: bool }                        // Default: {foh: {Bar:
-      } }                                            //  false, Floor: false},
+      },                                             //  false, Floor: false},
                                                      //  kitchen: {Chef: true,
                                                      //  Plating: false, Pot:
                                                      //  false}}. Firebase
@@ -3221,6 +3468,16 @@ megustastu-scheduling/
                                                      // v1.11.0 array shape
                                                      // still readable via
                                                      // resolveDayRequiredRoles.
+      pastWeeksLocked?: boolean }                    // v15.1.0 — default true.
+                                                     // When false, past weeks
+                                                     // stay fully editable on
+                                                     // the Schedule tab (the
+                                                     // v1.12.0 read-only gate
+                                                     // is bypassed).
+   // v15.1.0: settings.openingDays is the FROZEN BASE for the
+   // /configRevisions resolution — Settings edits write revisions,
+   // not this field. operatingStart/End + every other field above
+   // remain live.
 ```
 
 ---

@@ -230,6 +230,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         requests={data.requests}
         shiftTemplate={data.shiftTemplate}
         settings={data.settings}
+        configRevisions={data.configRevisions}
         actions={actions}
         isMobile={isMobile}
       />
@@ -262,6 +263,9 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         saveShiftTemplate={actions.saveShiftTemplate}
         settings={data.settings}
         saveSettings={actions.saveSettings}
+        configRevisions={data.configRevisions}
+        upsertConfigRevision={actions.upsertConfigRevision}
+        deleteConfigRevision={actions.deleteConfigRevision}
         isMobile={isMobile}
         isDark={isDark}
       />

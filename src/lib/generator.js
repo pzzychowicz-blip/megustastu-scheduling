@@ -60,6 +60,8 @@ import {
   isSlotOpenOnDate,
   holidayDaysInWeekByEmployee,
   roleMatchesSlot,
+  slotTimesForDate,
+  parseIsoDate,
 } from "./schedule-logic.js";
 import { DEFAULT_WORKING_DAYS } from "./constants.js";
 
@@ -423,10 +425,17 @@ function buildCandidates(
 //
 // Cleared records carry the v1.4.0 snapshot shape so GenerateResultsModal
 // can still render each row after Firebase deletes the record.
-function hasTimeOrRoleOverride(shift, slot) {
+//
+// v15.1.0: comparison runs against the PER-DATE effective times
+// (`effTimes` from slotTimesForDate), not the flat template defaults.
+// A shift on an evening-only weekday stored at the template's solo
+// times is the per-date DEFAULT, not a manual override — without this,
+// "preserve times" would false-positive-preserve every solo cell and
+// "preserve times OFF" would reset solo cells to the wrong (flat) times.
+function hasTimeOrRoleOverride(shift, slot, effTimes) {
   if (!shift || !slot) return false;
-  if (shift.start && shift.start !== slot.defaultStart) return true;
-  if (shift.end && shift.end !== slot.defaultEnd) return true;
+  if (shift.start && shift.start !== effTimes.start) return true;
+  if (shift.end && shift.end !== effTimes.end) return true;
   // Day shifts always have role=null per design — no override possible.
   if (!slot.isDay && shift.role && shift.role !== slot.defaultRole) return true;
   return false;
@@ -445,7 +454,7 @@ function buildClearedRecord(id, shift, slotKey) {
   };
 }
 
-function wipeShiftsWithPolicy(workingShifts, slotsByKey, policy) {
+function wipeShiftsWithPolicy(workingShifts, slotsByKey, policy, openingDays) {
   const preserveTimes = Boolean(policy && policy.preserveTimes);
   const preserveAssignments = Boolean(policy && policy.preserveAssignments);
 
@@ -475,14 +484,18 @@ function wipeShiftsWithPolicy(workingShifts, slotsByKey, policy) {
     }
 
     const defaultRole = slot.isDay ? null : (slot.defaultRole || null);
-    const hasOverride = hasTimeOrRoleOverride(s, slot);
+    // v15.1.0: the per-date effective times (solo times on a weekday
+    // where this slot's day-part is the only open one) are the baseline
+    // for both override detection AND the reset targets.
+    const effTimes = slotTimesForDate(slot, parseIsoDate(s.date), openingDays);
+    const hasOverride = hasTimeOrRoleOverride(s, slot, effTimes);
     const hasEmployee = Boolean(s.employeeId);
 
     // Resolve target fields under policy, per axis.
     const keepTimes = preserveTimes && hasOverride;
     const keepEmployee = preserveAssignments && hasEmployee;
-    const nextStart = keepTimes ? s.start : slot.defaultStart;
-    const nextEnd = keepTimes ? s.end : slot.defaultEnd;
+    const nextStart = keepTimes ? s.start : effTimes.start;
+    const nextEnd = keepTimes ? s.end : effTimes.end;
     const nextRole = keepTimes ? s.role : defaultRole;
     const nextEmpId = keepEmployee ? s.employeeId : null;
 
@@ -649,7 +662,7 @@ export function generateWeek(args) {
   let pendingOverrides = {};
   let previousAssignees = {};
   if (mode === "regenerate") {
-    const wipeResult = wipeShiftsWithPolicy(workingShifts, slotsByKey, policy);
+    const wipeResult = wipeShiftsWithPolicy(workingShifts, slotsByKey, policy, openingDays);
     clearedRecords = wipeResult.cleared;
     modifiedRecords = wipeResult.modified;
     pendingOverrides = wipeResult.pendingOverrides;
@@ -737,14 +750,18 @@ export function generateWeek(args) {
     const role = override
       ? override.role
       : (slot.isDay ? null : (resolveEveningRole(winner, slot) || null));
+    // v15.1.0: new records default to the PER-DATE effective times —
+    // solo times on weekdays where this slot's day-part is the only
+    // open one, flat template times everywhere else.
+    const effTimes = slotTimesForDate(slot, entry.date, openingDays);
     const payload = {
       date: entry.dateIso,
       section: slot.section,
       dayPart: slot.dayPart,
       slotIndex: slot.slotIndex,
       role: role,
-      start: override ? override.start : slot.defaultStart,
-      end: override ? override.end : slot.defaultEnd,
+      start: override ? override.start : effTimes.start,
+      end: override ? override.end : effTimes.end,
       employeeId: winner.id,
     };
     newShifts.push(payload);

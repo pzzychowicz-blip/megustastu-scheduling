@@ -50,12 +50,30 @@
 //       carrying an error force-opens so the validator messages become
 //       visible (the user can't see errors in collapsed sections).
 //
+// v15.1.0: effective-dated config. Opening days + shift template edits no
+//          longer write the live singletons — they save to a
+//          /configRevisions record keyed by the "Changes take effect from"
+//          week picked at the top of the tab (default: next Monday). The
+//          singletons stay frozen as the historical base, so past weeks
+//          keep rendering under the configuration that applied back then.
+//          Operating hours (start/end) stay live — they're a validation
+//          window, not a rendered surface. Also: per-block solo times
+//          ("different times when this day-part is the only open one")
+//          + the past-week lock toggle in Scheduling rules.
+//
 // Props:
-//   shiftTemplate     (object|null)  — from usePersistence; null on first run
-//   saveShiftTemplate (fn)           — from actions
-//   settings          (object|null)  — from usePersistence; null on first run
-//   saveSettings      (fn)           — from actions (v0.7.0)
-//   isMobile          (bool)         — viewport flag for the row layout
+//   shiftTemplate        (object|null)  — from usePersistence; null on first run.
+//                                         v15.1.0: the frozen BASE template —
+//                                         forms seed from the revision-resolved
+//                                         value at the effective-from week.
+//   saveShiftTemplate    (fn)           — from actions. v15.1.0: only used by
+//                                         Reset to defaults (factory base write).
+//   settings             (object|null)  — from usePersistence; null on first run
+//   saveSettings         (fn)           — from actions (v0.7.0)
+//   configRevisions      (object)       — { [id]: revision } from usePersistence (v15.1.0)
+//   upsertConfigRevision (fn)           — from actions (v15.1.0)
+//   deleteConfigRevision (fn)           — from actions (v15.1.0)
+//   isMobile             (bool)         — viewport flag for the row layout
 //
 // SECTIONS.foh.label / .kitchen.label drive the card titles so renaming
 // a section in constants.js propagates automatically.
@@ -78,6 +96,7 @@ import {
   MAX_CONSECUTIVE_WORKING_DAYS_MIN,
   MAX_CONSECUTIVE_WORKING_DAYS_MAX,
   DEFAULT_DAY_REQUIRED_ROLES,
+  DEFAULT_PAST_WEEKS_LOCKED,
   WEEKDAYS,
 } from "../lib/constants.js";
 import {
@@ -85,6 +104,12 @@ import {
   materializeShiftTemplate,
   materializeShiftTemplateBlock as materializeBlock,
   resolveDayRequiredRoles,
+  resolveConfigForWeek,
+  startOfWeek,
+  addDays,
+  isoDate,
+  parseIsoDate,
+  formatWeekRange,
 } from "../lib/schedule-logic.js";
 import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 // v1.14.0: footer credit reads version directly from the single source
@@ -169,6 +194,32 @@ function blockError(block, hours) {
       }
     }
   }
+  // v15.1.0: solo times (per-open-mode). Form state holds `soloTimes:
+  // null` when the feature is off for the block — only a non-null value
+  // gets validated, with the same rules as the normal per-slot times.
+  if (block.soloTimes !== null && block.soloTimes !== undefined) {
+    if (!Array.isArray(block.soloTimes) || block.soloTimes.length !== block.count) {
+      return "Each solo shift needs its own start and end times.";
+    }
+    for (let i = 0; i < block.soloTimes.length; i++) {
+      const t = block.soloTimes[i];
+      const prefix = "Solo " + (block.soloTimes.length > 1 ? "shift " + (i + 1) : "shift") + ": ";
+      if (!t || !t.start || !t.end) {
+        return prefix + "start and end times required.";
+      }
+      if (t.start >= t.end) {
+        return prefix + "end time must be after start.";
+      }
+      if (hours && hours.operatingStart && hours.operatingEnd) {
+        if (t.start < hours.operatingStart) {
+          return prefix + "start cannot be earlier than operating start (" + hours.operatingStart + ").";
+        }
+        if (t.end > hours.operatingEnd) {
+          return prefix + "end cannot be later than operating end (" + hours.operatingEnd + ").";
+        }
+      }
+    }
+  }
   return null;
 }
 
@@ -235,7 +286,52 @@ function blockDirty(a, b) {
     if ((a.times[i] && a.times[i].start) !== (bMat.times[i] && bMat.times[i].start)) return true;
     if ((a.times[i] && a.times[i].end) !== (bMat.times[i] && bMat.times[i].end)) return true;
   }
+  // v15.1.0: solo-times axis. Presence mismatch (toggled on/off) is dirty;
+  // both present → per-entry start/end compare. The form holds `null` for
+  // off; saved docs OMIT the key — both normalize to "no array" here.
+  const aSolo = Array.isArray(a.soloTimes) ? a.soloTimes : null;
+  const bSolo = Array.isArray(bMat.soloTimes) ? bMat.soloTimes : null;
+  if (Boolean(aSolo) !== Boolean(bSolo)) return true;
+  if (aSolo && bSolo) {
+    if (aSolo.length !== bSolo.length) return true;
+    for (let i = 0; i < aSolo.length; i++) {
+      if ((aSolo[i] && aSolo[i].start) !== (bSolo[i] && bSolo[i].start)) return true;
+      if ((aSolo[i] && aSolo[i].end) !== (bSolo[i] && bSolo[i].end)) return true;
+    }
+  }
   return false;
+}
+
+// v15.1.0: serialize the form template for a revision write. Deep-copies
+// every block; `soloTimes: null` (feature off) is stripped to an OMITTED
+// key — never write null/[] to Firebase (RTDB strips empty arrays, and an
+// explicit null would round-trip as a missing key anyway; omitting keeps
+// the doc canonical with materializeShiftTemplateBlock's output).
+function serializeTemplateForSave(formTemplate) {
+  function serializeBlock(block) {
+    const out = {
+      count: block.count,
+      times: (Array.isArray(block.times) ? block.times : []).map(function (t) {
+        return { start: t.start, end: t.end };
+      }),
+    };
+    if (Array.isArray(block.soloTimes) && block.soloTimes.length > 0) {
+      out.soloTimes = block.soloTimes.map(function (t) {
+        return { start: t.start, end: t.end };
+      });
+    }
+    return out;
+  }
+  return {
+    foh: {
+      day: serializeBlock(formTemplate.foh.day),
+      evening: serializeBlock(formTemplate.foh.evening),
+    },
+    kitchen: {
+      day: serializeBlock(formTemplate.kitchen.day),
+      evening: serializeBlock(formTemplate.kitchen.evening),
+    },
+  };
 }
 
 // Lexicographic string compare on "HH:MM" works because the format is
@@ -247,15 +343,47 @@ export default function Settings({
   saveShiftTemplate,
   settings,
   saveSettings,
+  configRevisions,
+  upsertConfigRevision,
+  deleteConfigRevision,
   isMobile,
   isDark,
 }) {
-  // ── Seed local form state ONCE on mount ────────────────────────────────
+  // ── Effective-from week picker (v15.1.0) ───────────────────────────────
+  // Opening-day + shift-template edits are saved as a /configRevisions
+  // record effective from this week's Monday. Default: NEXT Monday — the
+  // current (already planned) week stays untouched unless the manager
+  // explicitly picks it. Past Mondays are clamped out: a retroactive
+  // revision would rewrite how locked historical weeks render, which is
+  // exactly what the revision system exists to prevent.
+  const currentMondayIso = isoDate(startOfWeek(new Date()));
+  const [effectiveFromIso, setEffectiveFromIso] = useState(function () {
+    return isoDate(addDays(startOfWeek(new Date()), 7));
+  });
+
+  function onEffectiveFromChange(e) {
+    const raw = e.target.value;
+    if (!raw) return;
+    const parsed = parseIsoDate(raw);
+    if (isNaN(parsed.getTime())) return;
+    let monday = isoDate(startOfWeek(parsed));
+    if (monday < currentMondayIso) monday = currentMondayIso;
+    setEffectiveFromIso(monday);
+  }
+
+  // ── Seed local form state ──────────────────────────────────────────────
   // We deliberately do NOT re-sync from props after mount. Manager-only
   // app, single tab editing — if the prop changes mid-edit it's because
   // we just saved, and the form already matches.
+  //
+  // v15.1.0: forms seed from the config RESOLVED at the effective-from
+  // week (revisions falling back to the live singletons as the frozen
+  // base) and re-seed whenever the picker changes — see the effect below.
   const [form, setForm] = useState(function () {
-    return cloneTemplate(shiftTemplate || DEFAULT_SHIFT_TEMPLATE);
+    const resolved = resolveConfigForWeek(
+      configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+    );
+    return cloneTemplate(resolved.shiftTemplate || DEFAULT_SHIFT_TEMPLATE);
   });
 
   // v0.7.0: Operating-hours form. Falls back to the OPERATING_HOURS
@@ -272,13 +400,49 @@ export default function Settings({
   const [hoursDirty, setHoursDirty] = useState(false);
 
   // v0.12.0: opening-days local form. Falls back to DEFAULT_OPENING_DAYS
-  // when /settings has no openingDays yet — same fallback as the rest of
-  // the app uses on read, so the toggle row reflects the EFFECTIVE state.
+  // when nothing is configured yet — same fallback as the rest of the app
+  // uses on read, so the toggle row reflects the EFFECTIVE state.
   // v1.3.0: always normalized to the per-day-part shape (legacy boolean
   // docs round-trip through `normalizeOpeningDays`).
+  // v15.1.0: seeded from the revision-resolved value at the effective-from
+  // week, like the template form above.
   const [openingDaysForm, setOpeningDaysForm] = useState(function () {
-    return normalizeOpeningDays((settings && settings.openingDays) || DEFAULT_OPENING_DAYS);
+    const resolved = resolveConfigForWeek(
+      configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+    );
+    return normalizeOpeningDays(resolved.openingDays || DEFAULT_OPENING_DAYS);
   });
+
+  // v15.1.0: re-seed both versioned forms from the config resolved at the
+  // newly-picked week. Mount-skip ref: the useState initializers above
+  // already seeded for the initial picker value. Any edits pending inside
+  // the 800 ms debounce window when the picker changes are dropped — the
+  // save effects carry `effectiveFromIso` in their dep arrays, so their
+  // cleanup clears the timers in the same commit, before this re-seed.
+  function seedFormsFor(iso, revMapOverride) {
+    const resolved = resolveConfigForWeek(
+      revMapOverride || configRevisions, settings, shiftTemplate, parseIsoDate(iso)
+    );
+    setForm(cloneTemplate(resolved.shiftTemplate || DEFAULT_SHIFT_TEMPLATE));
+    setOpeningDaysForm(normalizeOpeningDays(resolved.openingDays || DEFAULT_OPENING_DAYS));
+  }
+  const effectiveFromSeededRef = useRef(false);
+  // handleReset sets this before moving the picker: it has ALREADY seeded
+  // the forms to defaults, and the configRevisions prop is stale at that
+  // moment (the delete echoes haven't landed) — a re-seed here would
+  // resurrect just-deleted revision values into the form.
+  const skipNextReseedRef = useRef(false);
+  useEffect(function () {
+    if (!effectiveFromSeededRef.current) {
+      effectiveFromSeededRef.current = true;
+      return;
+    }
+    if (skipNextReseedRef.current) {
+      skipNextReseedRef.current = false;
+      return;
+    }
+    seedFormsFor(effectiveFromIso);
+  }, [effectiveFromIso]);
 
   // v1.3.0: which weekday's open-days popover is currently expanded.
   // `null` means closed. Outside click + Esc close it. Anchored under
@@ -380,11 +544,27 @@ export default function Settings({
           }
         }
       }
+      // v15.1.0: the soloTimes array (when the feature is on) grows /
+      // truncates in lockstep with `times`, same last-entry-extend rule.
+      let newSolo = Array.isArray(block.soloTimes) ? block.soloTimes : null;
+      if (newSolo && Number.isFinite(parsed) && parsed >= 1) {
+        const targetLen = parsed;
+        if (newSolo.length > targetLen) {
+          newSolo = newSolo.slice(0, targetLen);
+        } else if (newSolo.length < targetLen) {
+          const fallback = newSolo[newSolo.length - 1]
+            || { start: OPERATING_HOURS.start, end: OPERATING_HOURS.end };
+          newSolo = newSolo.slice();
+          while (newSolo.length < targetLen) {
+            newSolo.push({ start: fallback.start, end: fallback.end });
+          }
+        }
+      }
       return {
         ...prev,
         [section]: {
           ...prev[section],
-          [dayPart]: { ...block, count: parsed, times: newTimes },
+          [dayPart]: { ...block, count: parsed, times: newTimes, soloTimes: newSolo },
         },
       };
     });
@@ -405,6 +585,48 @@ export default function Settings({
         [section]: {
           ...prev[section],
           [dayPart]: { ...block, times: newTimes },
+        },
+      };
+    });
+  }
+
+  // v15.1.0: per-slot SOLO time setter — clone of onSlotTimeChange against
+  // the soloTimes array. Only reachable while the solo toggle is on.
+  function onSoloTimeChange(section, dayPart, slotIndex, field, e) {
+    const value = e.target.value;
+    setForm(function (prev) {
+      const block = prev[section][dayPart];
+      const oldSolo = Array.isArray(block.soloTimes) ? block.soloTimes : [];
+      const newSolo = oldSolo.slice();
+      const cur = newSolo[slotIndex] || { start: OPERATING_HOURS.start, end: OPERATING_HOURS.end };
+      newSolo[slotIndex] = { ...cur, [field]: value };
+      return {
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [dayPart]: { ...block, soloTimes: newSolo },
+        },
+      };
+    });
+  }
+
+  // v15.1.0: solo-times feature toggle per block. ON seeds the solo rows
+  // as a copy of the normal times (the manager then adjusts the ones that
+  // differ); OFF stores null in form state — serializeTemplateForSave
+  // strips it to an omitted key on save.
+  function onSoloToggle(section, dayPart, nextOn) {
+    setForm(function (prev) {
+      const block = prev[section][dayPart];
+      const nextSolo = nextOn
+        ? (Array.isArray(block.times) ? block.times : []).map(function (t) {
+            return { start: t.start, end: t.end };
+          })
+        : null;
+      return {
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [dayPart]: { ...block, soloTimes: nextSolo },
         },
       };
     });
@@ -526,6 +748,68 @@ export default function Settings({
     saveSettings({ ...(settings || {}), maxConsecutiveWorkingDays: n });
   }
 
+  // v15.1.0: past-week lockdown toggle. Missing field reads as true so
+  // legacy /settings docs keep the v1.12.0 locked behaviour. ScheduleGrid
+  // reads the same field with the same fallback for its isReadOnly gate.
+  const pastWeeksLocked =
+    settings && typeof settings.pastWeeksLocked === "boolean"
+      ? settings.pastWeeksLocked
+      : DEFAULT_PAST_WEEKS_LOCKED;
+  function onPastWeeksLockedChange(nextValue) {
+    saveSettings({ ...(settings || {}), pastWeeksLocked: nextValue });
+  }
+
+  // ── Config-revision write helpers (v15.1.0) ────────────────────────────
+  // One revision record per effective-from Monday. The debounced saves
+  // below call upsertRevisionAxis with whichever axis went dirty; an
+  // existing record for that Monday is MERGED (the other axis rides along
+  // untouched), otherwise a fresh record is pushed. Records always carry
+  // `effectiveFrom` + at least one axis — collections have no empty-object
+  // write guard, so this is where the invariant is enforced.
+  function findRevisionIdForMonday(iso) {
+    const map = configRevisions || {};
+    let bestId = null;
+    Object.keys(map).forEach(function (id) {
+      const rev = map[id];
+      if (rev && rev.effectiveFrom === iso) {
+        if (bestId === null || id > bestId) bestId = id;
+      }
+    });
+    return bestId;
+  }
+  function upsertRevisionAxis(axisKey, value) {
+    const existingId = findRevisionIdForMonday(effectiveFromIso);
+    if (existingId) {
+      upsertConfigRevision({
+        ...(configRevisions[existingId] || {}),
+        id: existingId,
+        effectiveFrom: effectiveFromIso,
+        [axisKey]: value,
+      });
+      return;
+    }
+    upsertConfigRevision({ effectiveFrom: effectiveFromIso, [axisKey]: value });
+  }
+  // Remove a scheduled change. The immediate re-seed runs against a
+  // LOCALLY filtered map — re-seeding from the live prop would re-seed
+  // the just-deleted values (the Firebase echo hasn't landed yet), leave
+  // the form dirty against the post-delete baseline, and the debounced
+  // save would silently re-create the revision.
+  function handleRemoveRevision(id) {
+    const rev = (configRevisions || {})[id];
+    if (!rev) return;
+    const ok = window.confirm(
+      "Remove the scheduled change for the week of " +
+      formatWeekRange(parseIsoDate(rev.effectiveFrom)) +
+      "? Weeks from that Monday fall back to the previous configuration."
+    );
+    if (!ok) return;
+    deleteConfigRevision(id);
+    const filtered = { ...(configRevisions || {}) };
+    delete filtered[id];
+    seedFormsFor(effectiveFromIso, filtered);
+  }
+
   // (3) dayRequiredRoles — per-section pill multi-select.
   // v1.12.0: resolver delegates to the shared schedule-logic helper which
   // accepts either the v1.12.0 per-role boolean object shape OR the
@@ -581,9 +865,18 @@ export default function Settings({
 
   // ── Per-section dirty flags (v0.10.0) ──────────────────────────────────
   // FoH/Kitchen derive from blockDirty comparison so the dot auto-clears
-  // once the saved `shiftTemplate` prop reflects the latest save. Falls
-  // back to DEFAULT_SHIFT_TEMPLATE when nothing has been saved yet.
-  const savedTemplate = shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
+  // once the saved value reflects the latest save.
+  //
+  // v15.1.0: the baseline is the config RESOLVED at the effective-from
+  // week, not the live singletons — the form was seeded from a revision,
+  // and comparing it against the frozen base would read permanently dirty
+  // (the debounce would then re-write the revision on every Firebase
+  // echo). resolveConfigForWeek is cheap (linear scan over a handful of
+  // revisions), so a per-render call is fine.
+  const resolvedAtPicker = resolveConfigForWeek(
+    configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+  );
+  const savedTemplate = resolvedAtPicker.shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
   const fohDirty =
     blockDirty(form.foh.day, savedTemplate.foh.day) ||
     blockDirty(form.foh.evening, savedTemplate.foh.evening);
@@ -591,13 +884,13 @@ export default function Settings({
     blockDirty(form.kitchen.day, savedTemplate.kitchen.day) ||
     blockDirty(form.kitchen.evening, savedTemplate.kitchen.evening);
 
-  // v0.12.0: opening-days dirty derived against the saved /settings doc
-  // (falling back to DEFAULT_OPENING_DAYS so a never-saved settings doc
-  // matches the form's default and the dot doesn't appear spuriously).
+  // v0.12.0: opening-days dirty derived against the saved baseline
+  // (falling back to DEFAULT_OPENING_DAYS so a never-saved doc matches
+  // the form's default and the dot doesn't appear spuriously).
   // v1.3.0: normalize both sides so a legacy boolean doc compares cleanly
   // against the new per-day-part form.
   const savedOpeningDays = normalizeOpeningDays(
-    (settings && settings.openingDays) || DEFAULT_OPENING_DAYS
+    resolvedAtPicker.openingDays || DEFAULT_OPENING_DAYS
   );
   const openDaysFormDirty = openingDaysDirty(openingDaysForm, savedOpeningDays);
   // Combined dirty flag for the Operating time accordion header dot —
@@ -621,26 +914,46 @@ export default function Settings({
   // the v0.10.0 "force-open the first error section on Save click"
   // affordance.
 
-  // Operating time: hours + opening days. Single save covers both since
-  // they live on the same /settings doc.
+  // Operating hours (start/end). v15.1.0: split from the opening-days
+  // save — hours stay LIVE on /settings (they're a validation window,
+  // not a rendered surface), while opening days go to a revision. The
+  // spread preserves the singleton's openingDays untouched, which is
+  // what freezes it as the historical base.
   useEffect(function () {
-    if (!operatingDirty) return undefined;
-    if (opsErr !== null || openDaysErr !== null) return undefined;
+    if (!hoursDirty) return undefined;
+    if (opsErr !== null) return undefined;
     const t = setTimeout(function () {
       saveSettings({
         ...(settings || {}),
         operatingStart: hoursForm.operatingStart,
         operatingEnd:   hoursForm.operatingEnd,
-        openingDays:    { ...openingDaysForm },
       });
       setHoursDirty(false);
-      // openDaysFormDirty auto-clears once the settings prop updates.
     }, 800);
     return function () { clearTimeout(t); };
-  }, [operatingDirty, hoursForm, openingDaysForm, opsErr, openDaysErr, settings, saveSettings]);
+  }, [hoursDirty, hoursForm, opsErr, settings, saveSettings]);
 
-  // Shift template: FoH + Kitchen blocks. Saved as one doc so an in-flight
-  // FoH edit doesn't race a Kitchen save and overwrite each other's parts.
+  // Opening days → config revision at the effective-from week (v15.1.0).
+  // `effectiveFromIso` + `configRevisions` sit in the dep array on
+  // purpose: a picker change (or a revision delete) clears any pending
+  // timer in the same commit, so a stale form can never be written
+  // against the new effective date. Dirty auto-clears once the revision
+  // echo lands (the baseline then matches the form).
+  useEffect(function () {
+    if (!openDaysFormDirty) return undefined;
+    if (openDaysErr !== null) return undefined;
+    const t = setTimeout(function () {
+      upsertRevisionAxis("openingDays", normalizeOpeningDays(openingDaysForm));
+    }, 800);
+    return function () { clearTimeout(t); };
+    // upsertRevisionAxis closes over effectiveFromIso + configRevisions,
+    // both of which are in the deps — the closure is never stale.
+  }, [openDaysFormDirty, openingDaysForm, openDaysErr, effectiveFromIso, configRevisions]);
+
+  // Shift template: FoH + Kitchen blocks → config revision (v15.1.0).
+  // Saved as one template object so an in-flight FoH edit doesn't race a
+  // Kitchen save and overwrite each other's parts. Same dep-array timer
+  // semantics as the opening-days effect above.
   useEffect(function () {
     const templateDirty = fohDirty || kitchenDirty;
     if (!templateDirty) return undefined;
@@ -648,14 +961,18 @@ export default function Settings({
         || errors.kitchenDay !== null || errors.kitchenEvening !== null) {
       return undefined;
     }
-    const t = setTimeout(function () { saveShiftTemplate(form); }, 800);
+    const t = setTimeout(function () {
+      upsertRevisionAxis("shiftTemplate", serializeTemplateForSave(form));
+    }, 800);
     return function () { clearTimeout(t); };
   }, [fohDirty, kitchenDirty, form, errors.fohDay, errors.fohEvening,
-      errors.kitchenDay, errors.kitchenEvening, saveShiftTemplate]);
+      errors.kitchenDay, errors.kitchenEvening, effectiveFromIso, configRevisions]);
 
   function handleReset() {
     const ok = window.confirm(
-      "Reset operating hours, opening days, display preferences AND shift template to defaults? Your current values will be overwritten."
+      "Reset operating hours, opening days, display preferences AND shift template to defaults? " +
+      "All scheduled changes (effective-dated configurations) will be removed too. " +
+      "Your current values will be overwritten."
     );
     if (!ok) return;
     const defaults = cloneTemplate(DEFAULT_SHIFT_TEMPLATE);
@@ -694,7 +1011,22 @@ export default function Settings({
       minConsecutiveDaysOff:        DEFAULT_MIN_CONSECUTIVE_DAYS_OFF,       // v1.11.0
       maxConsecutiveWorkingDays:    DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS,   // v1.11.0
       dayRequiredRoles:             defaultDayRequired,                     // v1.11.0
+      pastWeeksLocked:              DEFAULT_PAST_WEEKS_LOCKED,              // v15.1.0
     });
+    // v15.1.0: factory reset also clears every scheduled change — leaving
+    // them would make the reset a visible no-op for any week at/after the
+    // earliest revision (the resolver would keep picking the revision over
+    // the freshly-reset base). Silent deletes: this is one user action,
+    // the confirm above already covered it.
+    Object.keys(configRevisions || {}).forEach(function (id) {
+      deleteConfigRevision(id, true);
+    });
+    // Only arm the skip when the picker will actually move — a no-op
+    // state set never fires the effect, and the stale flag would then
+    // swallow the manager's NEXT genuine picker change.
+    const resetMonday = isoDate(addDays(startOfWeek(new Date()), 7));
+    if (resetMonday !== effectiveFromIso) skipNextReseedRef.current = true;
+    setEffectiveFromIso(resetMonday);
     setHoursDirty(false);
   }
 
@@ -733,6 +1065,12 @@ export default function Settings({
     };
 
     const times = Array.isArray(block.times) ? block.times : [];
+    // v15.1.0: solo times — alternate per-slot hours for weekdays where
+    // this day-part is the ONLY open one (the sibling part is closed).
+    const soloOn = Array.isArray(block.soloTimes);
+    const soloTimes = soloOn ? block.soloTimes : [];
+    const partLabel = dayPart === "day" ? "day" : "evening";
+    const siblingLabel = dayPart === "day" ? "evening" : "day";
 
     return (
       <div style={{ marginBottom: 14 }}>
@@ -781,6 +1119,54 @@ export default function Settings({
             </div>
           );
         })}
+
+        {/* v15.1.0: per-open-mode (solo) times. Toggle seeds the rows as
+            a copy of the normal times; OFF stores null and the save
+            omits the key entirely. */}
+        <div style={{ marginTop: 10 }}>
+          <Toggle
+            checked={soloOn}
+            onChange={function (next) { onSoloToggle(section, dayPart, next); }}
+            label={"Different times on " + partLabel + "-only days"}
+            helper={"Used on weekdays where the " + siblingLabel +
+              " part is closed (restaurant runs " + partLabel + " only)."}
+            className="mgt-hover-scale"
+          />
+          {soloOn ? soloTimes.map(function (t, i) {
+            return (
+              <div key={"solo-" + i} style={slotRowStyle}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "var(--text-primary)",
+                    alignSelf: "center",
+                    paddingBottom: 6,
+                  }}
+                >
+                  {slotLabelFor(section, dayPart, i, block.count) + " (solo)"}
+                </div>
+                <Fld label="Start">
+                  {mkInp({
+                    type: "time",
+                    className: "mgt-hover-scale",
+                    value: t.start,
+                    onChange: function (e) { onSoloTimeChange(section, dayPart, i, "start", e); },
+                  })}
+                </Fld>
+                <Fld label="End">
+                  {mkInp({
+                    type: "time",
+                    className: "mgt-hover-scale",
+                    value: t.end,
+                    onChange: function (e) { onSoloTimeChange(section, dayPart, i, "end", e); },
+                  })}
+                </Fld>
+              </div>
+            );
+          }) : null}
+        </div>
+
         {err ? (
           <div style={{ fontSize: 12, color: "var(--text-danger)", marginTop: 4 }}>
             {err}
@@ -806,6 +1192,20 @@ export default function Settings({
       ? settings.showRolePills
       : true;
 
+  // v15.1.0: scheduled-changes list for the effective-from card. Sorted
+  // by effectiveFrom ascending (then id for deterministic duplicate
+  // order, which Settings itself never creates).
+  const revisionList = Object.keys(configRevisions || {})
+    .map(function (id) { return { ...(configRevisions[id] || {}), id: id }; })
+    .filter(function (r) { return Boolean(r.effectiveFrom); })
+    .sort(function (a, b) {
+      if (a.effectiveFrom !== b.effectiveFrom) {
+        return a.effectiveFrom < b.effectiveFrom ? -1 : 1;
+      }
+      return a.id < b.id ? -1 : 1;
+    });
+  const pickerHasRevision = findRevisionIdForMonday(effectiveFromIso) !== null;
+
   return (
     <div>
       <p style={{ ...S.body, margin: "0 0 16px 0" }}>
@@ -813,6 +1213,120 @@ export default function Settings({
         default shift times. Changes affect new cells; existing shifts keep
         their own per-cell times until edited.
       </p>
+
+      {/* v15.1.0: effective-from week picker + scheduled-changes list.
+          Lives OUTSIDE the single-open accordion on purpose — it governs
+          three sections (Operating time's open days, FoH, Kitchen) and
+          must stay visible whichever one is expanded. */}
+      <div style={{ ...S.surfaceSoft, padding: 14, marginBottom: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <div style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 600 }}>
+              Changes take effect from
+            </div>
+            <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
+              {"Week of " + formatWeekRange(parseIsoDate(effectiveFromIso)) + ". " +
+                (pickerHasRevision
+                  ? "Editing the scheduled change for this week."
+                  : "Open-day / shift-time edits below will be saved as a change starting this week.")}
+              {" Earlier weeks keep their current configuration."}
+            </div>
+          </div>
+          {mkInp({
+            type: "date",
+            min: currentMondayIso,
+            className: "mgt-hover-scale",
+            value: effectiveFromIso,
+            onChange: onEffectiveFromChange,
+            style: { width: isMobile ? 150 : 170, flexShrink: 0 },
+          })}
+        </div>
+        {revisionList.length > 0 ? (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ ...S.fldLabel, marginBottom: 6 }}>Scheduled changes</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {revisionList.map(function (rev) {
+                const isPastRev = rev.effectiveFrom < currentMondayIso;
+                return (
+                  <div
+                    key={rev.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      padding: "6px 8px",
+                      borderRadius: 8,
+                      background: "var(--bg-chip)",
+                      border: "1px solid var(--hairline)",
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                      {"Week of " + formatWeekRange(parseIsoDate(rev.effectiveFrom))}
+                    </span>
+                    {rev.openingDays ? (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          padding: "1px 8px",
+                          borderRadius: 999,
+                          background: "var(--accent-tint-soft)",
+                          color: "var(--accent-on-tint)",
+                          border: "1px solid var(--accent-tint-strong)",
+                        }}
+                      >
+                        Opening days
+                      </span>
+                    ) : null}
+                    {rev.shiftTemplate ? (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          padding: "1px 8px",
+                          borderRadius: 999,
+                          background: "var(--accent-tint-soft)",
+                          color: "var(--accent-on-tint)",
+                          border: "1px solid var(--accent-tint-strong)",
+                        }}
+                      >
+                        Shift times
+                      </span>
+                    ) : null}
+                    {isPastRev ? (
+                      <span style={{ ...S.muted, fontSize: 10 }}>(already in effect)</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="mgt-hover-scale"
+                      onClick={function () { handleRemoveRevision(rev.id); }}
+                      style={{
+                        ...BTN.base,
+                        marginLeft: "auto",
+                        padding: "4px 10px",
+                        fontSize: 11,
+                        borderRadius: 8,
+                        background: "var(--bg-pill)",
+                        color: "var(--text-danger)",
+                        border: "1px solid var(--btn-ghost-border)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       {/* v0.10.0: accordion column. Sections render in fixed order;
           openSection state controls which one is expanded. */}
@@ -1138,6 +1652,19 @@ export default function Settings({
               style: { width: 120, flexShrink: 0 },
             })}
           </div>
+
+          {/* v15.1.0: past-week lockdown toggle. Default ON (the v1.12.0
+              behaviour). ScheduleGrid reads the same field for its
+              isReadOnly gate; the banner + button disables follow. */}
+          <Toggle
+            checked={pastWeeksLocked}
+            onChange={onPastWeeksLockedChange}
+            label="Lock past weeks (read-only)"
+            helper={pastWeeksLocked
+              ? "Weeks that have fully ended are read-only on the Schedule tab — no edits, generating, or clearing. Turn off to allow editing history."
+              : "Past weeks stay fully editable. Careful — edits to history feed the fairness statistics."}
+            className="mgt-hover-scale"
+          />
 
           {/* Row 3: Per-section day-shift required roles — pill multi-select.
               Two stacked sub-rows (FoH then Kitchen, mirroring app section

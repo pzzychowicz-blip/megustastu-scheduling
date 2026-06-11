@@ -106,6 +106,13 @@ export const DEFAULT_OPENING_DAYS = Object.freeze({
   sun: { day: true, evening: true },
 });
 
+// ── Past-week lockdown toggle (v15.1.0) ──────────────────────────────────
+// `pastWeeksLocked` on /settings — when true (default), weeks whose Sunday
+// is before today are read-only on the Schedule grid (v1.12.0 behaviour).
+// When false, past weeks stay fully editable (no banner, no button gates).
+// Missing field reads as true so legacy docs keep the locked behaviour.
+export const DEFAULT_PAST_WEEKS_LOCKED = true;
+
 // ── Employee work pattern (v0.12.0) ──────────────────────────────────────
 // `workingDaysPerWeek` on each employee — number of working days per week,
 // 1..7. Off-days = 7 − N. v1.0 just stores + displays it; the auto-generator
