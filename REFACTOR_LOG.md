@@ -5,6 +5,43 @@ an entry. Newest first.
 
 ---
 
+## v15.1.1 — iOS sticky-:hover guard on .mgt-hover-scale
+
+**Date:** 2026-06-12
+
+**Behavioural change:** Touch-only devices (phones / tablets) no longer
+get the hover-scale lift at all; mouse / trackpad behaviour is
+unchanged. Fixes the iOS Safari "sticky hover" bug: iOS keeps `:hover`
+applied after a tap, so the last-tapped element stayed stuck at
+`scale(1.08)` — full-width form inputs visibly overflowed their
+container on phones.
+
+**Files changed:** `index.html`, `App.jsx` (version bump), `CLAUDE.md`,
+`REFACTOR_LOG.md`.
+
+**The fix:** the `.mgt-hover-scale:hover:not(:disabled)` rule in
+`index.html` is now wrapped in
+`@media (hover: hover) and (pointer: fine) { ... }` — the rule body is
+byte-identical; only the media-query wrapper is new. The base
+`.mgt-hover-scale` transition rule stays unwrapped (it's inert without
+the `:hover` declarations). The contract comment above the rule records
+the guard and the rationale.
+
+**Key design decisions:**
+- Ported verbatim from MGT Bookings v15.1.0 (PR #22) — the
+  `.mgt-hover-scale` contract is explicitly SHARED between the two
+  apps ("improve it in one app, port the change to both").
+- `(hover: hover) and (pointer: fine)` over a JS touch-detect: pure
+  CSS, zero runtime cost, and the media query is the standard way to
+  express "this device has a real hover state". Hybrid devices
+  (touchscreen laptops with a trackpad) match the query when a fine
+  pointer is primary — correct, since their trackpad hover un-hovers
+  normally.
+
+**Verification:** `npm run build` clean.
+
+---
+
 ## v15.1.0 — Effective-dated config revisions + solo shift times + past-week lock toggle
 
 **Date:** 2026-06-10
