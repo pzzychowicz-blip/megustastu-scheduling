@@ -1433,6 +1433,19 @@ separate Firebase project, same UI conventions).
   absent or valid stays migrated, so the v1.10.1 eager migration
   neither strips solo config nor loops.
 
+- **iOS sticky-:hover guard on `.mgt-hover-scale` (v15.1.1):** the
+  `.mgt-hover-scale:hover:not(:disabled)` rule in `index.html` is
+  wrapped in `@media (hover: hover) and (pointer: fine) { ... }` —
+  rule body byte-identical, only the wrapper is new. iOS Safari keeps
+  `:hover` applied after a tap ("sticky hover"), so the last-tapped
+  element stayed stuck at `scale(1.08)`; full-width form inputs
+  visibly overflowed their container on phones. Touch devices now get
+  no hover lift at all; mouse / trackpad behaviour unchanged. The base
+  `.mgt-hover-scale` transition rule stays unwrapped (inert without
+  the `:hover` declarations). Ported from MGT Bookings v15.1.0
+  (PR #22) — the `.mgt-hover-scale` contract is SHARED between the
+  two apps: improve it in one, port the change to both.
+
 - **Past-week lock toggle (v15.1.0):** `/settings.pastWeeksLocked`
   (boolean; missing → true via `DEFAULT_PAST_WEEKS_LOCKED`). New
   auto-save Toggle "Lock past weeks (read-only)" in Settings →
@@ -1460,7 +1473,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v15.1.0)
+## File structure (current — v15.1.1)
 
 ```
 megustastu-scheduling/
@@ -1477,6 +1490,10 @@ megustastu-scheduling/
 ├── index.html                      Vite entry. Hosts the theme token
 │                                   block + the no-flash inline script.
 │                                   vPre-1.0: see Pre-v1.0 archive below.
+│                                   v15.1.1: .mgt-hover-scale:hover rule
+│                                   wrapped in @media (hover: hover) and
+│                                   (pointer: fine) — iOS sticky-hover
+│                                   guard ported from Bookings v15.1.0.
 └── src/
     ├── main.jsx                    mounts <App />
     ├── App.jsx                     orchestration: auth-gate → AppShell.
@@ -1544,6 +1561,8 @@ megustastu-scheduling/
     │                                 past-week-lock". Versioning scheme
     │                                 realigned to MGT Bookings' pattern
     │                                 (1.15.0 → 15.1.0 jump).
+    │                                 v15.1.1: → 15.1.1, sha
+    │                                 "ios-sticky-hover-media-guard".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut

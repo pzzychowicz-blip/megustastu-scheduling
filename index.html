@@ -314,6 +314,16 @@
       .mgt-hover-scale {
         transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease, border-radius 120ms ease;
       }
+      /* v15.1.1: the :hover rule is wrapped in
+         `@media (hover: hover) and (pointer: fine)` — iOS Safari keeps
+         :hover applied after a tap ("sticky hover"), so the last-tapped
+         element stayed stuck at scale(1.08); full-width form inputs
+         visibly overflowed their container on phones. The media query
+         excludes touch devices entirely (no hover lift there) while
+         mouse / trackpad behaviour is unchanged. Same guard shipped in
+         MGT Bookings v15.1.0 — the .mgt-hover-scale contract is shared
+         between the two apps; improve it in one, port to both. */
+      @media (hover: hover) and (pointer: fine) {
       .mgt-hover-scale:hover:not(:disabled) {
         transform: scale(1.08);
         /* v1.13.0 polish round 4: the hover card now uses
@@ -341,6 +351,7 @@
         border-radius: 12px;
         position: relative;
         z-index: 2;
+      }
       }
     </style>
   </head>
