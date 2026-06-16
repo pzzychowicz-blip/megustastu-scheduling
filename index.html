@@ -314,6 +314,15 @@
       .mgt-hover-scale {
         transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease, border-radius 120ms ease;
       }
+      /* v15.1.1: the :hover rule is wrapped in @media (hover: hover) and
+         (pointer: fine) — ported from MGT Bookings (its v15.1.0). iOS Safari
+         makes :hover STICKY after a tap, so on a touch device the last-tapped
+         element stayed scaled 1.08 (full-width rows / inputs visibly overflow
+         their container). Touch devices now get no hover lift; mouse/trackpad
+         behaviour is unchanged. The transition rule above stays OUTSIDE the
+         guard so tagged elements still animate on touch. This media-guard is
+         part of the shared hover contract — keep it in sync with Bookings. */
+      @media (hover: hover) and (pointer: fine) {
       .mgt-hover-scale:hover:not(:disabled) {
         transform: scale(1.08);
         /* v1.13.0 polish round 4: the hover card now uses
@@ -341,6 +350,7 @@
         border-radius: 12px;
         position: relative;
         z-index: 2;
+      }
       }
     </style>
   </head>

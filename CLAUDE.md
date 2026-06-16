@@ -490,6 +490,15 @@ separate Firebase project, same UI conventions).
   The `:not(:disabled)` guard is load-bearing — browsers DO apply
   `:hover` to disabled buttons by default, and Export PDF needs to
   stay flat when the week is incomplete.
+
+  **Touch-guard (v15.1.1, ported from Bookings' v15.1.0):** the
+  `:hover` rule is wrapped in `@media (hover: hover) and (pointer:
+  fine)`. iOS Safari makes `:hover` STICKY after a tap, so unguarded
+  the last-tapped tagged element stays scaled `1.08` (full-width rows
+  / inputs overflow their container on a phone). The base
+  `.mgt-hover-scale { transition }` rule stays OUTSIDE the guard.
+  This media-guard is part of the **shared hover contract with
+  Bookings** — improve it in one app, port to both.
   
   **First wave (third v1.9.0 commit):** `WeeklyShiftSummary` pill,
   every schedule grid cell, the Prev/Today/Next nav buttons,

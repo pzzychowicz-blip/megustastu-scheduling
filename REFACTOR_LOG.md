@@ -5,6 +5,30 @@ an entry. Newest first.
 
 ---
 
+## v15.1.1 — Hover-scale touch-guard (iOS sticky-:hover fix)
+
+**Date:** 2026-06-16
+
+**Behavioural change:** Touch devices only. The `.mgt-hover-scale:hover`
+lift no longer fires on touch — desktop mouse/trackpad behaviour is
+byte-identical. No JS change.
+
+**Files changed:** `index.html`, `App.jsx` (version bump), `CLAUDE.md`,
+`REFACTOR_LOG.md`.
+
+Ports the MGT Bookings v15.1.0 fix: the
+`.mgt-hover-scale:hover:not(:disabled)` rule in `index.html` is now
+wrapped in `@media (hover: hover) and (pointer: fine)`. iOS Safari makes
+`:hover` STICKY after a tap, so without the guard the last-tapped tagged
+element stayed scaled `1.08` — full-width rows / inputs visibly overflow
+their container on a phone. The base `.mgt-hover-scale { transition }`
+rule stays OUTSIDE the guard so tagged elements still animate on touch.
+This media-guard is part of the **shared hover contract** with Bookings —
+keep the two in sync (closes the "Scheduling port pending" item flagged
+in Bookings' v15.1.0). Verified: no behavioural delta on a pointer device.
+
+---
+
 ## v15.1.0 — Effective-dated config revisions + solo shift times + past-week lock toggle
 
 **Date:** 2026-06-10

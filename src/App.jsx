@@ -41,9 +41,9 @@ import AppShell from "./components/AppShell.jsx";
 // deployment. Mirrors MGT Bookings' __APP_SIGNATURE__ structure.
 export const __APP_SIGNATURE__ = Object.freeze({
   app: "Me Gustas Tú Staff Scheduling System",
-  version: "15.1.0",
-  build: "2026-06-10",
-  sha: "config-revisions-solo-times-past-week-lock",
+  version: "15.1.1",
+  build: "2026-06-16",
+  sha: "hover-touch-guard",
   author: "Patryk Zychowicz",
   contact: "pz.zychowicz@gmail.com",
   copyright: "© 2026 Patryk Zychowicz. All rights reserved.",
