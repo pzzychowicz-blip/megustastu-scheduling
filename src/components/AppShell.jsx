@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { S, BTN } from "../lib/constants.js";
 import { usePersistence } from "../hooks/usePersistence.js";
 import { useThemeMode } from "../hooks/useThemeMode.js";
+import { useFirebaseConnection } from "../hooks/useFirebaseConnection.js";
 import {
   isShiftTemplateMigrated,
   materializeShiftTemplate,
@@ -26,6 +27,7 @@ import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
 import Settings from "./Settings.jsx";
+import ConnectionStatus from "./ConnectionStatus.jsx";
 
 // Tab keys + display order. Add new tabs here when they land.
 const TABS = [
@@ -113,6 +115,9 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   // Before `ready` flips true, data.settings is null → undefined → system.
   const isDark = useThemeMode(data.settings ? data.settings.darkMode : undefined);
 
+  // v15.2.0: live Firebase RTDB connection state for the header status dot.
+  const connected = useFirebaseConnection();
+
   // ── Loading state ──────────────────────────────────────────────────────
   if (!ready) {
     return (
@@ -167,15 +172,24 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
     >
       <div>
         <h1 style={S.h1}>Me Gustas Tú — Staff Scheduling</h1>
-        <p style={S.muted}>v{appVersion} · {user.email}</p>
       </div>
-      <button
-        className="mgt-hover-scale"
-        style={{ ...BTN.base, ...BTN.ghost }}
-        onClick={signOut}
-      >
-        Sign out
-      </button>
+      {/* v15.2.0: version + user email line removed from here. The user
+          email now lives in the ConnectionStatus popover; the version
+          stays on the Settings footer. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        <ConnectionStatus
+          connected={connected}
+          userEmail={user.email}
+          isMobile={isMobile}
+        />
+        <button
+          className="mgt-hover-scale"
+          style={{ ...BTN.base, ...BTN.ghost }}
+          onClick={signOut}
+        >
+          Sign out
+        </button>
+      </div>
     </div>
   );
 

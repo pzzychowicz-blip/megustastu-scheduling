@@ -37,6 +37,16 @@ an entry. Newest first.
    the `employeeCount === 0` gate still covers the genuine initial-load
    window. (Surfaced during v15.2.0 testing after the new past-dating
    picker made it easy to replace the template-carrying revision.)
+5. **Header connection status dot.** The version + user-email line is
+   removed from the AppShell header. A round status dot now sits next to
+   Sign out: it illuminates GREEN when the Firebase Realtime Database is
+   connected and RED when the connection drops (new `useFirebaseConnection`
+   hook subscribing to `.info/connected`). Clicking it opens a small
+   popover (`<ConnectionStatus>`) showing the connection status and the
+   currently signed-in user's email (which moved here from the old header
+   line). The app version stays on the Settings footer. New theme-aware
+   `--status-online` / `--status-offline` CSS vars in index.html. (Shipped
+   as a follow-up commit on the same branch — still v15.2.0.)
 
 **Files changed:** `src/lib/constants.js` (DEFAULT_ALLOW_INCOMPLETE_EXPORT
 + "out-of-tenure" GENERATOR_REASONS entry), `src/lib/schedule-logic.js`
@@ -50,7 +60,11 @@ toggle + past-dating picker + reset), `src/components/EmployeeFormModal.jsx`
 (tenure row line), `src/components/ShiftFormModal.jsx` (picker tenure
 filter), `src/components/WeeklyShiftSummary.jsx` +
 `src/components/MonthlyFairnessPanel.jsx` (tenure visibility skips),
-`src/App.jsx` (version bump), `CLAUDE.md`, `REFACTOR_LOG.md`.
+`src/App.jsx` (version bump). Connection-dot follow-up:
+`src/hooks/useFirebaseConnection.js` (NEW), `src/components/
+ConnectionStatus.jsx` (NEW), `src/components/AppShell.jsx` (header
+rework), `index.html` (status CSS vars). Plus `CLAUDE.md`,
+`REFACTOR_LOG.md`.
 
 **Key design decisions:**
 - Tenure chosen over full effective-dated employee revisions — small,

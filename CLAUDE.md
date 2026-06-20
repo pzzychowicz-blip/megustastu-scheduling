@@ -1540,6 +1540,9 @@ megustastu-scheduling/
 │                                   wrapped in @media (hover: hover) and
 │                                   (pointer: fine) — iOS sticky-hover
 │                                   guard ported from Bookings v15.1.0.
+│                                   v15.2.0: + --status-online /
+│                                   --status-offline tokens (light + dark)
+│                                   for the header ConnectionStatus dot.
 └── src/
     ├── main.jsx                    mounts <App />
     ├── App.jsx                     orchestration: auth-gate → AppShell.
@@ -1635,7 +1638,11 @@ megustastu-scheduling/
     │   │                           timestamp, restoreShifts, removeIds }
     │   │                           captured by ClearButton, GenerateButton,
     │   │                           and ScheduleGrid's swap/move handler.
-    │   └── useWinW.js              viewport-width listener
+    │   ├── useWinW.js              viewport-width listener
+    │   └── useFirebaseConnection.js v15.2.0: NEW. Subscribes to RTDB
+    │                               `.info/connected`; returns a boolean.
+    │                               Drives the header <ConnectionStatus>
+    │                               dot (green connected / red lost).
     ├── lib/
     │   ├── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
     │   │                           ROLE_COLORS, REQUEST_TYPES,
@@ -2260,6 +2267,22 @@ megustastu-scheduling/
         │                           Eager-migration effect unchanged —
         │                           it only ever touches the base
         │                           /shiftTemplate singleton.
+        │                           v15.2.0: header reworked. The
+        │                           "v{version} · {email}" line is removed;
+        │                           a <ConnectionStatus> dot (fed by
+        │                           useFirebaseConnection) sits next to
+        │                           Sign out. The user email moved into
+        │                           that dot's popover; version stays on
+        │                           the Settings footer. `appVersion` prop
+        │                           is now unused (kept on the signature).
+        ├── ConnectionStatus.jsx    v15.2.0: NEW. Round Firebase-connection
+        │                           dot for the header — green when
+        │                           connected, red when lost (via the
+        │                           `connected` prop). Click toggles a
+        │                           popover (outside-click + Esc to close)
+        │                           showing the status + the signed-in
+        │                           user's email. Uses --status-online /
+        │                           --status-offline + --bg-overlay-sheet.
         ├── EmployeesList.jsx       roster list + Add button.
         │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.3.0: + small "Priority" badge
