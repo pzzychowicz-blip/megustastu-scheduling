@@ -81,6 +81,7 @@ import {
   findShiftPreferenceMismatch,
   hasConsecutiveDaysOff,
   withinMaxConsecutiveWorkingDays,
+  isEmployeeActiveOnDate,
 } from "../lib/schedule-logic.js";
 
 // Lookup once per render — REQUEST_TYPES is small.
@@ -165,9 +166,12 @@ export default function ShiftFormModal({
       ? (slotDef.coversRoles || [])
       : (slotDef.eligibleRoles || []);
 
-    // (a) active + role match.
+    // (a) active + tenure + role match. v15.2.0: an employee whose
+    //     activeFrom / activeUntil window doesn't cover this cell's date
+    //     is HARD-hidden, same as an archived employee.
     const roleOk = all.filter(function (e) {
       if (e.active === false) return false;
+      if (!isEmployeeActiveOnDate(e, dateIso)) return false;
       const roles = Array.isArray(e.roles) ? e.roles : [];
       if (dayRequired.length > 0) {
         // Strict: employee must hold one of the required roles.

@@ -106,6 +106,15 @@ export const DEFAULT_OPENING_DAYS = Object.freeze({
   sun: { day: true, evening: true },
 });
 
+// ── Incomplete-schedule export toggle (v15.2.0) ──────────────────────────
+// `allowIncompleteExport` on /settings — when false (default), the Export
+// PDF button stays disabled until every open cell on the visible week has
+// an assignee (the v0.12.0 isWeekComplete gate). When true, the button is
+// always clickable; clicking it on an incomplete week opens a warning
+// confirm modal (ExportWarningModal) before producing a PDF with blanks.
+// Missing field reads as false so legacy docs keep the gated behaviour.
+export const DEFAULT_ALLOW_INCOMPLETE_EXPORT = false;
+
 // ── Past-week lockdown toggle (v15.1.0) ──────────────────────────────────
 // `pastWeeksLocked` on /settings — when true (default), weeks whose Sunday
 // is before today are read-only on the Schedule grid (v1.12.0 behaviour).
@@ -413,6 +422,7 @@ export const GENERATOR_REASONS = Object.freeze({
   "no-2-off": "Would break the 2-consecutive-days-off rule for every candidate",
   "max-consecutive": "Would exceed the max consecutive working-days cap for every candidate",
   "preference": "No staff with matching shift preference (Hard mode)",
+  "out-of-tenure": "No eligible staff are within their active employment dates",
   // Cleared (v1.7.0 Regenerate wipe — every record gets this one reason)
   "regenerated": "Cleared for regeneration",
 });

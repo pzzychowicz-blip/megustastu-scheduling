@@ -62,6 +62,7 @@ import {
   roleMatchesSlot,
   slotTimesForDate,
   parseIsoDate,
+  isEmployeeActiveOnDate,
 } from "./schedule-logic.js";
 import { DEFAULT_WORKING_DAYS } from "./constants.js";
 
@@ -304,9 +305,16 @@ function buildCandidates(
   });
   if (roleOk.length === 0) return { eligible: [], reason: "no-role-match" };
 
+  // (1.5) Employment tenure — HARD block (v15.2.0). An employee with an
+  // activeFrom / activeUntil window only qualifies on dates inside it.
+  const tenureOk = roleOk.filter(function (e) {
+    return isEmployeeActiveOnDate(e, dateIso);
+  });
+  if (tenureOk.length === 0) return { eligible: [], reason: "out-of-tenure" };
+
   // (2) Request conflict — HARD block (dayoff / holiday only; v1.2.0
   // guard inside findRequestConflict skips shift-preference requests).
-  const requestOk = roleOk.filter(function (e) {
+  const requestOk = tenureOk.filter(function (e) {
     return !findRequestConflict(requests, e.id, dateIso);
   });
   if (requestOk.length === 0) return { eligible: [], reason: "all-on-request" };

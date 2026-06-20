@@ -15,7 +15,28 @@ import {
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
 import { mkBtn, TBadge } from "./atoms.jsx";
+import { parseIsoDate } from "../lib/schedule-logic.js";
 import EmployeeFormModal from "./EmployeeFormModal.jsx";
+
+// v15.2.0: short date label for an employee's tenure line, e.g. "5 Jul
+// 2026". Returns "" for a falsy / unparseable ISO string.
+const TENURE_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function shortDate(iso) {
+  if (!iso) return "";
+  const d = parseIsoDate(iso);
+  if (!d || isNaN(d.getTime())) return "";
+  return d.getDate() + " " + TENURE_MONTHS[d.getMonth()] + " " + d.getFullYear();
+}
+
+// v15.2.0: tenure summary string. null when the employee has no bounds.
+function tenureSummary(emp) {
+  const from = shortDate(emp.activeFrom);
+  const until = shortDate(emp.activeUntil);
+  if (from && until) return "Active " + from + " – " + until;
+  if (from) return "Active from " + from;
+  if (until) return "Active until " + until;
+  return null;
+}
 
 // Sort: active first (alphabetical), then archived (alphabetical).
 function sortEmployees(list) {
@@ -88,6 +109,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
   function renderRow(emp) {
     const inactive = emp.active === false;
     const fdSummary = fixedDaysSummary(emp.fixedDays);
+    const tenure = tenureSummary(emp);
 
     const roleChips = (emp.roles || []).map(function (r) {
       const rgb = ROLE_COLORS[r] || "var(--role-fallback-rgb)";
@@ -169,6 +191,9 @@ export default function EmployeesList({ employees, actions, isMobile }) {
             </div>
             {fdSummary
               ? <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>★ {fdSummary}</div>
+              : null}
+            {tenure
+              ? <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>📅 {tenure}</div>
               : null}
           </div>
           {emp.schedulingPriority === true ? (

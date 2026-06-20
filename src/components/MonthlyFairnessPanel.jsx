@@ -84,6 +84,7 @@
 
 import { useState } from "react";
 import { S } from "../lib/constants.js";
+import { addDays, employeeTenureOverlapsDates } from "../lib/schedule-logic.js";
 import EmployeeFairnessModal from "./EmployeeFairnessModal.jsx";
 
 export default function MonthlyFairnessPanel({
@@ -109,12 +110,20 @@ export default function MonthlyFairnessPanel({
   // strikethrough archived row was just visual noise. Orphan-shift
   // detection still happens at the WeeklyShiftSummary panel which
   // intentionally surfaces them on the active week.
+  // v15.2.0: the focus week's Mon..Sun dates, for the tenure-overlap skip
+  // below. An employee whose activeFrom / activeUntil window doesn't touch
+  // this week drops off the fairness panel (it balances the roster that's
+  // actually working this week).
+  const focusWeekDates = weekStart
+    ? [0, 1, 2, 3, 4, 5, 6].map(function (n) { return addDays(weekStart, n); })
+    : [];
   const rows = [];
   const ids = Object.keys(empMap);
   for (let i = 0; i < ids.length; i++) {
     const emp = empMap[ids[i]];
     if (!emp) continue;
     if (emp.active === false) continue;
+    if (weekStart && !employeeTenureOverlapsDates(emp, focusWeekDates)) continue;
     const agg = aggMap[emp.id];
     if (!agg) continue;
     rows.push({

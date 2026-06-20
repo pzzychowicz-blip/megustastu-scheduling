@@ -46,7 +46,10 @@
 //   onHighlight           (fn(id|null))         — v1.7.0; click handler
 
 import { S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
-import { holidayDaysInWeekByEmployee } from "../lib/schedule-logic.js";
+import {
+  holidayDaysInWeekByEmployee,
+  employeeTenureOverlapsDates,
+} from "../lib/schedule-logic.js";
 
 function rawQuotaFor(emp) {
   const v = emp && typeof emp.workingDaysPerWeek === "number" ? emp.workingDaysPerWeek : null;
@@ -88,14 +91,18 @@ export default function WeeklyShiftSummary({
   // changing).
   const holidayDays = holidayDaysInWeekByEmployee(requests, dates || []);
 
-  // Build the row list: every active employee + any archived employee
-  // who still has shifts this week (so the orphan is visible).
+  // Build the row list: every active employee whose tenure overlaps the
+  // visible week + any employee (archived or out-of-tenure) who still has
+  // shifts this week (so the orphan stays visible). v15.2.0: an employee
+  // whose activeFrom / activeUntil window doesn't touch this week is
+  // treated like an archived one — hidden unless they already hold shifts.
   const all = Object.values(employees || {});
   const rows = [];
   for (let i = 0; i < all.length; i++) {
     const emp = all[i];
     const count = counts[emp.id] || 0;
-    if (emp.active === false && count === 0) continue;
+    const inWeek = employeeTenureOverlapsDates(emp, dates || []);
+    if ((emp.active === false || !inWeek) && count === 0) continue;
     const raw = rawQuotaFor(emp);
     const holiday = holidayDays[emp.id] || 0;
     // Effective quota floors at 0 (can't go negative) and never exceeds

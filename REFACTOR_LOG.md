@@ -5,6 +5,96 @@ an entry. Newest first.
 
 ---
 
+## v15.2.0 — Incomplete-export toggle, past-dated config revisions, per-employee tenure dates
+
+**Date:** 2026-06-20
+
+**Behavioural change:** Three independent manager-facing additions.
+1. New `/settings.allowIncompleteExport` (default OFF). When ON, the
+   Export PDF button stays clickable on a week with empty cells; clicking
+   it opens a warning confirm modal ("This week has N empty cells…")
+   before producing a PDF with blank slots. OFF preserves the locked v1
+   behaviour (button disabled until the week is complete).
+2. The Settings "Changes take effect from" picker now accepts PAST
+   Mondays — the v15.1.0 clamp to the current Monday is removed. A
+   past-dated config revision retroactively changes how earlier weeks
+   render via `resolveConfigForWeek` (intentional, so the manager can fix
+   a historical week's configuration).
+3. Employees gain optional `activeFrom` / `activeUntil` tenure dates. An
+   employee is only schedulable (manual picker + auto-generator) and
+   counted in the weekly-summary / fairness panels on dates inside their
+   window. Handles new hires and leavers without retroactively rewriting
+   past schedules.
+4. **Generate-button fix.** `<GenerateButton>` now receives the EFFECTIVE
+   template (`resolvedShiftTemplate || DEFAULT_SHIFT_TEMPLATE`) instead of
+   the raw possibly-null `resolvedShiftTemplate`. Previously, when a focus
+   week had no covering shift-template revision AND the frozen-base
+   `/shiftTemplate` singleton was null (fresh project / DEV sandbox, or the
+   template-carrying revision was removed), Generate self-disabled with
+   "Schedule template not loaded yet" — even though the grid still rendered
+   slots, the picker assigned staff, and export worked, all via the
+   DEFAULT fallback. Generate is now consistent with the rest of the grid;
+   the `employeeCount === 0` gate still covers the genuine initial-load
+   window. (Surfaced during v15.2.0 testing after the new past-dating
+   picker made it easy to replace the template-carrying revision.)
+5. **Header connection status dot.** The version + user-email line is
+   removed from the AppShell header. A round status dot now sits next to
+   Sign out: it illuminates GREEN when the Firebase Realtime Database is
+   connected and RED when the connection drops (new `useFirebaseConnection`
+   hook subscribing to `.info/connected`). Clicking it opens a small
+   popover (`<ConnectionStatus>`) showing the connection status and the
+   currently signed-in user's email (which moved here from the old header
+   line). The app version stays on the Settings footer. New theme-aware
+   `--status-online` / `--status-offline` CSS vars in index.html. (Shipped
+   as a follow-up commit on the same branch — still v15.2.0.)
+
+**Files changed:** `src/lib/constants.js` (DEFAULT_ALLOW_INCOMPLETE_EXPORT
++ "out-of-tenure" GENERATOR_REASONS entry), `src/lib/schedule-logic.js`
+(countEmptyCells, isEmployeeActiveOnDate, employeeTenureOverlapsDates),
+`src/lib/generator.js` (step 1.5 tenure HARD filter), `src/components/
+ExportButton.jsx` (allowIncompleteExport + warning flow), `src/components/
+ExportWarningModal.jsx` (NEW), `src/components/ScheduleGrid.jsx`
+(allowIncompleteExport prop), `src/components/Settings.jsx` (Display
+toggle + past-dating picker + reset), `src/components/EmployeeFormModal.jsx`
+(Active dates fields + validation), `src/components/EmployeesList.jsx`
+(tenure row line), `src/components/ShiftFormModal.jsx` (picker tenure
+filter), `src/components/WeeklyShiftSummary.jsx` +
+`src/components/MonthlyFairnessPanel.jsx` (tenure visibility skips),
+`src/App.jsx` (version bump). Connection-dot follow-up:
+`src/hooks/useFirebaseConnection.js` (NEW), `src/components/
+ConnectionStatus.jsx` (NEW), `src/components/AppShell.jsx` (header
+rework), `index.html` (status CSS vars). Plus `CLAUDE.md`,
+`REFACTOR_LOG.md`.
+
+**Key design decisions:**
+- Tenure chosen over full effective-dated employee revisions — small,
+  low-risk: one shared `isEmployeeActiveOnDate` predicate gates
+  eligibility + visibility. It does NOT pro-rate the 28-day /
+  calendar-month fairness TARGET math within a partially-overlapping
+  window (documented simplification, consistent with the v15.1.0
+  focus-week-config-across-window shortcut).
+- Out-of-tenure / archived employees still show on WeeklyShiftSummary
+  when they hold shifts that week (orphan-shift visibility); they vanish
+  from MonthlyFairnessPanel (active-roster balancing surface).
+- Past-dating reverses a v15.1.0 guardrail by design — confirmed with the
+  owner. `resolveConfigForWeek` already handled `effectiveFrom <= week
+  Monday` correctly, so the change is just dropping the clamp + the input
+  `min`.
+- Export warning is a styled Overlay confirm modal (ExportWarningModal),
+  matching GenerateConfirmModal / ClearConfirmModal — not a native
+  `window.confirm`.
+
+**Verification:** `npm run build` clean (1.21s; main bundle 177.79 kB
+gz). Live DEV preview (logged-in session): date input `min` gone (past
+weeks pickable); Display toggle renders; toggling it ON enables Export
+PDF on an incomplete week with the new title, and clicking shows the
+warning modal reporting "35 empty cells"; toggling OFF re-disables the
+button. Employee form shows Active dates From/Until; end-before-start
+disables Save with an inline error, valid range re-enables it. No console
+errors. DEV setting restored to OFF after testing.
+
+---
+
 ## v15.1.1 — iOS sticky-:hover guard on .mgt-hover-scale
 
 **Date:** 2026-06-12

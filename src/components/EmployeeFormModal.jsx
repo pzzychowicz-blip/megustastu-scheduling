@@ -47,6 +47,8 @@ function emptyForm() {
     fixedDays: null,
     schedulingPriority: false,  // v1.3.0
     active: true,
+    activeFrom: "",   // v15.2.0 — tenure start (ISO date, "" = unbounded)
+    activeUntil: "",  // v15.2.0 — tenure end   (ISO date, "" = unbounded)
   };
 }
 
@@ -69,6 +71,8 @@ function formFromEmployee(emp) {
       : null,
     schedulingPriority: emp.schedulingPriority === true,  // v1.3.0
     active: emp.active !== false,  // default true when undefined
+    activeFrom: emp.activeFrom || "",    // v15.2.0
+    activeUntil: emp.activeUntil || "",  // v15.2.0
   };
 }
 
@@ -120,7 +124,12 @@ export default function EmployeeFormModal({
 
   // ── Validation ───────────────────────────────────────────────────────
   const nameTrimmed = form.name.trim();
-  const valid = nameTrimmed.length > 0 && form.roles.length > 0;
+  // v15.2.0: when both tenure endpoints are set, end must not precede
+  // start. ISO "YYYY-MM-DD" strings compare lexicographically.
+  const tenureRangeInvalid =
+    Boolean(form.activeFrom) && Boolean(form.activeUntil) &&
+    form.activeUntil < form.activeFrom;
+  const valid = nameTrimmed.length > 0 && form.roles.length > 0 && !tenureRangeInvalid;
 
   // ── Handlers ─────────────────────────────────────────────────────────
   function handleSave() {
@@ -134,6 +143,8 @@ export default function EmployeeFormModal({
       fixedDays: form.fixedDays ? { ...form.fixedDays } : null,
       schedulingPriority: form.schedulingPriority === true,  // v1.3.0
       active: form.active,
+      activeFrom: form.activeFrom || null,    // v15.2.0
+      activeUntil: form.activeUntil || null,  // v15.2.0
     };
     onSave(payload);
   }
@@ -397,6 +408,53 @@ export default function EmployeeFormModal({
 
       <Fld label="Status">
         {activeToggle}
+      </Fld>
+
+      {/* v15.2.0: employment tenure. Both optional — leave blank for an
+          open-ended window. The employee is only schedulable (manual
+          picker + auto-generator) and counted in the weekly / fairness
+          panels on dates inside this range. */}
+      <Fld label="Active dates (optional)">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+            gap: isMobile ? 8 : 12,
+          }}
+        >
+          <div>
+            <div style={{ ...S.muted, fontSize: 11, marginBottom: 4 }}>From</div>
+            {mkInp({
+              type: "date",
+              className: "mgt-hover-scale",
+              value: form.activeFrom,
+              max: form.activeUntil || undefined,
+              onChange: function (e) { setField("activeFrom", e.target.value); },
+            })}
+          </div>
+          <div>
+            <div style={{ ...S.muted, fontSize: 11, marginBottom: 4 }}>Until</div>
+            {mkInp({
+              type: "date",
+              className: "mgt-hover-scale",
+              value: form.activeUntil,
+              min: form.activeFrom || undefined,
+              onChange: function (e) { setField("activeUntil", e.target.value); },
+            })}
+          </div>
+        </div>
+        <div
+          style={{
+            ...S.muted,
+            marginTop: 4,
+            fontSize: 11,
+            color: tenureRangeInvalid ? "var(--text-danger)" : "var(--text-muted)",
+          }}
+        >
+          {tenureRangeInvalid
+            ? "End date must be on or after the start date."
+            : "Leave blank for no limit. The employee won't be scheduled or counted outside these dates."}
+        </div>
       </Fld>
 
       <div

@@ -1457,6 +1457,52 @@ separate Firebase project, same UI conventions).
   locked behaviour; OFF makes past weeks fully editable (no banner,
   buttons live).
 
+- **Incomplete-schedule export (v15.2.0):**
+  `/settings.allowIncompleteExport` (boolean; missing → false via
+  `DEFAULT_ALLOW_INCOMPLETE_EXPORT`). Auto-save Toggle "Allow
+  exporting incomplete schedules" in Settings → Display. When OFF
+  (default) `<ExportButton>` keeps the locked v1 behaviour — disabled
+  until `isWeekComplete`. When ON the button stays clickable; a click
+  on a complete week exports directly, a click on an incomplete week
+  caches `countEmptyCells(...)` and opens `<ExportWarningModal>`
+  (Overlay confirm, model on GenerateConfirmModal). "Export anyway"
+  runs the existing lazy-loaded `exportWeekPdf` path; the PDF already
+  renders empty open cells as blanks (pdf-export.js). ScheduleGrid
+  derives the flag (defensive `=== true`) and threads it + `isMobile`
+  into `<ExportButton>`.
+
+- **Past-dated config revisions (v15.2.0):** the v15.1.0 "Changes take
+  effect from" picker's clamp to the current Monday (and the date
+  input's `min`) are removed — any Monday, past or future, is now a
+  valid revision target. A past-dated revision retroactively changes
+  how earlier weeks render via `resolveConfigForWeek` (which already
+  selected the latest `effectiveFrom <= the week's Monday`). This
+  deliberately reverses the v15.1.0 guardrail so the manager can fix a
+  historical week's configuration; `currentMondayIso` is kept only to
+  label past rows in the Scheduled-changes list and to switch the
+  picker's helper copy to a "applies retroactively" note.
+
+- **Per-employee tenure dates (v15.2.0):** optional `activeFrom` /
+  `activeUntil` ISO-date fields on `/employees/{id}` (null = unbounded
+  on that end). An employee is schedulable on a date iff
+  `active !== false && (!activeFrom || d >= activeFrom) &&
+  (!activeUntil || d <= activeUntil)` — the single predicate
+  `isEmployeeActiveOnDate(emp, dateIso)` in schedule-logic.js.
+  Consumers: generator `buildCandidates` step 1.5 (HARD filter, reason
+  `"out-of-tenure"`); `<ShiftFormModal>` picker filter (a) (HARD hide,
+  alongside the archived check); `<WeeklyShiftSummary>` (skips out-of-
+  tenure employees with zero shifts that week, mirroring the archived
+  rule, via `employeeTenureOverlapsDates`); `<MonthlyFairnessPanel>`
+  (skips employees whose tenure doesn't overlap the focus week).
+  `<EmployeeFormModal>` adds an "Active dates (optional)" From/Until
+  pair (Save blocked when both set and until < from); `<EmployeesList>`
+  shows a tenure line per row. Chosen over full effective-dated
+  employee revisions to stay small/low-risk; tenure gates ELIGIBILITY +
+  VISIBILITY only — it does NOT pro-rate the 28-day / calendar-month
+  fairness TARGET math within a partially-overlapping window
+  (documented simplification, matching the v15.1.0 focus-week-config-
+  across-window shortcut).
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -1473,7 +1519,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v15.1.1)
+## File structure (current — v15.2.0)
 
 ```
 megustastu-scheduling/
@@ -1494,6 +1540,9 @@ megustastu-scheduling/
 │                                   wrapped in @media (hover: hover) and
 │                                   (pointer: fine) — iOS sticky-hover
 │                                   guard ported from Bookings v15.1.0.
+│                                   v15.2.0: + --status-online /
+│                                   --status-offline tokens (light + dark)
+│                                   for the header ConnectionStatus dot.
 └── src/
     ├── main.jsx                    mounts <App />
     ├── App.jsx                     orchestration: auth-gate → AppShell.
@@ -1563,6 +1612,9 @@ megustastu-scheduling/
     │                                 (1.15.0 → 15.1.0 jump).
     │                                 v15.1.1: → 15.1.1, sha
     │                                 "ios-sticky-hover-media-guard".
+    │                                 v15.2.0: → 15.2.0, sha
+    │                                 "incomplete-export-past-revisions-
+    │                                 employee-tenure".
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1586,7 +1638,11 @@ megustastu-scheduling/
     │   │                           timestamp, restoreShifts, removeIds }
     │   │                           captured by ClearButton, GenerateButton,
     │   │                           and ScheduleGrid's swap/move handler.
-    │   └── useWinW.js              viewport-width listener
+    │   ├── useWinW.js              viewport-width listener
+    │   └── useFirebaseConnection.js v15.2.0: NEW. Subscribes to RTDB
+    │                               `.info/connected`; returns a boolean.
+    │                               Drives the header <ConnectionStatus>
+    │                               dot (green connected / red lost).
     ├── lib/
     │   ├── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
     │   │                           ROLE_COLORS, REQUEST_TYPES,
@@ -2211,6 +2267,22 @@ megustastu-scheduling/
         │                           Eager-migration effect unchanged —
         │                           it only ever touches the base
         │                           /shiftTemplate singleton.
+        │                           v15.2.0: header reworked. The
+        │                           "v{version} · {email}" line is removed;
+        │                           a <ConnectionStatus> dot (fed by
+        │                           useFirebaseConnection) sits next to
+        │                           Sign out. The user email moved into
+        │                           that dot's popover; version stays on
+        │                           the Settings footer. `appVersion` prop
+        │                           is now unused (kept on the signature).
+        ├── ConnectionStatus.jsx    v15.2.0: NEW. Round Firebase-connection
+        │                           dot for the header — green when
+        │                           connected, red when lost (via the
+        │                           `connected` prop). Click toggles a
+        │                           popover (outside-click + Esc to close)
+        │                           showing the status + the signed-in
+        │                           user's email. Uses --status-online /
+        │                           --status-offline + --bg-overlay-sheet.
         ├── EmployeesList.jsx       roster list + Add button.
         │                           vPre-1.0: see Pre-v1.0 archive below.
         │                           v1.3.0: + small "Priority" badge
@@ -3015,6 +3087,22 @@ megustastu-scheduling/
         │                           disabled until every cell on every
         │                           open day is filled.
         │                           vPre-1.0: see Pre-v1.0 archive below.
+        │                           v15.2.0: + allowIncompleteExport +
+        │                           isMobile props. When the setting is on,
+        │                           the button stays clickable on an
+        │                           incomplete week; a click opens
+        │                           <ExportWarningModal> (count via
+        │                           countEmptyCells) before running the
+        │                           lazy exportWeekPdf path. canClick =
+        │                           ready || allowIncompleteExport; title
+        │                           adapts.
+        ├── ExportWarningModal.jsx  v15.2.0: NEW. Overlay confirm shown when
+        │                           Export PDF is clicked on an incomplete
+        │                           week (allowIncompleteExport on). Props:
+        │                           open, emptyCount, isMobile, onClose,
+        │                           onConfirm. Cancel (ghost) + "Export
+        │                           anyway" (primary). Dumb — the export
+        │                           runs in ExportButton's onConfirm.
         ├── GenerateButton.jsx      v1.0.0: NEW. Schedule-grid entry point
         │                           for the auto-generator. Owns the
         │                           confirm modal + the upsertShift loop.
@@ -3099,6 +3187,17 @@ megustastu-scheduling/
         │                           on legacy callers → that side
         │                           contributes 0 to the rank (byte-
         │                           identical to v1.13.0).
+        │                           v15.2.0: ScheduleGrid now passes the
+        │                           EFFECTIVE template (resolvedShiftTemplate
+        │                           || DEFAULT_SHIFT_TEMPLATE), not the raw
+        │                           resolvedShiftTemplate. Fixes Generate
+        │                           self-disabling ("template not loaded")
+        │                           when a focus week has no shift-template
+        │                           revision and the frozen-base singleton
+        │                           is null — the grid/picker/export already
+        │                           ran on the DEFAULT fallback, so Generate
+        │                           was the lone dead control. employeeCount
+        │                           === 0 still gates the real load window.
         ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
         │                           Overlay. Shows the bullet list of
         │                           what the generator will do +
@@ -3390,7 +3489,16 @@ megustastu-scheduling/
       workingDaysPerWeek?: number,  // v0.12.0 — 1..7, default 5; off = 7 − N
       schedulingPriority?: boolean, // v1.3.0 — true → auto-generator picks
                                      // this employee before non-priority ones
+      activeFrom?: "YYYY-MM-DD",    // v15.2.0 — tenure start (null = unbounded)
+      activeUntil?: "YYYY-MM-DD",   // v15.2.0 — tenure end   (null = unbounded)
       active }
+   // v15.2.0: activeFrom / activeUntil bracket the employment window.
+   // isEmployeeActiveOnDate(emp, dateIso) (schedule-logic.js) gates both
+   // the generator's candidate filter and the manual picker; the week-
+   // level employeeTenureOverlapsDates drives the WeeklyShiftSummary +
+   // MonthlyFairnessPanel visibility skips. Tenure does NOT pro-rate the
+   // 28-day / calendar-month fairness TARGET math (documented
+   // simplification, matching the v15.1.0 focus-week-config shortcut).
 
 /shiftTemplate                                              // v1.9.0 shape
   → { foh:     { day:     { count, times: [{start,end},...],
@@ -3487,12 +3595,18 @@ megustastu-scheduling/
                                                      // v1.11.0 array shape
                                                      // still readable via
                                                      // resolveDayRequiredRoles.
-      pastWeeksLocked?: boolean }                    // v15.1.0 — default true.
+      pastWeeksLocked?: boolean,                     // v15.1.0 — default true.
                                                      // When false, past weeks
                                                      // stay fully editable on
                                                      // the Schedule tab (the
                                                      // v1.12.0 read-only gate
                                                      // is bypassed).
+      allowIncompleteExport?: boolean }              // v15.2.0 — default false.
+                                                     // When true, Export PDF
+                                                     // works on a week with
+                                                     // empty cells (warning
+                                                     // modal first). Toggle in
+                                                     // Settings → Display.
    // v15.1.0: settings.openingDays is the FROZEN BASE for the
    // /configRevisions resolution — Settings edits write revisions,
    // not this field. operatingStart/End + every other field above
