@@ -34,6 +34,7 @@ import { useState, useEffect } from "react";
 import { S, BTN } from "../lib/constants.js";
 import { Overlay, mkBtn } from "./atoms.jsx";
 import { isoDate, formatDayHeader } from "../lib/schedule-logic.js";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 // Count helpers — pure JS. Avoid hand-rolling a reduce; the maps are
 // small (typically <50 shifts/week).
@@ -68,6 +69,9 @@ export default function ClearConfirmModal({
   useEffect(function () {
     if (open) setScope(null);
   }, [open]);
+
+  // v15.3.0: Esc cancels. onClose no-ops while busy (mid-delete).
+  useEscClose(open, onClose);
 
   if (!open) return null;
 

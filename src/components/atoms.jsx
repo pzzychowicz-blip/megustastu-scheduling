@@ -81,6 +81,12 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
   return (
     <div
       style={backdropStyle}
+      // v15.3.0: sentinel for the shared keyboard handlers. Every modal
+      // renders through Overlay, so a mounted backdrop carrying this
+      // attribute means "a modal is open" — isAnyOverlayOpen() in
+      // src/lib/keyboard.js probes for it so AppShell / ScheduleGrid
+      // shortcuts can bail while a dialog is up. Purely additive.
+      data-mgt-overlay=""
       onClick={function (e) {
         if (e.target === e.currentTarget && onClose) onClose();
       }}
@@ -322,6 +328,36 @@ export function Toggle({ checked, onChange, label, helper, disabled, className }
         <div style={knobStyle} />
       </div>
     </div>
+  );
+}
+
+// ── Kbd ──────────────────────────────────────────────────────────────────
+// v15.3.0: keyboard keycap, used by the ShortcutsModal cheatsheet. Ported
+// from MGT Bookings' atoms.jsx Kbd — the shortcut UI is shared visual
+// language between the two apps. Colours flow through --bg-kbd /
+// --border-kbd (index.html, light + dark) per the v0.11.0 theming model.
+export function Kbd({ k }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: 6,
+        background: "var(--bg-kbd)",
+        border: "1px solid var(--border-kbd)",
+        fontFamily: "-apple-system, 'SF Mono', Menlo, monospace",
+        fontSize: 12,
+        fontWeight: 600,
+        color: "var(--text-primary)",
+        boxShadow: "0 1px 2px rgba(0,0,0,0.06), inset 0 -1px 0 rgba(0,0,0,0.08)",
+        minWidth: 22,
+        textAlign: "center",
+        boxSizing: "border-box",
+        lineHeight: "16px",
+      }}
+    >
+      {k}
+    </span>
   );
 }
 

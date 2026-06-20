@@ -49,7 +49,23 @@ import { S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
 import {
   holidayDaysInWeekByEmployee,
   employeeTenureOverlapsDates,
+  isEmployeeActiveOnDate,
+  isoDate,
 } from "../lib/schedule-logic.js";
+
+// v15.3.0: count the visible-week dates that fall inside the employee's
+// tenure (activeFrom / activeUntil). A fully-tenured week returns the full
+// visible-day count, so the quota cap below is a no-op for untenured staff.
+function activeVisibleDayCount(emp, dates) {
+  if (!Array.isArray(dates)) return 0;
+  let n = 0;
+  for (let i = 0; i < dates.length; i++) {
+    const d = dates[i];
+    const iso = typeof d === "string" ? d : isoDate(d);
+    if (isEmployeeActiveOnDate(emp, iso)) n++;
+  }
+  return n;
+}
 
 function rawQuotaFor(emp) {
   const v = emp && typeof emp.workingDaysPerWeek === "number" ? emp.workingDaysPerWeek : null;
@@ -105,12 +121,16 @@ export default function WeeklyShiftSummary({
     if ((emp.active === false || !inWeek) && count === 0) continue;
     const raw = rawQuotaFor(emp);
     const holiday = holidayDays[emp.id] || 0;
+    // v15.3.0: cap the quota at the number of visible-week dates the
+    // employee is actually active (tenure), so a mid-week hire / leaver
+    // isn't shown as under their full weekly quota. A fully-tenured week
+    // → activeVisible >= raw, so min() is a no-op (pre-v15.3.0 behaviour).
+    const activeVisible = activeVisibleDayCount(emp, dates || []);
     // Effective quota floors at 0 (can't go negative) and never exceeds
-    // the raw cap (subtracting a positive number never raises it). The
-    // closed-day case is already handled because `dates` excludes
-    // closed weekdays, so holiday requests on closed days never enter
-    // `holiday`.
-    const quota = Math.max(0, raw - holiday);
+    // the raw cap. The closed-day case is already handled because `dates`
+    // excludes closed weekdays, so holiday requests on closed days never
+    // enter `holiday`.
+    const quota = Math.max(0, Math.min(raw, activeVisible) - holiday);
     rows.push({
       id: emp.id,
       name: emp.name || "(unnamed)",

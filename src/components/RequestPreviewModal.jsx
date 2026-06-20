@@ -31,6 +31,7 @@
 import { S, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkBtn } from "./atoms.jsx";
 import { parseIsoDate } from "../lib/schedule-logic.js";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 // ── Display helpers ──────────────────────────────────────────────────────
 
@@ -81,6 +82,9 @@ function formatRecurringWeekdays(keys) {
 
 // ── Component ────────────────────────────────────────────────────────────
 export default function RequestPreviewModal({ open, request, employees, isMobile, onClose }) {
+  // v15.3.0: Esc closes the read-only preview (above the early return).
+  useEscClose(open, onClose);
+
   if (!open || !request) return null;
 
   const emp = employees ? employees[request.employeeId] : null;

@@ -27,6 +27,8 @@
 import { useEffect, useState } from "react";
 import { S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn } from "./atoms.jsx";
+import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 // ── Defaults ─────────────────────────────────────────────────────────────
 // v1.2.0: `preferredDayPart` ("day" | "evening" | "") only meaningful when
@@ -82,6 +84,20 @@ export default function RequestFormModal({
   useEffect(function () {
     if (open) setForm(formFromRequest(request));
   }, [open, request]);
+
+  // v15.3.0: Enter saves. Mirror of the Save button's `disabled={!valid}`
+  // gate, inline so the hook sits above the early return. Enter inside the
+  // Notes textarea still makes a newline (shouldSubmitOnEnter skips it).
+  // handleSave (below, hoisted) re-checks validity.
+  const enterCanSave =
+    open &&
+    Boolean(form.employeeId) && Boolean(form.type) &&
+    Boolean(form.dateFrom) && Boolean(form.dateTo) && form.dateFrom <= form.dateTo &&
+    (form.type !== "shift-preference" ||
+      form.preferredDayPart === "day" ||
+      form.preferredDayPart === "evening");
+  useEnterSubmit(open, enterCanSave, handleSave);
+  useEscClose(open, onClose);
 
   if (!open) return null;
 

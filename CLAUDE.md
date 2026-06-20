@@ -1498,10 +1498,123 @@ separate Firebase project, same UI conventions).
   pair (Save blocked when both set and until < from); `<EmployeesList>`
   shows a tenure line per row. Chosen over full effective-dated
   employee revisions to stay small/low-risk; tenure gates ELIGIBILITY +
-  VISIBILITY only — it does NOT pro-rate the 28-day / calendar-month
-  fairness TARGET math within a partially-overlapping window
-  (documented simplification, matching the v15.1.0 focus-week-config-
-  across-window shortcut).
+  VISIBILITY. **(v15.3.0 update:** tenure now ALSO pro-rates the 28-day /
+  calendar-month / weekly fairness TARGET math — see "Tenure-aware fairness
+  targets (v15.3.0)" below. The original v15.2.0 simplification that left
+  targets un-prorated no longer applies.)
+
+- **Keyboard shortcuts (v15.3.0):** single-key, no-modifier shortcuts
+  ported from MGT Bookings' pattern. Suppressed when `e.ctrlKey ||
+  e.metaKey || e.altKey`, when `isTypingTarget(e.target)` (INPUT /
+  TEXTAREA / SELECT / contentEditable), or when any modal is open
+  (`isAnyOverlayOpen()` probes for the `data-mgt-overlay` attribute the
+  `Overlay` atom now puts on its backdrop). Two handlers, never sharing a
+  key:
+  - **AppShell** owns a global `keydown`: `1`–`4` → switch tabs
+    (`TABS[n-1].key`); `?` → open `<ShortcutsModal>` (a read-only,
+    `Overlay`-wrapped cheatsheet using a new `Kbd` keycap atom; it owns
+    its own Esc-to-close since the Overlay atom has none).
+  - **ScheduleGrid** extends its existing Esc effect: `←`/`→` →
+    `goPrev`/`goNext`, `T` → `goToday`; `G`/`S`/`U`/`C`/`E` →
+    Generate / Swap / Undo / Clear / Export. The five action keys are
+    gated on `!isReadOnly` (Export is read-only-safe, so ungated).
+    Generate/Clear/Export are opened via `useImperativeHandle` `open()`
+    refs — those three button components became `forwardRef` so the
+    shortcut can trigger their internal modal/flow without lifting state.
+    Each `open()` respects the button's own disabled gate.
+  - **`Enter` confirms the primary action** in modals with a single clear
+    primary: `ShiftFormModal`, `EmployeeFormModal`, `RequestFormModal`,
+    `ExportWarningModal` (Save / Export anyway). Wired per-modal via the
+    shared `useEnterSubmit(open, canSubmit, onSubmit)` hook (document-level
+    listener so it fires regardless of focus). `shouldSubmitOnEnter`
+    excludes TEXTAREA (newline), BUTTON / SELECT (a focused control owns
+    its own Enter), and modifier combos. Each modal passes a `canSubmit`
+    that mirrors its Save button's enabled/validation gate (computed
+    null-safe so the hook sits above the modal's early return). Explicitly
+    NOT wired on `GenerateConfirmModal` (two primaries: Fill-empty vs
+    Regenerate) or `ClearConfirmModal` (needs a scope picked first).
+  Shared predicates live in `src/lib/keyboard.js` (`isTypingTarget`,
+  `isAnyOverlayOpen`, `shouldSubmitOnEnter`) so both handlers + the
+  Enter hook read one definition. The `<ShortcutsModal>` section list is
+  the single source of truth for the shortcut documentation — adding a
+  key means adding a row there AND wiring the handler.
+
+- **Past shifts visible on now-closed day-parts (v15.3.0):** principle —
+  **never hide a real shift behind the "Closed" placeholder.** Before, a
+  slot whose day-part is closed on a date rendered `renderClosedCell`
+  *before* looking up the shift, so a past/orphan assignment vanished
+  (and a fully-closed weekday dropped its whole column via
+  `visibleWeekDates`). The shift record always survived in Firebase —
+  only the render hid it. Root cause is `resolveConfigForWeek` falling
+  back to the current `/settings.openingDays` for a past week that has no
+  covering config revision; this is a VISIBILITY fix, not a change to
+  that resolution. Changes:
+  - `schedule-logic.js` + `dateHasAnyShift(weekShifts, dateIso)` (true
+    when any shift on the date has a truthy `employeeId`) and
+    `weekDatesWithShifts(weekStart, openingDays, weekShifts)` (open days
+    PLUS any closed weekday that still carries a shift; collapses to
+    `visibleWeekDates` when nothing closed has shifts).
+  - `ScheduleGrid`: `weekShifts` memo moved above the `dates` memo;
+    `dates` now uses `weekDatesWithShifts`. New `renderClosedSlotCell`
+    router — when a closed slot has an assigned shift it calls
+    `renderCell(date, slot, /*closedOverride*/ true)`, else
+    `renderClosedCell`. Both the desktop gate and mobile day-card gate
+    use it. `renderCell`'s new `closedOverride` paints a dashed
+    `--border-warning-tint` border + a small amber "closed" tag next to
+    the time; the assignee + times stay fully visible. Swap / highlight
+    states still win the border.
+  - `pdf-export.js`: dates use `weekDatesWithShifts`; the cell builder
+    looks the shift up BEFORE the closed check, so only an EMPTY closed
+    slot prints the muted-italic "Closed" — a closed slot with a shift
+    prints the assignee (two-line when times differ). The flat-template
+    two-line predicate (v15.1.0) is unchanged.
+  - Applies to all weeks: any cell with a real shift shows it (past /
+    present / future); empty closed cells still read "Closed".
+
+- **Tenure-aware fairness targets (v15.3.0):** supersedes the v15.2.0
+  simplification (which gated eligibility/visibility but NOT target math).
+  Fairness targets now pro-rate by the employee's Active dates (`activeFrom`
+  / `activeUntil`). New private helper `activeRangeWithinWindow(emp,
+  windowStartIso, windowEndIso)` in `schedule-logic.js` clamps a contiguous
+  window to the employee's tenure and returns `{fromIso, toIso, days}`
+  (`days === 0` when no overlap; full window when untenured). The three
+  aggregate builders apply `shiftsTarget = max(0, round(wpw × activeDays/7)
+  − holidays)` with holidays counted ONLY in the active sub-range (via the
+  existing `holidayDayCountForEmployeeInRange`, replacing the window-wide
+  `holidayDaysInWeekByEmployee` in `build28DayAggregates` /
+  `buildCalendarMonthAggregates`):
+  - `build28DayAggregates` + `buildCalendarMonthAggregates` — drive the
+    generator's `rankCandidates` deficit sort, so the generator inherits the
+    pro-rating with NO generator change.
+  - `buildEmployeeFairnessDetail` — rolling-28, calendar-month, and each of
+    the 4 per-week buckets pro-rate; the returned objects expose `activeDays`
+    (+ `windowDays`) so `<EmployeeFairnessModal>`'s Reasoning view shows
+    `wpw × activeDays/7 − holidays = target` and a tenure note when the
+    window is clipped.
+  - `<WeeklyShiftSummary>` pill caps quota at active visible days:
+    `quota = max(0, min(rawQuota, activeVisibleDays) − holiday)` (a cap, not
+    a pro-rate — a full week with enough active days still shows the full
+    `wpw`). Uses the new local `activeVisibleDayCount` + `isEmployeeActiveOnDate`.
+  `avgShiftHours` is unchanged (per-shift hours are tenure-independent;
+  `hoursTarget` shrinks because `shiftsTarget` does). Untenured employees are
+  byte-identical to pre-v15.3.0 (`activeDays` = full window).
+
+- **Global Esc-to-cancel (v15.3.0):** the mirror of the Enter-to-confirm
+  work. New shared hook `src/hooks/useEscClose.js` — `useEscClose(open,
+  onClose)` attaches a document-level `keydown` while `open` and calls
+  `onClose` on a bare Escape (no modifier). Applied to EVERY Overlay modal:
+  `ShiftFormModal`, `EmployeeFormModal`, `RequestFormModal`,
+  `GenerateConfirmModal`, `ClearConfirmModal`, `ExportWarningModal`,
+  `GenerateResultsModal`, `EmployeeFairnessModal`, `RequestPreviewModal`, and
+  `ShortcutsModal` (refactored off its bespoke effect). The hook sits above
+  each modal's early return (hooks run unconditionally). Destructive confirms
+  close too — `onClose` already no-ops while `busy`, so Esc can't dismiss a
+  generate/clear mid-run. `<ScheduleGrid>`'s own Esc chain (swap → jump →
+  pill highlight) now bails on `isAnyOverlayOpen()` (was the narrower
+  `modalCell` check), so a single Esc closes whatever modal is open without
+  also cancelling swap or clearing a highlight underneath it; with no modal
+  open the chain runs as before. Modals don't stack (one Overlay at a time),
+  so the per-modal listeners never compete.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
@@ -1615,6 +1728,12 @@ megustastu-scheduling/
     │                                 v15.2.0: → 15.2.0, sha
     │                                 "incomplete-export-past-revisions-
     │                                 employee-tenure".
+    │                                 v15.3.0: → 15.3.0, sha
+    │                                 "keyboard-closed-shift-tenure-
+    │                                 fairness-esc" (one version covering the
+    │                                 keyboard shortcuts, closed-shift
+    │                                 visibility, tenure-aware fairness
+    │                                 targets, and global Esc-to-cancel).
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -1639,6 +1758,19 @@ megustastu-scheduling/
     │   │                           captured by ClearButton, GenerateButton,
     │   │                           and ScheduleGrid's swap/move handler.
     │   ├── useWinW.js              viewport-width listener
+    │   ├── useEnterSubmit.js       v15.3.0: NEW. While a modal is open, a
+    │   │                           bare Enter (not in a textarea/button/
+    │   │                           select) fires its primary action when a
+    │   │                           caller-supplied `canSubmit` is true.
+    │   │                           Document-level listener so it works
+    │   │                           regardless of focus. Used by the four
+    │   │                           single-primary form modals (Shift /
+    │   │                           Employee / Request / ExportWarning).
+    │   ├── useEscClose.js          v15.3.0: NEW. Mirror of useEnterSubmit —
+    │   │                           while a modal is open, a bare Escape
+    │   │                           calls onClose. Document-level. Applied to
+    │   │                           every Overlay modal so Esc cancels
+    │   │                           globally; busy confirms no-op via onClose.
     │   └── useFirebaseConnection.js v15.2.0: NEW. Subscribes to RTDB
     │                               `.info/connected`; returns a boolean.
     │                               Drives the header <ConnectionStatus>
@@ -1958,6 +2090,21 @@ megustastu-scheduling/
     │   │                           both-open vs solo weekday counts
     │   │                           (hNormal×cBoth + hSolo×cSolo);
     │   │                           no-solo templates byte-identical.
+    │   │                           v15.3.0: + dateHasAnyShift(weekShifts,
+    │   │                           dateIso) and weekDatesWithShifts(
+    │   │                           weekStart, openingDays, weekShifts) —
+    │   │                           the latter keeps any closed weekday
+    │   │                           that still carries a real shift so a
+    │   │                           past/orphan assignment never drops its
+    │   │                           column. Collapses to visibleWeekDates
+    │   │                           when nothing closed has shifts.
+    │   ├── keyboard.js             v15.3.0: NEW. Shared keyboard-shortcut
+    │   │                           predicates (pure JS): isTypingTarget,
+    │   │                           isAnyOverlayOpen (probes the
+    │   │                           data-mgt-overlay sentinel on the Overlay
+    │   │                           backdrop), shouldSubmitOnEnter. Read by
+    │   │                           AppShell's global handler, ScheduleGrid's
+    │   │                           Esc/shortcut handler, and useEnterSubmit.
     │   ├── pdf-export.js           landscape-A4 weekly rota → file download
     │   │                           via jsPDF + jspdf-autotable. Pure JS.
     │   │                           FoH/Kitchen section divider rows.
@@ -2219,7 +2366,13 @@ megustastu-scheduling/
     │                               longer false-positive "overrides".
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
-        │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn
+        │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn.
+        │                           v15.3.0: + Kbd keycap atom (ported from
+        │                           Bookings; uses --bg-kbd / --border-kbd).
+        │                           Overlay backdrop gained a data-mgt-overlay
+        │                           attribute — the "a modal is open" sentinel
+        │                           probed by src/lib/keyboard.js so the
+        │                           keyboard shortcuts bail while a dialog is up.
         ├── LoginScreen.jsx         email/password sign-in form.
         │                           v1.10.0: email + password mkInp calls
         │                           and the Sign-in mkBtn call all carry
@@ -3422,7 +3575,7 @@ megustastu-scheduling/
         │                           Close button (ghost variant).
         │                           No Save, no Delete — edit access
         │                           stays on the Requests tab.
-        └── GenerateResultsModal.jsx v1.4.0: NEW. "Details" modal opened
+        ├── GenerateResultsModal.jsx v1.4.0: NEW. "Details" modal opened
                                     from the generator result banner.
                                     Lists `summary.unfilledCells` and
                                     (for Regenerate) `summary.clearedReasons`
@@ -3476,6 +3629,15 @@ megustastu-scheduling/
                                     scroller. Close button gained
                                     `.mgt-hover-scale` (missed in the
                                     v1.9.0 second wave).
+        └── ShortcutsModal.jsx       v15.3.0: NEW. Read-only keyboard-
+                                    shortcuts cheatsheet opened with `?`
+                                    (handler in AppShell). Overlay-wrapped;
+                                    sectioned list (Navigation / Schedule
+                                    actions / Universal) built with the Kbd
+                                    atom. Single source of truth for the
+                                    shortcut docs — add a key = add a row
+                                    here AND wire the handler. Owns its own
+                                    Esc-to-close (the Overlay atom has none).
 ```
 
 ---

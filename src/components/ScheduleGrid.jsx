@@ -15,7 +15,7 @@
 //   actions       (object)                — usePersistence().actions
 //   isMobile      (bool)
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   S, BTN,
   ROLE_COLORS,
@@ -38,7 +38,7 @@ import {
 } from "../lib/constants.js";
 import {
   startOfWeek,
-  visibleWeekDates,
+  weekDatesWithShifts,
   isoDate,
   parseIsoDate,
   formatDayHeader,
@@ -60,6 +60,7 @@ import {
   slotTimesForDate,
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
+import { isTypingTarget, isAnyOverlayOpen } from "../lib/keyboard.js";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import ExportButton from "./ExportButton.jsx";
 import GenerateButton from "./GenerateButton.jsx";
@@ -216,9 +217,18 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     return m;
   }, [slots]);
 
+  // Narrow the shifts map to this week before the grid scans it. Defined
+  // here (above `dates`) so the visible-columns computation can keep any
+  // closed weekday that still carries a real shift (v15.3.0).
+  const weekShifts = useMemo(function () { return shiftsForWeek(shifts, weekStart); }, [shifts, weekStart]);
+
+  // v15.3.0: visible columns = the open days PLUS any closed weekday that
+  // still has an assignment. Changing the opening days then never hides a
+  // past/orphan shift (the whole day used to drop out via visibleWeekDates).
+  // With no closed-day shifts this is identical to visibleWeekDates.
   const dates = useMemo(
-    function () { return visibleWeekDates(weekStart, openingDays); },
-    [weekStart, openingDays]
+    function () { return weekDatesWithShifts(weekStart, openingDays, weekShifts); },
+    [weekStart, openingDays, weekShifts]
   );
 
   // v0.10.2: cache today's ISO once per render so the date-pill loop
@@ -250,10 +260,6 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   function goPrev()  { setWeekStart(function (d) { return addDays(d, -7); }); }
   function goNext()  { setWeekStart(function (d) { return addDays(d, 7); }); }
   function goToday() { setWeekStart(startOfWeek(new Date())); }
-
-  // Narrow the shifts map to this week before passing into the grid — keeps
-  // the per-cell scan cheap.
-  const weekShifts = useMemo(function () { return shiftsForWeek(shifts, weekStart); }, [shifts, weekStart]);
 
   // v1.1.0 fairness: also narrow the PRIOR 7 days. Used by the generator
   // for combined-load ranking so employees who worked many shifts last
@@ -389,27 +395,72 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     return function () { clearTimeout(t); };
   }, [highlightedCellKey]);
 
-  // ── Esc key: cancel swap or clear highlight ──────────────────────────
-  // Priority order: swap-mode → jump-target → sticky pill-highlight. The
-  // jump-target is a one-shot affordance, so prioritising it over the
-  // pill keeps Esc-to-cancel feeling immediate when the manager has
-  // just clicked a results-modal row.
+  // v15.3.0: imperative handles to the nav-bar action buttons so the
+  // keyboard shortcuts (G / C / E) can open their modals / run their flow
+  // without lifting each button's internal state into ScheduleGrid.
+  const generateRef = useRef(null);
+  const clearRef = useRef(null);
+  const exportRef = useRef(null);
+
+  // ── Keyboard: Esc chain + schedule shortcuts (v15.3.0) ───────────────
+  // Esc priority order: swap-mode → jump-target → sticky pill-highlight.
+  // The jump-target is a one-shot affordance, so prioritising it over the
+  // pill keeps Esc-to-cancel feeling immediate when the manager has just
+  // clicked a results-modal row.
+  //
+  // v15.3.0 adds the single-key schedule shortcuts (mirroring MGT Bookings):
+  // ←/→ week nav, T this week, G/S/U/C/E for Generate/Swap/Undo/Clear/Export.
+  // Guards: no modifier, not typing in a field, no modal open (the
+  // data-mgt-overlay sentinel). The five action keys are gated on the
+  // read-only past-week flag (E export is read-only-safe, so it's allowed).
+  // Tab digits + `?` live in AppShell; the two handlers never share a key.
   useEffect(function () {
     function onKey(e) {
-      if (e.key !== "Escape") return;
-      // Modal overlay handles its own Esc; don't fight it.
-      if (modalCell) return;
-      if (swapMode) {
-        exitSwapMode();
-      } else if (highlightedCellKey) {
-        setHighlightedCellKey(null);
-      } else if (highlightedEmployeeId) {
-        setHighlightedEmployeeId(null);
+      if (e.key === "Escape") {
+        // v15.3.0: any open modal owns Esc (each modal closes itself via
+        // useEscClose). Yield so a single Esc closes the dialog without also
+        // cancelling swap / clearing a highlight underneath it. With no modal
+        // open, the swap → jump → pill chain below runs as before.
+        if (isAnyOverlayOpen()) return;
+        if (swapMode) {
+          exitSwapMode();
+        } else if (highlightedCellKey) {
+          setHighlightedCellKey(null);
+        } else if (highlightedEmployeeId) {
+          setHighlightedEmployeeId(null);
+        }
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (isAnyOverlayOpen()) return;
+
+      switch (e.key) {
+        case "ArrowLeft":  goPrev();  break;
+        case "ArrowRight": goNext();  break;
+        case "t": case "T": goToday(); break;
+        case "g": case "G":
+          if (!isReadOnly && generateRef.current) generateRef.current.open();
+          break;
+        case "s": case "S":
+          if (!isReadOnly) toggleSwapMode();
+          break;
+        case "u": case "U":
+          if (!isReadOnly) handleUndo();
+          break;
+        case "c": case "C":
+          if (!isReadOnly && clearRef.current) clearRef.current.open();
+          break;
+        case "e": case "E":
+          if (exportRef.current) exportRef.current.open();
+          break;
+        default: break;
       }
     }
     document.addEventListener("keydown", onKey);
     return function () { document.removeEventListener("keydown", onKey); };
-  }, [swapMode, highlightedEmployeeId, highlightedCellKey, modalCell]);
+  }, [swapMode, highlightedEmployeeId, highlightedCellKey, modalCell, isReadOnly]);
 
   // ── Result banner (v1.0.0 generator + v1.1.0 clear) ──────────────────
   // After a Generate run, GenerateButton fires onResult({filled, unfilled,
@@ -802,8 +853,26 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     );
   }
 
+  // v15.3.0: closed-slot router. When a slot's day-part is closed on `date`
+  // but a real shift still lives there (past week, or an orphan left after
+  // the manager closed the slot), render the assignment with the "closed"
+  // flag rather than the inert placeholder — never hide who worked. Empty
+  // closed slots keep the placeholder. Shared by the desktop + mobile gates
+  // so they stay in lockstep with the PDF export's identical rule.
+  function renderClosedSlotCell(date, slot) {
+    const closedShift = findShiftForSlot(weekShifts, isoDate(date), slot);
+    if (closedShift && closedShift.employeeId) return renderCell(date, slot, true);
+    return renderClosedCell(date, slot);
+  }
+
   // ── Cell renderer (shared between layouts) ───────────────────────────
-  function renderCell(date, slot) {
+  // v15.3.0: `closedOverride` — true when this slot's day-part is closed on
+  // `date` but a real shift still lives here (a past week, or an orphan
+  // assignment left after the manager closed the slot). The cell renders
+  // normally (assignee + times stay visible) but gains a dashed amber
+  // border + a small "closed" tag so it's clear the slot is no longer open.
+  // Principle: never hide a real shift behind the "Closed" placeholder.
+  function renderCell(date, slot, closedOverride) {
     const dIso = isoDate(date);
     // v15.1.0: effectivize the slot for THIS date — solo times apply on
     // weekdays where the slot's day-part is the only open one. The
@@ -893,6 +962,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         ? "var(--border-active-on)"
         : palette.border;
     const baseBorderWidth = (isSwapSource || isAnyHighlight) ? 2 : 1;
+    // v15.3.0: closed-but-occupied cells get a dashed amber border. Swap /
+    // highlight states win (they own the border), so the flag only paints
+    // when the cell is at rest.
+    const showClosedFlag = Boolean(closedOverride) && !isSwapSource && !isAnyHighlight;
+    const effBorderColor = showClosedFlag ? "var(--border-warning-tint)" : baseBorder;
+    const borderDash = showClosedFlag ? "dashed" : "solid";
     const ringShadow = isSwapSource
       ? "0 0 0 3px var(--bg-warning-tint), var(--shadow-soft)"
       : isAnyHighlight
@@ -917,7 +992,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           width: "100%",
           textAlign: "left",
           background: baseBg,
-          border: baseBorderWidth + "px solid " + baseBorder,
+          border: baseBorderWidth + "px " + borderDash + " " + effBorderColor,
           borderRadius: 10,
           padding: "8px 10px",
           fontSize: 12,
@@ -940,7 +1015,26 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             fontWeight: 600,
           }}
         >
-          <span>{cell.start}–{cell.end}{timeOverridden ? " *" : ""}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span>{cell.start}–{cell.end}{timeOverridden ? " *" : ""}</span>
+            {showClosedFlag ? (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  padding: "1px 5px",
+                  borderRadius: 5,
+                  background: "var(--bg-warning-tint)",
+                  color: "var(--text-warning)",
+                  border: "1px solid var(--border-warning-tint)",
+                }}
+              >
+                closed
+              </span>
+            ) : null}
+          </span>
           {roleChip}
         </div>
         <div
@@ -1018,6 +1112,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           {formatWeekRange(weekStart)}
         </div>
         <GenerateButton
+          ref={generateRef}
           weekStart={weekStart}
           weekShifts={weekShifts}
           priorWeekShifts={priorWeekShifts}
@@ -1052,6 +1147,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           disabled={isReadOnly}
         />
         <ClearButton
+          ref={clearRef}
           weekStart={weekStart}
           weekDates={dates}
           weekShifts={weekShifts}
@@ -1063,6 +1159,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           disabled={isReadOnly}
         />
         <ExportButton
+          ref={exportRef}
           weekStart={weekStart}
           slots={slots}
           weekShifts={weekShifts}
@@ -1200,8 +1297,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                 // v1.3.0: a slot whose dayPart is closed on this date
                 // renders an inert "Closed" placeholder so the grid keeps
                 // its row alignment across columns.
+                // v15.3.0: …unless a real shift still lives in that closed
+                // slot, in which case the assignment stays visible.
                 if (!isSlotOpenOnDate(d, slot, openingDays)) {
-                  return renderClosedCell(d, slot);
+                  return renderClosedSlotCell(d, slot);
                 }
                 return renderCell(d, slot);
               })}
@@ -1286,7 +1385,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                         </div>
                       )
                       : null}
-                    {slotOpen ? renderCell(d, slot) : renderClosedCell(d, slot)}
+                    {slotOpen ? renderCell(d, slot) : renderClosedSlotCell(d, slot)}
                   </div>
                 );
               })}

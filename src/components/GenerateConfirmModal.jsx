@@ -39,6 +39,7 @@
 import { useEffect, useState } from "react";
 import { S } from "../lib/constants.js";
 import { Overlay, Toggle, mkBtn } from "./atoms.jsx";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 export default function GenerateConfirmModal({
   open, weekLabel, strictPref, busy, isMobile, onClose, onConfirm,
@@ -58,6 +59,10 @@ export default function GenerateConfirmModal({
       setPreserveAssignments(false);
     }
   }, [open]);
+
+  // v15.3.0: Esc cancels. onClose already no-ops while busy (mid-run), so
+  // Esc can't dismiss a generation in progress — matching the disabled Cancel.
+  useEscClose(open, onClose);
 
   if (!open) return null;
 

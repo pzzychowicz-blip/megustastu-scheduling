@@ -22,7 +22,7 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import {
-  visibleWeekDates,
+  weekDatesWithShifts,
   isoDate,
   formatDayHeader,
   formatWeekRange,
@@ -100,13 +100,19 @@ function buildTableBody(slots, dates, weekShifts, employees, openingDays) {
       ? slot.humanLabel + "\n" + slot.defaultStart
       : slot.humanLabel + "\n" + slot.defaultStart + "–" + slot.defaultEnd;
     const dayCells = dates.map(function (d) {
-      // v1.9.0: closed-dayPart placeholder. The cell stays in the table
-      // structure (the column belongs to a partially-open day) but reads
-      // as obviously inert — italic muted grey, smaller font. The literal
+      const dIso = isoDate(d);
+      const existing = findShiftForSlot(weekShifts, dIso, slot);
+      const cell = deriveCellState(existing, slot);
+      const emp = cell.employeeId ? employees[cell.employeeId] : null;
+      const slotClosed = openingDays && !isSlotOpenOnDate(d, slot, openingDays);
+      // v1.9.0 / v15.3.0: closed-dayPart cell. An EMPTY closed slot reads as
+      // obviously inert — italic muted grey, smaller font. But a closed slot
+      // that still holds a real shift prints the assignment instead (never
+      // hide who worked when the manager later closed the slot). The literal
       // RGB triplet is intentional: pdf-export.js never reads CSS vars,
       // because the printed palette is locked to a light scheme regardless
       // of in-app theme (v0.11.0 decision).
-      if (openingDays && !isSlotOpenOnDate(d, slot, openingDays)) {
+      if (slotClosed && !emp) {
         return {
           content: "Closed",
           styles: {
@@ -116,10 +122,6 @@ function buildTableBody(slots, dates, weekShifts, employees, openingDays) {
           },
         };
       }
-      const dIso = isoDate(d);
-      const existing = findShiftForSlot(weekShifts, dIso, slot);
-      const cell = deriveCellState(existing, slot);
-      const emp = cell.employeeId ? employees[cell.employeeId] : null;
       // isWeekComplete should prevent empty cells from reaching here, but
       // be defensive — a stale isWeekComplete call against an updated
       // shifts map could in theory let an empty cell slip through.
@@ -160,7 +162,10 @@ export function exportWeekPdf({ weekStart, slots, weekShifts, employees, opening
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
 
-  const dates = visibleWeekDates(weekStart, openingDays);
+  // v15.3.0: include any fully-closed weekday that still carries a real
+  // shift, so a printed past-week rota doesn't drop the column for a day
+  // whose hours were later closed. Matches the in-app grid.
+  const dates = weekDatesWithShifts(weekStart, openingDays, weekShifts);
   const weekLabel = formatWeekRange(weekStart);
 
   // ── Header ─────────────────────────────────────────────────────────────

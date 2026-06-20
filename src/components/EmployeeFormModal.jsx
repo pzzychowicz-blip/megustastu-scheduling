@@ -32,6 +32,8 @@ import {
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn, TBadge } from "./atoms.jsx";
+import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 // v0.12.0: working-days-per-week choices. 1..7. Off-days = 7 − N. Stored
 // on each employee for the future auto-generator (v1.x).
@@ -93,6 +95,17 @@ export default function EmployeeFormModal({
   useEffect(function () {
     if (open) setForm(formFromEmployee(employee));
   }, [open, employee]);
+
+  // v15.3.0: Enter saves. Mirror of the Save button's `disabled={!valid}`
+  // gate, computed inline so the hook sits above the early return (hooks
+  // run unconditionally). handleSave (below, hoisted) re-checks validity.
+  const enterCanSave =
+    open &&
+    form.name.trim().length > 0 &&
+    form.roles.length > 0 &&
+    !(Boolean(form.activeFrom) && Boolean(form.activeUntil) && form.activeUntil < form.activeFrom);
+  useEnterSubmit(open, enterCanSave, handleSave);
+  useEscClose(open, onClose);
 
   if (!open) return null;
 

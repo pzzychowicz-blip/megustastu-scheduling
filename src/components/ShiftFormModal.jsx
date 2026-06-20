@@ -83,6 +83,8 @@ import {
   withinMaxConsecutiveWorkingDays,
   isEmployeeActiveOnDate,
 } from "../lib/schedule-logic.js";
+import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 // Lookup once per render — REQUEST_TYPES is small.
 function requestTypeLabel(key) {
@@ -217,6 +219,20 @@ export default function ShiftFormModal({
   }, [slotDef, employees, requests, weekShifts, dateIso, currentShiftId, showRequestBlocked]);
 
   const eligibleEmployees = eligible.list;
+
+  // v15.3.0: Enter saves the shift. Mirror of the Save button's
+  // `disabled={!valid}` gate plus the readOnly hide, computed null-safe so
+  // this hook can sit above the `!slotDef` early return (hooks run
+  // unconditionally). handleSave (below, hoisted) re-checks validity + the
+  // same-day guard, so this is belt-and-braces.
+  const enterCanSave =
+    open && !readOnly && Boolean(slotDef) &&
+    Boolean(form.start && form.end && form.start < form.end) &&
+    !((slotDef && !slotDef.isDay) && form.employeeId && !form.role);
+  useEnterSubmit(open, enterCanSave, handleSave);
+  // v15.3.0: Esc closes the cell editor (read-only mode included — the
+  // footer there is a single Close, and onClose is the same handler).
+  useEscClose(open, onClose);
 
   if (!open || !slotDef) return null;
 

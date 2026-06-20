@@ -5,6 +5,110 @@ an entry. Newest first.
 
 ---
 
+## v15.3.0 — Keyboard shortcuts, visible past shifts, tenure-aware fairness, global Esc
+
+**Date:** 2026-06-20 – 2026-06-21
+
+**Behavioural change:** Four independent manager-facing additions (all under
+one version).
+
+1. **Keyboard shortcuts** (mirroring MGT Bookings' pattern). Single-key, no
+   modifier, suppressed while typing in a field or while any modal is open:
+   - Global: `1`–`4` switch tabs (Schedule / Employees / Requests /
+     Settings); `?` opens a new keyboard-shortcuts help overlay.
+   - Schedule tab: `←` / `→` previous / next week, `T` jump to this week,
+     `G` Generate, `S` Swap mode, `U` Undo, `C` Clear, `E` Export PDF. The
+     five action keys are inert on a read-only past week (Export excepted).
+   - Universal: `Esc` keeps its existing chain (close modal → cancel swap →
+     clear jump highlight → clear pill highlight). `Enter` confirms the
+     primary action in modals with a single clear primary — ShiftFormModal,
+     EmployeeFormModal, RequestFormModal, ExportWarningModal (Save / Export
+     anyway). Skipped where there is no single primary (GenerateConfirmModal,
+     ClearConfirmModal) and on read-only modals. Enter in a `<textarea>`
+     still makes a newline; it respects each primary button's
+     enabled/validation gate.
+
+2. **Past shifts stay visible when opening days change.** Previously,
+   closing a day-part rendered cells on that day-part as an inert "Closed"
+   placeholder — even on past weeks that already had assignments, hiding who
+   worked (a fully-closed weekday dropped its whole column). The shift record
+   always survived in Firebase; only the render hid it. Now: a closed cell
+   that still holds a real shift renders the assignment (assignee + times)
+   with a dashed amber border and a small "closed" tag; an empty closed cell
+   keeps the "Closed" placeholder. Applied across the desktop grid, mobile
+   day-cards, and the PDF export. A fully-closed weekday with shifts now
+   reappears as a column via the new `weekDatesWithShifts` helper.
+
+3. **Tenure-aware fairness targets.** The fairness aggregate helpers ignored
+   per-employee Active dates (v15.2.0 `activeFrom` / `activeUntil`) — a
+   mid-window hire/leaver got a full-window target, a big artificial deficit
+   that the Monthly Fairness Panel AND the generator's ranking acted on. Now
+   every target pro-rates by the employee's active days within the window:
+   `target = max(0, round(wpw × activeDays/7) − holidays)`, with holidays
+   counted only inside the active sub-range. Applied to `build28DayAggregates`,
+   `buildCalendarMonthAggregates`, and `buildEmployeeFairnessDetail`
+   (rolling-28, calendar-month, and each per-week bucket); the generator
+   inherits it through the same aggregate maps (no generator change). The
+   Weekly summary pill also caps quota at active visible days
+   (`min(wpw, activeVisibleDays) − holidays`). Untenured employees are
+   byte-identical to before (activeDays = full window). New helper
+   `activeRangeWithinWindow`.
+
+4. **Global Esc-to-cancel.** Esc now closes every modal — the mirror of the
+   v15.3.0 Enter-to-confirm work — via a shared `useEscClose(open, onClose)`
+   hook applied to all Overlay modals (form, confirm, info, and read-only).
+   Destructive confirms (Generate / Clear) close too; while busy mid-run,
+   `onClose` no-ops so Esc can't dismiss a running action. ScheduleGrid's Esc
+   chain (swap / jump / pill highlight) yields when any modal is open
+   (`isAnyOverlayOpen()` guard replaces the narrower `modalCell` check), so a
+   single Esc closes the dialog without also touching grid state.
+
+**Files changed:**
+- **New:** `src/lib/keyboard.js` (`isTypingTarget`, `isAnyOverlayOpen`,
+  `shouldSubmitOnEnter`), `src/hooks/useEnterSubmit.js`,
+  `src/components/ShortcutsModal.jsx`.
+- **Atoms:** `src/components/atoms.jsx` — `Kbd` keycap atom (ported from
+  Bookings); `data-mgt-overlay` sentinel on the Overlay backdrop.
+- **Shortcuts wiring:** `AppShell.jsx` (global tab/`?` handler + modal
+  mount), `ScheduleGrid.jsx` (Esc chain extended with week-nav + G/S/U/C/E,
+  action-button refs), `GenerateButton.jsx` / `ClearButton.jsx` /
+  `ExportButton.jsx` (forwardRef + `useImperativeHandle` `open()`).
+- **Enter-to-save:** `ShiftFormModal.jsx`, `EmployeeFormModal.jsx`,
+  `RequestFormModal.jsx`, `ExportWarningModal.jsx`.
+- **Closed-shift visibility:** `schedule-logic.js` (`dateHasAnyShift`,
+  `weekDatesWithShifts`), `ScheduleGrid.jsx` (`weekShifts` moved above
+  `dates`; `dates` → `weekDatesWithShifts`; `renderCell` gains
+  `closedOverride`; new `renderClosedSlotCell` router used by both gates),
+  `pdf-export.js` (lookup-before-closed-check; closed-day shifts print).
+- **Tenure-aware fairness:** `schedule-logic.js` (`activeRangeWithinWindow`;
+  pro-rating in `build28DayAggregates` / `buildCalendarMonthAggregates` /
+  `buildEmployeeFairnessDetail`, which now also expose `activeDays`),
+  `WeeklyShiftSummary.jsx` (tenure-capped quota), `EmployeeFairnessModal.jsx`
+  (Reasoning-view formulas show the `× activeDays/7` factor + tenure note).
+- **Global Esc:** `src/hooks/useEscClose.js` (new) applied to ShiftFormModal,
+  EmployeeFormModal, RequestFormModal, GenerateConfirmModal, ClearConfirmModal,
+  ExportWarningModal, GenerateResultsModal, EmployeeFairnessModal,
+  RequestPreviewModal, and ShortcutsModal (refactored off its local effect);
+  `ScheduleGrid.jsx` Esc guard → `isAnyOverlayOpen()`.
+- **Tokens / version:** `index.html` (`--bg-kbd` / `--border-kbd`, light +
+  dark), `src/App.jsx` (→ 15.3.0, sha
+  `keyboard-closed-shift-tenure-fairness-esc`).
+
+**Verification:** `npm run build` clean (main bundle ~180.9 kB gz). Live DEV
+preview — all shortcuts fire (tabs, `?`/Esc, week nav, G/C modals, S swap,
+Enter saves a form), suppressed while typing / while a modal is open.
+Closed-shift case: closing a day-part effective the current week showed the
+assignee + "closed" tag while empty closed cells kept "Closed"; DEV config
+restored. Tenure fairness verified with existing DEV data — Petra (`activeFrom
+1 Jun`) shows a pro-rated `5/15` 28-day target (21 active days of 28) with the
+Reasoning view spelling out `wpw (5) × active days (21) of 28 / 7 − holidays
+(0) = 15`; untenured staff stay at `5/20`; Allesandro (`activeUntil 31 May`)
+is correctly dropped from the panel. Esc closes every modal tested (cell
+editor, Generate, Clear, help, Add Employee, Add Request, fairness drill-down)
+and still cancels swap mode when no modal is open.
+
+---
+
 ## v15.2.0 — Incomplete-export toggle, past-dated config revisions, per-employee tenure dates
 
 **Date:** 2026-06-20
