@@ -144,6 +144,34 @@ export function visibleWeekDates(startDate, openingDays) {
   });
 }
 
+// v15.3.0: true iff any shift on `dateIso` carries an assignee. Used to
+// rescue past/orphan assignments from being hidden when their weekday is
+// closed in the CURRENT openingDays (a closed day-part renders "Closed"
+// and a fully-closed day drops from the grid entirely — but the shift
+// record still lives in Firebase). Requires a truthy employeeId so an
+// empty record can't resurrect a day with nothing to show.
+export function dateHasAnyShift(weekShifts, dateIso) {
+  const all = Object.values(weekShifts || {});
+  for (let i = 0; i < all.length; i++) {
+    const s = all[i];
+    if (s && s.date === dateIso && s.employeeId) return true;
+  }
+  return false;
+}
+
+// v15.3.0: like visibleWeekDates, but ALSO keeps any weekday that carries a
+// real shift even when it's fully closed in the current schedule. Principle:
+// never hide a real assignment. Mon..Sun order preserved. When openingDays
+// is undefined every day is open (isDateOpen normalizes to all-open), so
+// this collapses to weekDates — identical to the visibleWeekDates fallback.
+export function weekDatesWithShifts(startDate, openingDays, weekShifts) {
+  const dates = weekDates(startDate);
+  return dates.filter(function (d) {
+    if (isDateOpen(openingDays, d)) return true;
+    return dateHasAnyShift(weekShifts, isoDate(d));
+  });
+}
+
 // ── Effective-dated config revisions (v15.1.0) ───────────────────────────
 // /configRevisions/{pushId} → { effectiveFrom: "YYYY-MM-DD" (an ISO
 // Monday), openingDays?: {...}, shiftTemplate?: {...} }. PER-AXIS PARTIAL
@@ -983,6 +1011,23 @@ export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles, openingDays)
   return weightSum > 0 ? weightedTotal / weightSum : 0;
 }
 
+// v15.3.0: clamp a contiguous date window to an employee's tenure
+// (activeFrom / activeUntil) so fairness targets pro-rate by the time the
+// employee is actually active. Returns the active sub-range (ISO) + its
+// inclusive day count. An employee with no tenure bounds yields the full
+// window, so targets stay byte-identical to pre-v15.3.0 for untenured staff.
+// `days === 0` when the tenure doesn't overlap the window at all.
+function activeRangeWithinWindow(emp, windowStartIso, windowEndIso) {
+  let fromIso = windowStartIso;
+  let toIso = windowEndIso;
+  if (emp && emp.activeFrom && emp.activeFrom > fromIso) fromIso = emp.activeFrom;
+  if (emp && emp.activeUntil && emp.activeUntil < toIso) toIso = emp.activeUntil;
+  if (fromIso > toIso) return { fromIso: fromIso, toIso: toIso, days: 0 };
+  const ms = parseIsoDate(toIso).getTime() - parseIsoDate(fromIso).getTime();
+  const days = Math.round(ms / 86400000) + 1;
+  return { fromIso: fromIso, toIso: toIso, days: days };
+}
+
 export function build28DayAggregates(args) {
   const out = {};
   if (!args || !args.employees || !args.weekStart) return out;
@@ -1026,10 +1071,15 @@ export function build28DayAggregates(args) {
     accum[s.employeeId].hours += hoursBetween(s.start, s.end);
   }
 
-  // 28-day holiday subtraction uses the existing helper — its
-  // signature is `(requestsMap, dates)` and it works for any date
-  // array, not just one week.
-  const holidayCounts = holidayDaysInWeekByEmployee(requests, dates);
+  // v15.3.0: targets pro-rate by the employee's tenure (activeFrom /
+  // activeUntil) within the window, and holidays are counted only inside
+  // that active sub-range — so a mid-window hire / leaver gets a fair
+  // (smaller) target instead of a full-window one. Per-employee now (the
+  // active sub-range differs by employee), so the window-wide
+  // holidayDaysInWeekByEmployee call is replaced by the per-employee
+  // holidayDayCountForEmployeeInRange over [range.fromIso, range.toIso].
+  const windowStartIso = isoDate(dates[0]);
+  const windowEndIso = isoDate(dates[dates.length - 1]);
 
   empList.forEach(function (e) {
     const a = accum[e.id];
@@ -1038,8 +1088,13 @@ export function build28DayAggregates(args) {
     const wpw = Number.isFinite(e.workingDaysPerWeek) && e.workingDaysPerWeek >= 1
       ? Math.min(7, Math.round(e.workingDaysPerWeek))
       : 5;
-    const holiday = holidayCounts[e.id] || 0;
-    const shiftsTarget = Math.max(0, wpw * 4 - holiday);
+    const range = activeRangeWithinWindow(e, windowStartIso, windowEndIso);
+    const holiday = holidayDayCountForEmployeeInRange(requests, e.id, range.fromIso, range.toIso);
+    // wpw × activeDays/7 − holidays. Full-window tenure (days === 28) →
+    // round(wpw × 4) = wpw × 4, identical to pre-v15.3.0.
+    const shiftsTarget = range.days > 0
+      ? Math.max(0, Math.round(wpw * range.days / 7) - holiday)
+      : 0;
     const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles, openingDays);
     out[e.id] = {
       shiftsCount: shiftsCount,
@@ -1125,9 +1180,11 @@ export function buildCalendarMonthAggregates(args) {
     accum[s.employeeId].hours += hoursBetween(s.start, s.end);
   }
 
-  // Same helper as build28DayAggregates — works for any dates array,
-  // filters `type === "holiday"` only.
-  const holidayCounts = holidayDaysInWeekByEmployee(requests, dates);
+  // v15.3.0: pro-rate by tenure within the month, holidays counted only in
+  // the active sub-range (per-employee — replaces the window-wide
+  // holidayDaysInWeekByEmployee).
+  const windowStartIso = isoDate(dates[0]);
+  const windowEndIso = isoDate(dates[dates.length - 1]);
 
   empList.forEach(function (e) {
     const a = accum[e.id];
@@ -1136,13 +1193,14 @@ export function buildCalendarMonthAggregates(args) {
     const wpw = Number.isFinite(e.workingDaysPerWeek) && e.workingDaysPerWeek >= 1
       ? Math.min(7, Math.round(e.workingDaysPerWeek))
       : 5;
-    const holiday = holidayCounts[e.id] || 0;
-    // Pro-rated target: workingDaysPerWeek averaged across the month length.
-    // E.g. wpw=5 in a 31-day month → 5 × 31/7 ≈ 22.14 → rounded to 22 → minus
-    // holiday days. Floored at 0 so a long holiday can't produce a negative
-    // target. Mirrors buildEmployeeFairnessDetail's calendarMonth path.
-    const shiftsTargetRaw = wpw * (monthLength / 7);
-    const shiftsTarget = Math.max(0, Math.round(shiftsTargetRaw) - holiday);
+    const range = activeRangeWithinWindow(e, windowStartIso, windowEndIso);
+    const holiday = holidayDayCountForEmployeeInRange(requests, e.id, range.fromIso, range.toIso);
+    // Pro-rated target: workingDaysPerWeek averaged across the employee's
+    // active days in the month. Full-month tenure (range.days === monthLength)
+    // → round(wpw × monthLength/7), identical to pre-v15.3.0. Floored at 0.
+    const shiftsTarget = range.days > 0
+      ? Math.max(0, Math.round(wpw * range.days / 7) - holiday)
+      : 0;
     const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles, openingDays);
     out[e.id] = {
       shiftsCount: shiftsCount,
@@ -1244,8 +1302,13 @@ export function buildEmployeeFairnessDetail(args) {
   const r28FromIso = isoDate(r28From);
   const r28ToIso = isoDate(r28To);
   const r28Agg = aggregateShiftsInRange(shifts, employee.id, r28FromIso, r28ToIso);
-  const r28Holiday = holidayDayCountForEmployeeInRange(requests, employee.id, r28FromIso, r28ToIso);
-  const r28ShiftsTarget = Math.max(0, wpw * 4 - r28Holiday);
+  // v15.3.0: pro-rate by tenure-active days within the window; holidays
+  // counted only inside the active sub-range.
+  const r28Range = activeRangeWithinWindow(employee, r28FromIso, r28ToIso);
+  const r28Holiday = holidayDayCountForEmployeeInRange(requests, employee.id, r28Range.fromIso, r28Range.toIso);
+  const r28ShiftsTarget = r28Range.days > 0
+    ? Math.max(0, Math.round(wpw * r28Range.days / 7) - r28Holiday)
+    : 0;
   const r28HoursTarget = r28ShiftsTarget * avgHours;
 
   // ── calendarMonth (the month containing weekStart's Monday) ──
@@ -1255,11 +1318,15 @@ export function buildEmployeeFairnessDetail(args) {
   const monthEndIso = isoDate(monthEnd);
   const monthDayCount = monthEnd.getDate();
   const monthAgg = aggregateShiftsInRange(shifts, employee.id, monthStartIso, monthEndIso);
-  const monthHoliday = holidayDayCountForEmployeeInRange(requests, employee.id, monthStartIso, monthEndIso);
-  // Pro-rated target: workingDaysPerWeek averaged across the month length.
-  // E.g. wpw=5 in a 31-day month → 5 × 31/7 ≈ 22.14 → rounded to 22.
-  const monthShiftsTargetRaw = wpw * (monthDayCount / 7);
-  const monthShiftsTarget = Math.max(0, Math.round(monthShiftsTargetRaw) - monthHoliday);
+  // v15.3.0: pro-rate by tenure-active days within the month.
+  const monthRange = activeRangeWithinWindow(employee, monthStartIso, monthEndIso);
+  const monthHoliday = holidayDayCountForEmployeeInRange(requests, employee.id, monthRange.fromIso, monthRange.toIso);
+  // Pro-rated target: workingDaysPerWeek averaged across the employee's
+  // active days in the month. Full-month tenure → round(wpw × monthLen/7),
+  // identical to pre-v15.3.0.
+  const monthShiftsTarget = monthRange.days > 0
+    ? Math.max(0, Math.round(wpw * monthRange.days / 7) - monthHoliday)
+    : 0;
   const monthHoursTarget = monthShiftsTarget * avgHours;
   const monthLabel = monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
@@ -1271,8 +1338,12 @@ export function buildEmployeeFairnessDetail(args) {
     const wkFromIso = isoDate(wkStart);
     const wkToIso = isoDate(wkEnd);
     const agg = aggregateShiftsInRange(shifts, employee.id, wkFromIso, wkToIso);
-    const wkHoliday = holidayDayCountForEmployeeInRange(requests, employee.id, wkFromIso, wkToIso);
-    const wkTarget = Math.max(0, wpw - wkHoliday);
+    // v15.3.0: pro-rate by tenure-active days in the bucket week.
+    const wkRange = activeRangeWithinWindow(employee, wkFromIso, wkToIso);
+    const wkHoliday = holidayDayCountForEmployeeInRange(requests, employee.id, wkRange.fromIso, wkRange.toIso);
+    const wkTarget = wkRange.days > 0
+      ? Math.max(0, Math.round(wpw * wkRange.days / 7) - wkHoliday)
+      : 0;
     perWeek.push({
       label: offset === 0 ? "this wk" : "wk " + offset,
       weekStartIso: wkFromIso,
@@ -1285,6 +1356,8 @@ export function buildEmployeeFairnessDetail(args) {
       // Recovering this from shiftsTarget alone is lossy (wkHoliday ≥ wpw
       // floors target at 0 and loses the original count).
       holidayDays: wkHoliday,
+      // v15.3.0: active days in this bucket (7 when fully tenured).
+      activeDays: wkRange.days,
     });
   }
 
@@ -1297,6 +1370,10 @@ export function buildEmployeeFairnessDetail(args) {
       holidayDays: r28Holiday,
       dateFromIso: r28FromIso,
       dateToIso: r28ToIso,
+      // v15.3.0: active (in-tenure) days in the 28-day window, and the
+      // full window length, so the Reasoning view can show the pro-rating.
+      activeDays: r28Range.days,
+      windowDays: 28,
     },
     calendarMonth: {
       monthLabel: monthLabel,
@@ -1307,6 +1384,9 @@ export function buildEmployeeFairnessDetail(args) {
       shiftsTarget: monthShiftsTarget,
       hoursTarget: monthHoursTarget,
       holidayDays: monthHoliday,
+      // v15.3.0: active (in-tenure) days in the month + full month length.
+      activeDays: monthRange.days,
+      windowDays: monthDayCount,
     },
     perWeek: perWeek,
   };

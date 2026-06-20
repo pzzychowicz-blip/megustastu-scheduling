@@ -42,6 +42,7 @@ import { useState } from "react";
 import { S } from "../lib/constants.js";
 import { Overlay, Section, mkBtn } from "./atoms.jsx";
 import { buildEmployeeFairnessDetail, parseIsoDate, avgShiftHours } from "../lib/schedule-logic.js";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 const SHORT_MONTH = ["Jan","Feb","Mar","Apr","May","Jun",
                      "Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -276,6 +277,10 @@ export default function EmployeeFairnessModal({
   // below the useState line.
   const [view, setView] = useState("data");
 
+  // v15.3.0: Esc closes the drill-down (above the early return — hooks run
+  // unconditionally).
+  useEscClose(open, onClose);
+
   if (!open || !employee || !weekStart) return null;
 
   const detail = buildEmployeeFairnessDetail({
@@ -309,7 +314,15 @@ export default function EmployeeFairnessModal({
       ? "evening shifts only"
       : "either day or evening";
   const monthLength = cm && cm.monthEndIso ? parseIsoDate(cm.monthEndIso).getDate() : 0;
-  const monthShiftsTargetRaw = wpw * (monthLength / 7);
+  // v15.3.0: targets pro-rate by tenure-active days within the window. When
+  // the employee is active for the WHOLE window these collapse to the
+  // pre-v15.3.0 numbers (activeDays === windowDays), so the formula display
+  // only switches to the active-days wording when tenure actually clips it.
+  const r28ActiveDays = Number.isFinite(r28.activeDays) ? r28.activeDays : 28;
+  const r28Partial = r28ActiveDays < (r28.windowDays || 28);
+  const cmActiveDays = Number.isFinite(cm.activeDays) ? cm.activeDays : monthLength;
+  const cmPartial = cmActiveDays < (cm.windowDays || monthLength);
+  const monthShiftsTargetRaw = wpw * (cmActiveDays / 7);
 
   const dataView = (
     <>
@@ -354,7 +367,10 @@ export default function EmployeeFairnessModal({
           delta={cm.holidayDays > 0 ? "subtracted from target" : null}
         />
         <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
-          Target pro-rated as workingDaysPerWeek × {monthLength} / 7.
+          {cmPartial
+            ? "Target pro-rated to the " + cmActiveDays + " of " + monthLength
+              + " days active (tenure): workingDaysPerWeek × " + cmActiveDays + " / 7."
+            : "Target pro-rated as workingDaysPerWeek × " + monthLength + " / 7."}
         </div>
       </Section>
 
@@ -393,14 +409,29 @@ export default function EmployeeFairnessModal({
         <FormulaRow
           label="Shifts target"
           formula={
-            <>
-              workingDaysPerWeek (<Num>{wpw}</Num>) × <Num>4</Num> weeks
-              {" − "}holiday days (<Num>{r28.holidayDays}</Num>)
-              {" = "}<Num>{r28.shiftsTarget}</Num>
-              {r28.shiftsTarget === 0 ? " (floored at 0)" : ""}
-            </>
+            r28Partial ? (
+              <>
+                workingDaysPerWeek (<Num>{wpw}</Num>) × active days (<Num>{r28ActiveDays}</Num>) of <Num>28</Num> / <Num>7</Num>
+                {" − "}holiday days (<Num>{r28.holidayDays}</Num>)
+                {" = "}<Num>{r28.shiftsTarget}</Num>
+                {r28.shiftsTarget === 0 ? " (floored at 0)" : ""}
+              </>
+            ) : (
+              <>
+                workingDaysPerWeek (<Num>{wpw}</Num>) × <Num>4</Num> weeks
+                {" − "}holiday days (<Num>{r28.holidayDays}</Num>)
+                {" = "}<Num>{r28.shiftsTarget}</Num>
+                {r28.shiftsTarget === 0 ? " (floored at 0)" : ""}
+              </>
+            )
           }
         />
+        {r28Partial ? (
+          <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
+            Pro-rated to the <Num>{r28ActiveDays}</Num> of 28 days this employee
+            is active in the window (tenure dates).
+          </div>
+        ) : null}
         <FormulaRow
           label="Hours target"
           formula={
@@ -450,11 +481,19 @@ export default function EmployeeFairnessModal({
         <FormulaRow
           label="Pro-rated raw"
           formula={
-            <>
-              workingDaysPerWeek (<Num>{wpw}</Num>) × month length (<Num>{monthLength}</Num>) / <Num>7</Num>
-              {" = "}<Num>{(Math.round(monthShiftsTargetRaw * 100) / 100)}</Num>
-              {" → round → "}<Num>{Math.round(monthShiftsTargetRaw)}</Num>
-            </>
+            cmPartial ? (
+              <>
+                workingDaysPerWeek (<Num>{wpw}</Num>) × active days (<Num>{cmActiveDays}</Num>) of <Num>{monthLength}</Num> / <Num>7</Num>
+                {" = "}<Num>{(Math.round(monthShiftsTargetRaw * 100) / 100)}</Num>
+                {" → round → "}<Num>{Math.round(monthShiftsTargetRaw)}</Num>
+              </>
+            ) : (
+              <>
+                workingDaysPerWeek (<Num>{wpw}</Num>) × month length (<Num>{monthLength}</Num>) / <Num>7</Num>
+                {" = "}<Num>{(Math.round(monthShiftsTargetRaw * 100) / 100)}</Num>
+                {" → round → "}<Num>{Math.round(monthShiftsTargetRaw)}</Num>
+              </>
+            )
           }
         />
         <FormulaRow
@@ -496,26 +535,38 @@ export default function EmployeeFairnessModal({
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {detail.perWeek.map(function (row) {
             const holiday = Number.isFinite(row.holidayDays) ? row.holidayDays : 0;
+            const rowActive = Number.isFinite(row.activeDays) ? row.activeDays : 7;
+            const rowPartial = rowActive < 7;
             return (
               <FormulaRow
                 key={row.weekStartIso}
                 label={row.label + " (" + fmtRangeShort(row.weekStartIso, row.weekEndIso) + ")"}
                 formula={
-                  <>
-                    wpw (<Num>{wpw}</Num>)
-                    {" − "}holiday (<Num>{holiday}</Num>)
-                    {" = "}target <Num>{row.shiftsTarget}</Num>
-                    {", worked "}<Num>{row.shiftsCount}</Num>
-                    {" ("}<Num>{fmtHours(row.hoursTotal)}</Num>{")"}
-                  </>
+                  rowPartial ? (
+                    <>
+                      wpw (<Num>{wpw}</Num>) × active (<Num>{rowActive}</Num>)/7
+                      {" − "}holiday (<Num>{holiday}</Num>)
+                      {" = "}target <Num>{row.shiftsTarget}</Num>
+                      {", worked "}<Num>{row.shiftsCount}</Num>
+                      {" ("}<Num>{fmtHours(row.hoursTotal)}</Num>{")"}
+                    </>
+                  ) : (
+                    <>
+                      wpw (<Num>{wpw}</Num>)
+                      {" − "}holiday (<Num>{holiday}</Num>)
+                      {" = "}target <Num>{row.shiftsTarget}</Num>
+                      {", worked "}<Num>{row.shiftsCount}</Num>
+                      {" ("}<Num>{fmtHours(row.hoursTotal)}</Num>{")"}
+                    </>
+                  )
                 }
               />
             );
           })}
         </div>
         <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
-          Per-bucket targets are NOT pro-rated — each bar is a full 7-day window
-          measured against the raw weekly quota.
+          Each bar is a 7-day window vs the weekly quota, pro-rated to the days
+          the employee is active that week (tenure) when their dates clip it.
         </div>
       </Section>
     </>

@@ -28,6 +28,8 @@ import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
 import Settings from "./Settings.jsx";
 import ConnectionStatus from "./ConnectionStatus.jsx";
+import ShortcutsModal from "./ShortcutsModal.jsx";
+import { isTypingTarget, isAnyOverlayOpen } from "../lib/keyboard.js";
 
 // Tab keys + display order. Add new tabs here when they land.
 const TABS = [
@@ -63,10 +65,38 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   // First visit / fresh browser tab → "schedule".
   const [tab, setTab] = useState(readStoredTab);
 
+  // v15.3.0: keyboard-shortcuts help overlay (opened with `?`).
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
   // v1.5.0: persist tab changes within this browser tab.
   useEffect(function () {
     try { sessionStorage.setItem(TAB_STORAGE_KEY, tab); } catch (_e) { /* private-mode safari */ }
   }, [tab]);
+
+  // ── v15.3.0: global keyboard shortcuts (app-wide) ───────────────────────
+  // Tab switching (digits 1–4) + the `?` help overlay. Single-key, no
+  // modifier — Cmd/Ctrl/Alt combos pass through to the browser/OS. Suppressed
+  // while typing in a field and while any modal is open (the latter via the
+  // data-mgt-overlay sentinel on the Overlay backdrop). Schedule-specific
+  // shortcuts (week nav, Generate/Swap/Undo/Clear/Export, Esc) live in
+  // ScheduleGrid; the two handlers never overlap on a key.
+  useEffect(function () {
+    function onKey(e) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (isAnyOverlayOpen()) return;
+      if (e.key === "?") {
+        setShowShortcuts(true);
+        return;
+      }
+      if (e.key >= "1" && e.key <= "4") {
+        const idx = Number(e.key) - 1;
+        if (TABS[idx]) setTab(TABS[idx].key);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return function () { document.removeEventListener("keydown", onKey); };
+  }, []);
 
   // ── v1.10.1: eager /shiftTemplate migration ──────────────────────────────
   // v1.9.0 changed the per-block shape from
@@ -294,6 +324,11 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         {tabNav}
         {body}
       </div>
+      <ShortcutsModal
+        open={showShortcuts}
+        isMobile={isMobile}
+        onClose={function () { setShowShortcuts(false); }}
+      />
     </div>
   );
 }

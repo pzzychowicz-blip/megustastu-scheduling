@@ -18,10 +18,16 @@
 
 import { S } from "../lib/constants.js";
 import { Overlay, mkBtn } from "./atoms.jsx";
+import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 export default function ExportWarningModal({
   open, emptyCount, isMobile, onClose, onConfirm,
 }) {
+  // v15.3.0: Enter → "Export anyway" (the single primary action); Esc → Cancel.
+  useEnterSubmit(open, Boolean(open), onConfirm);
+  useEscClose(open, onClose);
+
   if (!open) return null;
 
   const n = typeof emptyCount === "number" ? emptyCount : 0;

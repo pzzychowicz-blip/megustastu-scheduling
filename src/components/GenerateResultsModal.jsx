@@ -41,6 +41,7 @@
 import { Overlay, Section, TBadge } from "./atoms.jsx";
 import { S, BTN, GENERATOR_REASONS } from "../lib/constants.js";
 import { parseIsoDate, formatDayHeader } from "../lib/schedule-logic.js";
+import { useEscClose } from "../hooks/useEscClose.js";
 
 // Group an array of { reason, ... } entries by reason. Returns an array
 // of { reason, label, items } in INSERTION order (first-seen reason wins).
@@ -206,6 +207,10 @@ function ReasonGroup({ label, items, paletteVariant, renderItem, onItemClick }) 
 export default function GenerateResultsModal({
   open, onClose, summary, employees, slotsByKey, onJumpToCell, isMobile,
 }) {
+  // v15.3.0: Esc closes the details modal (resumes the banner countdown via
+  // onClose). Hook sits above the early return so it runs unconditionally.
+  useEscClose(open, onClose);
+
   if (!summary) return null;
 
   const mode = summary.mode || "fill-empty";

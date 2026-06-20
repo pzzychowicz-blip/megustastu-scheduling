@@ -42,13 +42,16 @@
 // Disabled when shiftTemplate is null (data not ready) or there are no
 // employees.
 
-import { useState } from "react";
+import { useState, forwardRef, useImperativeHandle } from "react";
 import { BTN } from "../lib/constants.js";
 import { formatWeekRange } from "../lib/schedule-logic.js";
 import { generateWeek } from "../lib/generator.js";
 import GenerateConfirmModal from "./GenerateConfirmModal.jsx";
 
-export default function GenerateButton({
+// v15.3.0: forwardRef so the `G` keyboard shortcut in ScheduleGrid can open
+// the confirm modal imperatively (ref.current.open()) without lifting this
+// component's internal modal state.
+function GenerateButton({
   weekStart, weekShifts, priorWeekShifts, nextWeekShifts, employees, requests,
   shiftTemplate, openingDays, strictPreference,
   minConsecutiveDaysOff, maxConsecutiveWorkingDays, dayRequiredRoles,
@@ -57,7 +60,7 @@ export default function GenerateButton({
   isMobile, actions, onResult,
   onUndoableOp,
   disabled: disabledByParent,
-}) {
+}, ref) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -77,6 +80,13 @@ export default function GenerateButton({
     if (disabled) return;
     setOpen(true);
   }
+
+  // v15.3.0: imperative open() for the `G` shortcut. Respects `disabled`
+  // (handleClick no-ops on a read-only week / missing template), so the
+  // keyboard path can't bypass the gates the button enforces.
+  useImperativeHandle(ref, function () {
+    return { open: handleClick };
+  }, [disabled]);
 
   function handleClose() {
     if (busy) return;
@@ -241,3 +251,5 @@ export default function GenerateButton({
     </>
   );
 }
+
+export default forwardRef(GenerateButton);

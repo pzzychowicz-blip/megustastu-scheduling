@@ -26,15 +26,17 @@
 //                                        Optional — caller controls whether
 //                                        Clear is undoable.
 
-import { useState } from "react";
+import { useState, forwardRef, useImperativeHandle } from "react";
 import { BTN } from "../lib/constants.js";
 import { formatWeekRange, isoDate } from "../lib/schedule-logic.js";
 import ClearConfirmModal from "./ClearConfirmModal.jsx";
 
-export default function ClearButton({
+// v15.3.0: forwardRef so the `C` keyboard shortcut in ScheduleGrid can open
+// the confirm modal imperatively (ref.current.open()).
+function ClearButton({
   weekStart, weekDates, weekShifts, slots, isMobile, actions, onResult, onUndoableOp,
   disabled: disabledByParent,
-}) {
+}, ref) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -50,6 +52,11 @@ export default function ClearButton({
     if (disabled) return;
     setOpen(true);
   }
+
+  // v15.3.0: imperative open() for the `C` shortcut. Respects `disabled`.
+  useImperativeHandle(ref, function () {
+    return { open: handleClick };
+  }, [disabled]);
 
   function handleClose() {
     if (busy) return;
@@ -156,3 +163,5 @@ export default function ClearButton({
     </>
   );
 }
+
+export default forwardRef(ClearButton);

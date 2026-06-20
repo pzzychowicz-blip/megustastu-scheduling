@@ -21,7 +21,7 @@
 //                                             before exporting blanks.
 //   isMobile             (bool)             — forwarded to the warning modal's Overlay.
 
-import { useState } from "react";
+import { useState, forwardRef, useImperativeHandle } from "react";
 import { BTN } from "../lib/constants.js";
 import { isWeekComplete, countEmptyCells } from "../lib/schedule-logic.js";
 import ExportWarningModal from "./ExportWarningModal.jsx";
@@ -30,9 +30,11 @@ import ExportWarningModal from "./ExportWarningModal.jsx";
 // + DOMPurify) is lazy-loaded on click. Keeps the initial bundle lean —
 // manager exports once a week at most.
 
-export default function ExportButton({
+// v15.3.0: forwardRef so the `E` keyboard shortcut in ScheduleGrid can
+// trigger the same flow as a click (export, or the incomplete-warning modal).
+function ExportButton({
   weekStart, slots, weekShifts, employees, openingDays, allowIncompleteExport, isMobile,
-}) {
+}, ref) {
   // v0.12.0: completeness check skips closed days. The button enables
   // when every cell on every OPEN day is filled.
   const ready = isWeekComplete(weekShifts, weekStart, slots, openingDays);
@@ -75,6 +77,13 @@ export default function ExportButton({
     runExport();
   }
 
+  // v15.3.0: imperative open() for the `E` shortcut — same gating as a click
+  // (handleClick no-ops when the week is incomplete and export-incomplete is
+  // off).
+  useImperativeHandle(ref, function () {
+    return { open: handleClick };
+  }, [ready, allowIncompleteExport, weekStart, weekShifts, slots, openingDays]);
+
   const style = {
     ...BTN.base,
     ...(canClick ? BTN.primary : BTN.ghost),
@@ -112,3 +121,5 @@ export default function ExportButton({
     </>
   );
 }
+
+export default forwardRef(ExportButton);
