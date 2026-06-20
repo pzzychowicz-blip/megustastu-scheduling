@@ -83,6 +83,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // from an older saved object — only an explicit `false` hides them.
   const showRolePills = !settings || settings.showRolePills !== false;
 
+  // v15.2.0: allow exporting a week with empty cells. Defaults to false
+  // (only an explicit `true` opts in), so legacy docs keep the gated
+  // Export button. Threaded into <ExportButton>.
+  const allowIncompleteExport =
+    settings && settings.allowIncompleteExport === true;
+
   // v1.0.0: auto-generator preference-strictness, read fresh on every
   // render. Generator passes it straight through to the algorithm.
   const strictPreference =
@@ -171,11 +177,21 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     return resolveConfigForWeek(configRevisions, settings, shiftTemplate, weekStart);
   }, [configRevisions, settings, shiftTemplate, weekStart]);
 
-  // Possibly-null resolved template — GenerateButton's `!shiftTemplate`
-  // disable semantics depend on the null surviving to the prop.
+  // Possibly-null resolved template for the focus week.
   const resolvedShiftTemplate = resolvedConfig.shiftTemplate;
 
   // Active template — resolved values when present, defaults otherwise.
+  // This is the EFFECTIVE template every consumer (slots, picker, export,
+  // generator) runs on. v15.2.0 fix: GenerateButton now receives this
+  // (not the raw resolvedShiftTemplate). When the focus week has no
+  // covering shift-template revision AND the base /shiftTemplate singleton
+  // is null (frozen-base never set, e.g. a fresh project / DEV sandbox, or
+  // the template-carrying revision was removed), resolvedShiftTemplate is
+  // null — the grid still renders slots from DEFAULT_SHIFT_TEMPLATE, the
+  // picker still assigns, and export still works, but Generate used to go
+  // dead ("template not loaded"). Passing the effective template keeps
+  // Generate consistent with the rest of the grid. The employeeCount === 0
+  // gate still covers the genuine "data not loaded yet" window.
   const template = resolvedShiftTemplate || DEFAULT_SHIFT_TEMPLATE;
 
   // v0.12.0: opening-days filter; v15.1.0: per-focus-week resolved value.
@@ -1008,7 +1024,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           nextWeekShifts={nextWeekShifts}
           employees={employees}
           requests={requests}
-          shiftTemplate={resolvedShiftTemplate}
+          shiftTemplate={template}
           openingDays={openingDays}
           strictPreference={strictPreference}
           minConsecutiveDaysOff={minConsecutiveDaysOff}
@@ -1052,6 +1068,8 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           weekShifts={weekShifts}
           employees={employees}
           openingDays={openingDays}
+          allowIncompleteExport={allowIncompleteExport}
+          isMobile={isMobile}
         />
       </div>
     </div>

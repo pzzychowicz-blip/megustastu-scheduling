@@ -1528,3 +1528,59 @@ export function isWeekComplete(weekShifts, weekStartDate, slots, openingDays) {
   }
   return true;
 }
+
+// ── Empty-cell count (v15.2.0) ───────────────────────────────────────────
+// Mirrors isWeekComplete's loop but counts (rather than short-circuits)
+// every OPEN cell on an OPEN dayPart that has no assignee. Used by the
+// incomplete-export warning modal so the manager sees exactly how many
+// slots will print blank before confirming. Closed days / closed dayParts
+// never count (they're not cells the manager is expected to fill).
+export function countEmptyCells(weekShifts, weekStartDate, slots, openingDays) {
+  const dates = visibleWeekDates(weekStartDate, openingDays);
+  let count = 0;
+  for (let d = 0; d < dates.length; d++) {
+    const dIso = isoDate(dates[d]);
+    for (let s = 0; s < slots.length; s++) {
+      const slot = slots[s];
+      if (!isSlotOpenOnDate(dates[d], slot, openingDays)) continue;
+      const shift = findShiftForSlot(weekShifts, dIso, slot);
+      if (!shift || !shift.employeeId) count += 1;
+    }
+  }
+  return count;
+}
+
+// ── Employee tenure (v15.2.0) ────────────────────────────────────────────
+// Optional `activeFrom` / `activeUntil` ISO-date strings bracket each
+// employee's employment window. An employee is schedulable on a given date
+// iff they're not archived AND the date sits inside the (possibly open-
+// ended) window. Absent endpoint = unbounded on that side. String compares
+// work because the format is fixed-width zero-padded "YYYY-MM-DD" (same
+// trick used throughout this file).
+//
+// Single source of truth for the rule — consumed by the generator's
+// candidate filter, the manual picker (ShiftFormModal), and (via the
+// week-level helper below) the WeeklyShiftSummary + MonthlyFairnessPanel
+// visibility skips. Tenure gates ELIGIBILITY + VISIBILITY only; it does
+// NOT pro-rate the 28-day / calendar-month fairness target math within a
+// partially-overlapping window (documented v15.2.0 simplification, in
+// keeping with the v15.1.0 focus-week-config-across-window shortcut).
+export function isEmployeeActiveOnDate(emp, dateIso) {
+  if (!emp || emp.active === false) return false;
+  if (emp.activeFrom && dateIso < emp.activeFrom) return false;
+  if (emp.activeUntil && dateIso > emp.activeUntil) return false;
+  return true;
+}
+
+// True iff the employee's tenure (+ active flag) overlaps ANY date in the
+// supplied array. `dates` may be Date objects or ISO strings.
+export function employeeTenureOverlapsDates(emp, dates) {
+  if (!emp || emp.active === false) return false;
+  if (!Array.isArray(dates)) return false;
+  for (let i = 0; i < dates.length; i++) {
+    const d = dates[i];
+    const iso = typeof d === "string" ? d : isoDate(d);
+    if (isEmployeeActiveOnDate(emp, iso)) return true;
+  }
+  return false;
+}

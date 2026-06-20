@@ -97,6 +97,7 @@ import {
   MAX_CONSECUTIVE_WORKING_DAYS_MAX,
   DEFAULT_DAY_REQUIRED_ROLES,
   DEFAULT_PAST_WEEKS_LOCKED,
+  DEFAULT_ALLOW_INCOMPLETE_EXPORT,
   WEEKDAYS,
 } from "../lib/constants.js";
 import {
@@ -349,13 +350,17 @@ export default function Settings({
   isMobile,
   isDark,
 }) {
-  // ── Effective-from week picker (v15.1.0) ───────────────────────────────
+  // ── Effective-from week picker (v15.1.0, past-dating v15.2.0) ──────────
   // Opening-day + shift-template edits are saved as a /configRevisions
   // record effective from this week's Monday. Default: NEXT Monday — the
   // current (already planned) week stays untouched unless the manager
-  // explicitly picks it. Past Mondays are clamped out: a retroactive
-  // revision would rewrite how locked historical weeks render, which is
-  // exactly what the revision system exists to prevent.
+  // explicitly picks it.
+  //
+  // v15.2.0: past Mondays are now allowed (the v15.1.0 clamp to the
+  // current Monday is gone). A past-dated revision retroactively changes
+  // how earlier weeks render via resolveConfigForWeek — intentional, so
+  // the manager can fix a historical week's configuration. currentMondayIso
+  // is kept only to label past revisions in the Scheduled-changes list.
   const currentMondayIso = isoDate(startOfWeek(new Date()));
   const [effectiveFromIso, setEffectiveFromIso] = useState(function () {
     return isoDate(addDays(startOfWeek(new Date()), 7));
@@ -366,9 +371,8 @@ export default function Settings({
     if (!raw) return;
     const parsed = parseIsoDate(raw);
     if (isNaN(parsed.getTime())) return;
-    let monday = isoDate(startOfWeek(parsed));
-    if (monday < currentMondayIso) monday = currentMondayIso;
-    setEffectiveFromIso(monday);
+    // v15.2.0: no clamp — any Monday (past or future) is a valid target.
+    setEffectiveFromIso(isoDate(startOfWeek(parsed)));
   }
 
   // ── Seed local form state ──────────────────────────────────────────────
@@ -656,6 +660,14 @@ export default function Settings({
   // operating hours, and committing those silently would surprise them.
   function onShowRolePillsChange(nextValue) {
     saveSettings({ ...(settings || {}), showRolePills: nextValue });
+  }
+
+  // v15.2.0: allow-incomplete-export auto-save. Same write-through pattern
+  // as showRolePills above. Defensive read: only an explicit `true` opts
+  // in, so legacy docs keep the gated Export button.
+  const allowIncompleteExport = settings && settings.allowIncompleteExport === true;
+  function onAllowIncompleteExportChange(nextValue) {
+    saveSettings({ ...(settings || {}), allowIncompleteExport: nextValue });
   }
 
   // v0.11.0: Dark mode auto-save. Same pattern as showRolePills above.
@@ -1012,6 +1024,7 @@ export default function Settings({
       maxConsecutiveWorkingDays:    DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS,   // v1.11.0
       dayRequiredRoles:             defaultDayRequired,                     // v1.11.0
       pastWeeksLocked:              DEFAULT_PAST_WEEKS_LOCKED,              // v15.1.0
+      allowIncompleteExport:        DEFAULT_ALLOW_INCOMPLETE_EXPORT,        // v15.2.0
     });
     // v15.1.0: factory reset also clears every scheduled change — leaving
     // them would make the reset a visible no-op for any week at/after the
@@ -1236,12 +1249,13 @@ export default function Settings({
                 (pickerHasRevision
                   ? "Editing the scheduled change for this week."
                   : "Open-day / shift-time edits below will be saved as a change starting this week.")}
-              {" Earlier weeks keep their current configuration."}
+              {effectiveFromIso < currentMondayIso
+                ? " This is a past week — changes apply retroactively to it and to later weeks."
+                : " Earlier weeks keep their current configuration."}
             </div>
           </div>
           {mkInp({
             type: "date",
-            min: currentMondayIso,
             className: "mgt-hover-scale",
             value: effectiveFromIso,
             onChange: onEffectiveFromChange,
@@ -1558,6 +1572,17 @@ export default function Settings({
             helper={darkModeFollowingSystem
               ? "Following your system preference. Tap to override."
               : null}
+            className="mgt-hover-scale"
+          />
+          {/* v15.2.0: opt-in to exporting a week with empty cells. Off by
+              default — the Export PDF button stays disabled until the week
+              is complete. On → the button is always clickable and warns
+              before producing a PDF with blank slots. */}
+          <Toggle
+            checked={allowIncompleteExport}
+            onChange={onAllowIncompleteExportChange}
+            label="Allow exporting incomplete schedules"
+            helper="When on, Export PDF works even with empty cells — you'll get a warning before the PDF is generated."
             className="mgt-hover-scale"
           />
         </Collapsible>
