@@ -369,6 +369,23 @@ export default function EmployeeFormModal({
       onClose={onClose}
       title={isEdit ? "Edit employee" : "Add employee"}
     >
+      {/* v15.2.0: inner scroll wrapper. The Overlay desktop sheet uses
+          overflow:visible (v1.9.0 hover-scale fix), so a form taller than
+          maxHeight:80vh spills past the sheet — the footer buttons hung off
+          the bottom edge (worst case: fixed-days ON + the new Active-dates
+          field). Cap the field stack and scroll it internally; the action
+          button row stays OUTSIDE so it's always anchored to the visible
+          sheet bottom. Negative horizontal margin + matching padding gives
+          hover-scaled inputs 20 px of clip breathing room (same pattern as
+          GenerateResultsModal / EmployeeFairnessModal). */}
+      <div
+        style={{
+          maxHeight: isMobile ? "60vh" : "min(62vh, 520px)",
+          overflowY: "auto",
+          padding: "4px 20px",
+          margin: "0 -20px",
+        }}
+      >
       <Fld label="Name">
         {mkInp({
           type: "text",
@@ -456,6 +473,7 @@ export default function EmployeeFormModal({
             : "Leave blank for no limit. The employee won't be scheduled or counted outside these dates."}
         </div>
       </Fld>
+      </div>
 
       <div
         style={{
