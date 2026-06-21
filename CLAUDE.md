@@ -1360,6 +1360,10 @@ separate Firebase project, same UI conventions).
   simplification: the 28-day / calendar-month aggregates use the
   focus week's resolved config across their whole window (targets
   only — actual hours come from self-contained shift records).
+  **(Superseded in v15.4.0 — the aggregate builders now resolve
+  config PER WEEK inside their windows via `makeWeekConfigResolver`;
+  this simplification no longer applies. See the v15.4.0
+  locked-decision entry.)**
   Settings gains a **"Changes take effect from"** picker card ABOVE
   the accordion (date input re-normalized to Monday via
   `startOfWeek`; min/clamp = current Monday — no past-dated
@@ -1791,6 +1795,11 @@ megustastu-scheduling/
     │                                 fallback removed; orphan shifts ignored
     │                                 in fairness counts; per-week config
     │                                 resolution inside fairness windows).
+    │                                 v15.4.1: → 15.4.1, sha
+    │                                 "doc-accuracy-tenure-perweek" (doc-only
+    │                                 patch: corrected stale tenure / per-week-
+    │                                 config comments after a pre-onboarding
+    │                                 audit found no behavioural defects).
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -3715,9 +3724,12 @@ megustastu-scheduling/
    // isEmployeeActiveOnDate(emp, dateIso) (schedule-logic.js) gates both
    // the generator's candidate filter and the manual picker; the week-
    // level employeeTenureOverlapsDates drives the WeeklyShiftSummary +
-   // MonthlyFairnessPanel visibility skips. Tenure does NOT pro-rate the
-   // 28-day / calendar-month fairness TARGET math (documented
-   // simplification, matching the v15.1.0 focus-week-config shortcut).
+   // MonthlyFairnessPanel visibility skips.
+   // v15.3.0: tenure ALSO pro-rates the 28-day / calendar-month / weekly
+   // fairness TARGET math (activeRangeWithinWindow) — the original v15.2.0
+   // "does NOT pro-rate" simplification no longer applies. v15.4.0: the
+   // aggregate windows resolve config per-week, so the v15.1.0
+   // focus-week-config shortcut it referenced is gone too.
 
 /shiftTemplate                                              // v1.9.0 shape
   → { foh:     { day:     { count, times: [{start,end},...],
