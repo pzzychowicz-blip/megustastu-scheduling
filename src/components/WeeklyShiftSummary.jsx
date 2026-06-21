@@ -79,12 +79,25 @@ function rawQuotaFor(emp) {
 // same date (shouldn't happen per same-day strict, but defensive)
 // collapse to one — matches the `countAssignedDates` semantic in
 // generator.js.
-function buildCountByEmployee(weekShifts) {
+//
+// v15.4.0: `template` is the focus-week resolved shift template. When given,
+// orphan shifts — a slot index that no longer exists at its (section, dayPart)
+// in the resolved template (the manager dropped the slot count) — are skipped
+// so they don't inflate the pill count. They already don't render on the grid.
+function buildCountByEmployee(weekShifts, template) {
+  function isLive(s) {
+    if (!template) return true;
+    const sec = template[s.section];
+    const block = sec && sec[s.dayPart];
+    const count = block && Number.isFinite(block.count) ? block.count : 0;
+    return (s.slotIndex || 0) < count;
+  }
   const seen = {};
   const all = Object.values(weekShifts || {});
   for (let i = 0; i < all.length; i++) {
     const s = all[i];
     if (!s || !s.employeeId || !s.date) continue;
+    if (!isLive(s)) continue;
     if (!seen[s.employeeId]) seen[s.employeeId] = {};
     seen[s.employeeId][s.date] = true;
   }
@@ -98,8 +111,10 @@ function buildCountByEmployee(weekShifts) {
 export default function WeeklyShiftSummary({
   employees, weekShifts, requests, dates, weekLabel, isMobile,
   highlightedEmployeeId, onHighlight,
+  // v15.4.0: focus-week resolved template, drives the orphan-shift skip.
+  template,
 }) {
-  const counts = buildCountByEmployee(weekShifts);
+  const counts = buildCountByEmployee(weekShifts, template);
   // v1.6.0: per-employee count of visible-week dates blocked by a
   // request. v1.9.0: narrowed to `holiday` only — `dayoff` no longer
   // decrements the effective cap (it still HARD-blocks the date via

@@ -9,7 +9,13 @@
 //
 // NO React. NO Firebase. Just data in → data out. Easy to reason about.
 
-import { SECTIONS, OPERATING_HOURS, DEFAULT_DAY_REQUIRED_ROLES } from "./constants.js";
+import {
+  SECTIONS,
+  OPERATING_HOURS,
+  DEFAULT_DAY_REQUIRED_ROLES,
+  DEFAULT_SHIFT_TEMPLATE,
+  DEFAULT_OPENING_DAYS,
+} from "./constants.js";
 
 // ── ISO date helpers ─────────────────────────────────────────────────────
 // We use "YYYY-MM-DD" strings as the canonical date identifier in Firebase
@@ -229,6 +235,49 @@ export function resolveConfigForWeek(configRevisions, settings, shiftTemplate, w
   };
 }
 
+// ── Per-week config resolver (v15.4.0) ───────────────────────────────────
+// The fairness aggregates (build28DayAggregates, buildCalendarMonthAggregates,
+// buildEmployeeFairnessDetail) scan a multi-week window. Config is
+// effective-dated (v15.1.0 /configRevisions), so a revision can land mid-window
+// and the template / openingDays that applied differ week-by-week. This helper
+// resolves config PER WEEK, cached by Monday, so a 28-day window resolves at
+// most 4 times.
+//
+// Two consumers:
+//  • `cfgForDate(date)` → the resolved { shiftTemplate, openingDays } for that
+//    date's week. Used to weight `avgShiftHours` per week (per-week hours target).
+//  • `isLiveShift(shift)` → false when the shift sits at a slot index that no
+//    longer exists in the config resolved for its OWN week ("orphan", created
+//    before the manager dropped that slot's count). Orphans stay in Firebase so
+//    a count bump-back restores them, but must not pollute fairness counts.
+//
+// When `configRevisions` is empty/undefined the resolver returns the base config
+// for every week → byte-identical to the pre-v15.4.0 single-config behaviour.
+export function makeWeekConfigResolver(configRevisions, settings, baseShiftTemplate) {
+  const cache = {};
+  function cfgForDate(date) {
+    const monday = isoDate(startOfWeek(date));
+    if (!cache[monday]) {
+      const r = resolveConfigForWeek(configRevisions, settings, baseShiftTemplate, date);
+      cache[monday] = {
+        shiftTemplate: r.shiftTemplate || DEFAULT_SHIFT_TEMPLATE,
+        openingDays: r.openingDays || DEFAULT_OPENING_DAYS,
+      };
+    }
+    return cache[monday];
+  }
+  return {
+    cfgForDate: cfgForDate,
+    isLiveShift: function (shift) {
+      if (!shift || !shift.section || !shift.dayPart || !shift.date) return true;
+      const tmpl = cfgForDate(parseIsoDate(shift.date)).shiftTemplate;
+      const block = tmpl[shift.section] && tmpl[shift.section][shift.dayPart];
+      const count = block && Number.isFinite(block.count) ? block.count : 0;
+      return (shift.slotIndex || 0) < count;
+    },
+  };
+}
+
 // ── Display formatting ───────────────────────────────────────────────────
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -265,10 +314,12 @@ export function formatWeekRange(startDate) {
 // `materializeShiftTemplate(data.shiftTemplate)` once per session after
 // the persistence layer reports ready; if `isShiftTemplateMigrated`
 // returns false, the canonicalised doc is written back via
-// `saveShiftTemplate(..., true /* isSilent */)`. The legacy fallback in
-// `slotTimeFor` stays in place — defensive belt for in-flight reads
-// before the eager write completes, and for any future legacy state we
-// don't anticipate (manual Firebase console edits, etc.).
+// `saveShiftTemplate(..., true /* isSilent */)`.
+//
+// v15.4.0: the read-side legacy fallback in `slotTimeFor` was REMOVED now
+// that the eager migration guarantees every live doc carries `times`.
+// `materializeShiftTemplateBlock` / `isBlockMigrated` below STILL read the
+// legacy shape — they are the migration itself and must convert it.
 //
 // `materializeShiftTemplate` matches Settings.jsx's `materializeBlock`
 // byte-for-byte (this file is the single source of truth as of v1.10.1
@@ -400,24 +451,25 @@ function defaultRoleForSlot(section, dayPart, index) {
   return roles[index] || null;
 }
 
-// v1.9.0: pull per-slot default times from a block. Reads from the new
-// `times` array when present; falls back to the legacy v0.5.0 shape
-// (single `start`/`end` per block, plus FoH-evening `secondPersonStart`
-// for slot 1+) when the saved doc predates the per-slot model. Settings
-// migrates on save, so legacy reads should be rare — but `slotsForDay`
-// is the read path for every consumer (grid, modal, generator, PDF
-// export) so the fallback has to live here, not just in Settings.
+// v1.9.0: pull per-slot default times from a block via the `times` array.
+//
+// v15.4.0: the legacy v0.5.0 read-side fallback (single `start`/`end` per
+// block + FoH-evening `secondPersonStart` for slot 1+) was REMOVED. The eager
+// migration (v1.10.1, AppShell) rewrites any pre-v1.9.0 doc to the per-slot
+// `{count, times:[...]}` shape once per session after persistence is ready, so
+// every live doc carries `times`. The only way to reach the fallback below is
+// an unmigrated doc rendered in the brief window before the eager write lands
+// (unreachable in PROD — already migrated). In that case return safe operating-
+// window defaults rather than legacy fields; the migrated values snap in a frame
+// later. `materializeShiftTemplateBlock` / `isBlockMigrated` still read the
+// legacy shape — they have to, to PERFORM the migration; only this read path
+// dropped it. `sectionKey`/`dayPart`/`index` are retained for the array lookup.
 function slotTimeFor(block, sectionKey, dayPart, index) {
   if (Array.isArray(block.times)) {
     const t = block.times[index];
     if (t && t.start && t.end) return { start: t.start, end: t.end };
   }
-  // Legacy fallback. FoH evening slot 1+ honours secondPersonStart.
-  let start = block.start;
-  if (sectionKey === "foh" && dayPart === "evening" && index > 0 && block.secondPersonStart) {
-    start = block.secondPersonStart;
-  }
-  return { start: start, end: block.end };
+  return { start: OPERATING_HOURS.start, end: OPERATING_HOURS.end };
 }
 
 // v15.1.0: per-open-mode ("solo") times. A block may carry an optional
@@ -1028,6 +1080,38 @@ function activeRangeWithinWindow(emp, windowStartIso, windowEndIso) {
   return { fromIso: fromIso, toIso: toIso, days: days };
 }
 
+// v15.4.0: per-week-weighted average shift hours across a window. Replaces the
+// single avgShiftHours call that used the focus-week config across the whole
+// window — when a config revision lands mid-window, each week's avgShiftHours
+// (which depends on the template's slot times + openingDays weighting) can
+// differ, so we blend per week. Each week's avg is weighted by the employee's
+// tenure-active days within that week ∩ window. A window with uniform config
+// (no revision boundary inside it) collapses to the same single value as
+// before — byte-identical to pre-v15.4.0. `shiftsTarget` is config-independent
+// (tenure + holidays only), so only `hoursTarget` consumes this.
+function blendedAvgShiftHours(resolver, emp, dayRequiredRoles, windowStartIso, windowEndIso) {
+  let wTotal = 0;
+  let wSum = 0;
+  let cur = startOfWeek(parseIsoDate(windowStartIso));
+  // Walk each Mon-aligned week overlapping the window. ISO date strings
+  // compare lexicographically, so the string guard is safe.
+  while (isoDate(cur) <= windowEndIso) {
+    const wkSunIso = isoDate(addDays(cur, 6));
+    const curIso = isoDate(cur);
+    const segFromIso = curIso < windowStartIso ? windowStartIso : curIso;
+    const segToIso = wkSunIso > windowEndIso ? windowEndIso : wkSunIso;
+    const active = activeRangeWithinWindow(emp, segFromIso, segToIso).days;
+    if (active > 0) {
+      const cfg = resolver.cfgForDate(cur);
+      const wkAvg = avgShiftHours(emp, cfg.shiftTemplate, dayRequiredRoles, cfg.openingDays);
+      wTotal += wkAvg * active;
+      wSum += active;
+    }
+    cur = addDays(cur, 7);
+  }
+  return wSum > 0 ? wTotal / wSum : 0;
+}
+
 export function build28DayAggregates(args) {
   const out = {};
   if (!args || !args.employees || !args.weekStart) return out;
@@ -1035,15 +1119,19 @@ export function build28DayAggregates(args) {
   const employees = args.employees;
   const weekStart = args.weekStart;
   const requests = args.requests || {};
-  const shiftTemplate = args.shiftTemplate || null;
   // v1.14.0 follow-up: per-section dayRequiredRoles override drives
   // slotsForDay inside avgShiftHours so the eligible-slot list
   // matches what the generator sees. Optional — bare callers fall
   // back to SECTIONS defaults via slotsForDay's existing path.
   const dayRequiredRoles = args.dayRequiredRoles || null;
-  // v1.15.0 (2nd commit): openingDays weights avgShiftHours by how
-  // often each day-part runs. Optional — undefined → flat mean.
-  const openingDays = args.openingDays || null;
+  // v15.4.0: per-week config resolver. `args.shiftTemplate` is now the BASE
+  // singleton (not pre-resolved); the resolver picks the right template +
+  // openingDays for each week in the window via /configRevisions. Replaces
+  // the v1.15.0 single `args.shiftTemplate` + `args.openingDays` inputs —
+  // they're subsumed by the per-week resolution (drives both the orphan
+  // filter below and the blended hours target). Empty configRevisions →
+  // base config every week → identical to pre-v15.4.0.
+  const resolver = makeWeekConfigResolver(args.configRevisions, args.settings, args.shiftTemplate || null);
 
   const empList = Object.values(employees);
   if (empList.length === 0) return out;
@@ -1067,6 +1155,10 @@ export function build28DayAggregates(args) {
     if (!s || !s.employeeId || !s.date) continue;
     if (!dateIsoSet[s.date]) continue;
     if (!accum[s.employeeId]) continue;
+    // v15.4.0: skip orphan shifts — a slot index that no longer exists in the
+    // config resolved for that shift's own week (manager dropped the slot
+    // count). They don't render on the grid and must not inflate fairness.
+    if (!resolver.isLiveShift(s)) continue;
     accum[s.employeeId].shiftDates[s.date] = true;
     accum[s.employeeId].hours += hoursBetween(s.start, s.end);
   }
@@ -1095,7 +1187,10 @@ export function build28DayAggregates(args) {
     const shiftsTarget = range.days > 0
       ? Math.max(0, Math.round(wpw * range.days / 7) - holiday)
       : 0;
-    const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles, openingDays);
+    // v15.4.0: hours target uses a per-week-blended avgShiftHours so a
+    // mid-window config revision is reflected (was: focus-week config across
+    // the whole window). Uniform-config windows collapse to the old value.
+    const hoursTarget = shiftsTarget * blendedAvgShiftHours(resolver, e, dayRequiredRoles, windowStartIso, windowEndIso);
     out[e.id] = {
       shiftsCount: shiftsCount,
       hoursTotal: hoursTotal,
@@ -1141,15 +1236,17 @@ export function buildCalendarMonthAggregates(args) {
   const employees = args.employees;
   const weekStart = args.weekStart;
   const requests = args.requests || {};
-  const shiftTemplate = args.shiftTemplate || null;
   // v1.14.0 follow-up: per-employee avgShiftHours needs the
   // per-section dayRequiredRoles configuration so eligibility
   // filtering matches the generator. Optional; bare callers fall
   // back to SECTIONS defaults via slotsForDay's existing path.
   const dayRequiredRoles = args.dayRequiredRoles || null;
-  // v1.15.0 (2nd commit): openingDays weights avgShiftHours by
-  // day-part open frequency. Optional — undefined → flat mean.
-  const openingDays = args.openingDays || null;
+  // v15.4.0: per-week config resolver (see build28DayAggregates). `args.
+  // shiftTemplate` is the BASE singleton; the resolver picks per-week config
+  // via /configRevisions for both the orphan filter and the blended hours
+  // target. Empty configRevisions → base config every week → identical to
+  // pre-v15.4.0.
+  const resolver = makeWeekConfigResolver(args.configRevisions, args.settings, args.shiftTemplate || null);
 
   const empList = Object.values(employees);
   if (empList.length === 0) return out;
@@ -1176,6 +1273,9 @@ export function buildCalendarMonthAggregates(args) {
     if (!s || !s.employeeId || !s.date) continue;
     if (!dateIsoSet[s.date]) continue;
     if (!accum[s.employeeId]) continue;
+    // v15.4.0: skip orphan shifts (slot index dropped from the resolved
+    // config for that week) — see build28DayAggregates.
+    if (!resolver.isLiveShift(s)) continue;
     accum[s.employeeId].shiftDates[s.date] = true;
     accum[s.employeeId].hours += hoursBetween(s.start, s.end);
   }
@@ -1201,7 +1301,8 @@ export function buildCalendarMonthAggregates(args) {
     const shiftsTarget = range.days > 0
       ? Math.max(0, Math.round(wpw * range.days / 7) - holiday)
       : 0;
-    const hoursTarget = shiftsTarget * avgShiftHours(e, shiftTemplate, dayRequiredRoles, openingDays);
+    // v15.4.0: per-week-blended hours target (see build28DayAggregates).
+    const hoursTarget = shiftsTarget * blendedAvgShiftHours(resolver, e, dayRequiredRoles, windowStartIso, windowEndIso);
     out[e.id] = {
       shiftsCount: shiftsCount,
       hoursTotal: hoursTotal,
@@ -1264,7 +1365,10 @@ function holidayDayCountForEmployeeInRange(requestsMap, empId, fromIso, toIso) {
   return Object.keys(seen).length;
 }
 
-function aggregateShiftsInRange(shiftsMap, empId, fromIso, toIso) {
+// v15.4.0: optional `isLiveShift` predicate skips orphan shifts (slot index
+// dropped from the resolved config for that shift's week). Omitting it keeps
+// the pre-v15.4.0 "count everything" behaviour for any bare caller.
+function aggregateShiftsInRange(shiftsMap, empId, fromIso, toIso, isLiveShift) {
   const seenDates = {};
   let hours = 0;
   const all = Object.values(shiftsMap || {});
@@ -1272,6 +1376,7 @@ function aggregateShiftsInRange(shiftsMap, empId, fromIso, toIso) {
     const s = all[i];
     if (!s || s.employeeId !== empId || !s.date) continue;
     if (s.date < fromIso || s.date > toIso) continue;
+    if (isLiveShift && !isLiveShift(s)) continue;
     seenDates[s.date] = true;
     hours += hoursBetween(s.start, s.end);
   }
@@ -1284,24 +1389,25 @@ export function buildEmployeeFairnessDetail(args) {
   const employee = args.employee;
   const weekStart = args.weekStart;
   const requests = args.requests || {};
-  const shiftTemplate = args.shiftTemplate || null;
   // v1.14.0 follow-up: forwarded into avgShiftHours so the helper's
   // eligible-slot list matches what the generator's eligibility
   // filter sees (configurable per-section day-role rules).
   const dayRequiredRoles = args.dayRequiredRoles || null;
-  // v1.15.0 (2nd commit): openingDays weights avgShiftHours by
-  // day-part open frequency. Optional — undefined → flat mean.
-  const openingDays = args.openingDays || null;
+  // v15.4.0: per-week config resolver. `args.shiftTemplate` is the BASE
+  // singleton; the resolver picks per-week config via /configRevisions for
+  // both the orphan filter (aggregateShiftsInRange) and the per-window blended
+  // hours target. Empty configRevisions → base config every week → identical
+  // to pre-v15.4.0.
+  const resolver = makeWeekConfigResolver(args.configRevisions, args.settings, args.shiftTemplate || null);
 
   const wpw = wpwOf(employee);
-  const avgHours = avgShiftHours(employee, shiftTemplate, dayRequiredRoles, openingDays);
 
   // ── rolling28 ──
   const r28From = addDays(weekStart, -21);
   const r28To = addDays(weekStart, 6);
   const r28FromIso = isoDate(r28From);
   const r28ToIso = isoDate(r28To);
-  const r28Agg = aggregateShiftsInRange(shifts, employee.id, r28FromIso, r28ToIso);
+  const r28Agg = aggregateShiftsInRange(shifts, employee.id, r28FromIso, r28ToIso, resolver.isLiveShift);
   // v15.3.0: pro-rate by tenure-active days within the window; holidays
   // counted only inside the active sub-range.
   const r28Range = activeRangeWithinWindow(employee, r28FromIso, r28ToIso);
@@ -1309,7 +1415,9 @@ export function buildEmployeeFairnessDetail(args) {
   const r28ShiftsTarget = r28Range.days > 0
     ? Math.max(0, Math.round(wpw * r28Range.days / 7) - r28Holiday)
     : 0;
-  const r28HoursTarget = r28ShiftsTarget * avgHours;
+  // v15.4.0: per-week-blended avg shift hours (was a single focus-week value).
+  const r28Avg = blendedAvgShiftHours(resolver, employee, dayRequiredRoles, r28FromIso, r28ToIso);
+  const r28HoursTarget = r28ShiftsTarget * r28Avg;
 
   // ── calendarMonth (the month containing weekStart's Monday) ──
   const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1);
@@ -1317,7 +1425,7 @@ export function buildEmployeeFairnessDetail(args) {
   const monthStartIso = isoDate(monthStart);
   const monthEndIso = isoDate(monthEnd);
   const monthDayCount = monthEnd.getDate();
-  const monthAgg = aggregateShiftsInRange(shifts, employee.id, monthStartIso, monthEndIso);
+  const monthAgg = aggregateShiftsInRange(shifts, employee.id, monthStartIso, monthEndIso, resolver.isLiveShift);
   // v15.3.0: pro-rate by tenure-active days within the month.
   const monthRange = activeRangeWithinWindow(employee, monthStartIso, monthEndIso);
   const monthHoliday = holidayDayCountForEmployeeInRange(requests, employee.id, monthRange.fromIso, monthRange.toIso);
@@ -1327,7 +1435,9 @@ export function buildEmployeeFairnessDetail(args) {
   const monthShiftsTarget = monthRange.days > 0
     ? Math.max(0, Math.round(wpw * monthRange.days / 7) - monthHoliday)
     : 0;
-  const monthHoursTarget = monthShiftsTarget * avgHours;
+  // v15.4.0: per-week-blended avg shift hours across the month's weeks.
+  const monthAvg = blendedAvgShiftHours(resolver, employee, dayRequiredRoles, monthStartIso, monthEndIso);
+  const monthHoursTarget = monthShiftsTarget * monthAvg;
   const monthLabel = monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
   // ── perWeek (4 buckets ending at focus week's Sunday) ──
@@ -1337,7 +1447,7 @@ export function buildEmployeeFairnessDetail(args) {
     const wkEnd = addDays(wkStart, 6);
     const wkFromIso = isoDate(wkStart);
     const wkToIso = isoDate(wkEnd);
-    const agg = aggregateShiftsInRange(shifts, employee.id, wkFromIso, wkToIso);
+    const agg = aggregateShiftsInRange(shifts, employee.id, wkFromIso, wkToIso, resolver.isLiveShift);
     // v15.3.0: pro-rate by tenure-active days in the bucket week.
     const wkRange = activeRangeWithinWindow(employee, wkFromIso, wkToIso);
     const wkHoliday = holidayDayCountForEmployeeInRange(requests, employee.id, wkRange.fromIso, wkRange.toIso);
@@ -1367,6 +1477,9 @@ export function buildEmployeeFairnessDetail(args) {
       hoursTotal: r28Agg.hoursTotal,
       shiftsTarget: r28ShiftsTarget,
       hoursTarget: r28HoursTarget,
+      // v15.4.0: per-week-blended avg shift hours used for hoursTarget, so the
+      // Reasoning view's "shifts target × avg = hoursTarget" stays consistent.
+      avgShiftHours: r28Avg,
       holidayDays: r28Holiday,
       dateFromIso: r28FromIso,
       dateToIso: r28ToIso,
@@ -1383,6 +1496,8 @@ export function buildEmployeeFairnessDetail(args) {
       hoursTotal: monthAgg.hoursTotal,
       shiftsTarget: monthShiftsTarget,
       hoursTarget: monthHoursTarget,
+      // v15.4.0: per-week-blended avg shift hours used for hoursTarget.
+      avgShiftHours: monthAvg,
       holidayDays: monthHoliday,
       // v15.3.0: active (in-tenure) days in the month + full month length.
       activeDays: monthRange.days,

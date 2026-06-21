@@ -41,7 +41,7 @@
 import { useState } from "react";
 import { S } from "../lib/constants.js";
 import { Overlay, Section, mkBtn } from "./atoms.jsx";
-import { buildEmployeeFairnessDetail, parseIsoDate, avgShiftHours } from "../lib/schedule-logic.js";
+import { buildEmployeeFairnessDetail, parseIsoDate } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
 
 const SHORT_MONTH = ["Jan","Feb","Mar","Apr","May","Jun",
@@ -252,15 +252,20 @@ function FormulaRow({ label, formula }) {
 }
 
 export default function EmployeeFairnessModal({
+  // v15.4.0: `shiftTemplate` is now the BASE singleton (not pre-resolved);
+  // buildEmployeeFairnessDetail resolves per-week config itself via
+  // configRevisions + settings (per-week blended hours target + orphan filter).
   open, employee, weekStart, shifts, requests, shiftTemplate,
+  configRevisions, settings,
   // v1.14.0 follow-up: per-employee avgShiftHours needs the
   // per-section dayRequiredRoles configuration so the eligible-slot
   // list matches what the generator's eligibility filter sees.
   // Optional — bare callers fall back to SECTIONS defaults via
   // slotsForDay's existing path.
   dayRequiredRoles,
-  // v1.15.0 (2nd commit): weights avgShiftHours by day-part open
-  // frequency so the Reasoning view matches the generator.
+  // v15.4.0: openingDays still forwarded for callers that read it, but
+  // buildEmployeeFairnessDetail now derives per-week openingDays from the
+  // resolved config; the prop is retained for back-compat.
   openingDays,
   isMobile, onClose,
   onJumpToWeek,
@@ -289,8 +294,9 @@ export default function EmployeeFairnessModal({
     weekStart: weekStart,
     requests: requests,
     shiftTemplate: shiftTemplate,
+    configRevisions: configRevisions,
+    settings: settings,
     dayRequiredRoles: dayRequiredRoles,
-    openingDays: openingDays,
   });
   if (!detail) return null;
 
@@ -307,7 +313,9 @@ export default function EmployeeFairnessModal({
   // clamp to [1..7] with a 5 fallback.
   const wpwRaw = employee.workingDaysPerWeek;
   const wpw = Number.isFinite(wpwRaw) && wpwRaw >= 1 ? Math.min(7, Math.round(wpwRaw)) : 5;
-  const avgHours = avgShiftHours(employee, shiftTemplate, dayRequiredRoles, openingDays);
+  // v15.4.0: avg shift hours is now per-window-blended (config can vary across
+  // the window via revisions), so the Reasoning view reads the per-window value
+  // exposed on each detail block rather than a single recomputed average.
   const prefLabel = employee.preference === "day"
     ? "day shifts only"
     : employee.preference === "evening"
@@ -436,7 +444,7 @@ export default function EmployeeFairnessModal({
           label="Hours target"
           formula={
             <>
-              shifts target (<Num>{r28.shiftsTarget}</Num>) × avg shift hours (<Num>{fmtHours(avgHours)}</Num>)
+              shifts target (<Num>{r28.shiftsTarget}</Num>) × avg shift hours (<Num>{fmtHours(r28.avgShiftHours)}</Num>)
               {" = "}<Num>{fmtHours(r28.hoursTarget)}</Num>
             </>
           }
@@ -511,7 +519,7 @@ export default function EmployeeFairnessModal({
           label="Hours target"
           formula={
             <>
-              shifts target (<Num>{cm.shiftsTarget}</Num>) × avg shift hours (<Num>{fmtHours(avgHours)}</Num>)
+              shifts target (<Num>{cm.shiftsTarget}</Num>) × avg shift hours (<Num>{fmtHours(cm.avgShiftHours)}</Num>)
               {" = "}<Num>{fmtHours(cm.hoursTarget)}</Num>
             </>
           }

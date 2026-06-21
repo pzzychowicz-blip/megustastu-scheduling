@@ -1616,6 +1616,57 @@ separate Firebase project, same UI conventions).
   open the chain runs as before. Modals don't stack (one Overlay at a time),
   so the per-modal listeners never compete.
 
+- **Per-week config in fairness + orphan-shift ignore + slotTimeFor cleanup
+  (v15.4.0):** three backlog items, all in `schedule-logic.js` + the fairness
+  consumers. Shared primitive: `makeWeekConfigResolver(configRevisions,
+  settings, baseShiftTemplate)` — a Monday-cached resolver exposing
+  `cfgForDate(date)` → `{shiftTemplate, openingDays}` and `isLiveShift(shift)`.
+  Empty configRevisions → base config for every week → byte-identical to
+  pre-v15.4.0.
+  - **#3 — `slotTimeFor` legacy fallback removed.** The pre-v1.9.0 read-side
+    fallback (`block.start`/`block.end`/`secondPersonStart`) is dead now that
+    the v1.10.1 eager migration canonicalises every doc on load. `slotTimeFor`
+    reads only `block.times` and returns `OPERATING_HOURS` defaults if a slot
+    entry is somehow missing (an unmigrated doc rendered in the ~1-frame window
+    before the eager write lands — unreachable in PROD). `materializeShift
+    TemplateBlock` / `isBlockMigrated` STILL read the legacy shape — they ARE
+    the migration and must convert it. Scope was strictly `slotTimeFor`.
+  - **#1 — orphan shifts ignored in counts (no deletion).** When a slot count
+    is decreased, shift records at the dropped index stop rendering but used to
+    still inflate fairness counts/hours and the WeeklyShiftSummary pill. With
+    effective-dating a shift is an orphan only on dates whose RESOLVED config
+    has the lower count, so deletion was rejected (it would fight the
+    effective-dated model and the "reappear if count goes back up" semantic).
+    Instead the three aggregate builders + `aggregateShiftsInRange` skip
+    `!resolver.isLiveShift(s)`, and `WeeklyShiftSummary.buildCountByEmployee`
+    skips orphans against the focus-week resolved `template` prop. Records stay
+    in Firebase; a count bump-back restores them.
+  - **#2 — per-week config inside fairness windows.** Supersedes the v15.1.0
+    documented simplification (focus-week config across the whole multi-week
+    window). Only `hoursTarget` was affected (`shiftsTarget` is tenure+holidays
+    only; actual hours come from self-contained shift records). New private
+    `blendedAvgShiftHours(resolver, emp, dayRequiredRoles, fromIso, toIso)`
+    weights each week's `avgShiftHours` by the employee's tenure-active days in
+    that week ∩ window. `build28DayAggregates` / `buildCalendarMonthAggregates`
+    / `buildEmployeeFairnessDetail` switched their `args` from a single
+    pre-resolved `shiftTemplate` + `openingDays` to `configRevisions` +
+    `settings` + base `shiftTemplate`; the detail builder also exposes
+    `rolling28.avgShiftHours` / `calendarMonth.avgShiftHours` so the
+    `EmployeeFairnessModal` Reasoning view's "shifts target × avg = hours
+    target" stays consistent (the modal reads the per-window value instead of
+    recomputing a single average). Generator inherits the fix with NO generator
+    change — `rankCandidates` consumes the same maps. Uniform-config windows
+    collapse to the old value exactly. Edge: base template AND a week's revision
+    both null → resolver falls back to `DEFAULT_SHIFT_TEMPLATE` (matches what
+    the grid renders), where the old code yielded 0.
+  - **Prop chain:** `ScheduleGrid` passes base `shiftTemplate` + `configRevisions`
+    + `settings` into both aggregate memos and down through
+    `<MonthlyFairnessPanel>` → `<EmployeeFairnessModal>`; `<WeeklyShiftSummary>`
+    gains a `template` prop (focus-week resolved). Verified via a pure Node test
+    (orphan count 2→1 with count drop / via revision; blend 5.786 between
+    base 6.143 and shorter 4.714 for a 3-base+1-shorter window) plus live DEV
+    grid/fairness regression check.
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -1734,6 +1785,12 @@ megustastu-scheduling/
     │                                 keyboard shortcuts, closed-shift
     │                                 visibility, tenure-aware fairness
     │                                 targets, and global Esc-to-cancel).
+    │                                 v15.4.0: → 15.4.0, sha
+    │                                 "orphan-ignore-perweek-config-
+    │                                 slottime-cleanup" (slotTimeFor legacy
+    │                                 fallback removed; orphan shifts ignored
+    │                                 in fairness counts; per-week config
+    │                                 resolution inside fairness windows).
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut

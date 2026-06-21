@@ -25,7 +25,12 @@
 //     - Global template only (no per-day-of-week override) — v1.x stretch.
 //     - Count decrease leaves orphan /shifts/{id} records alone — they
 //       stop rendering when count drops below their position, reappear if
-//       count goes back up. Cleanup deferred to v1.x maintenance.
+//       count goes back up. v15.4.0: rather than delete them (which would
+//       fight effective-dating — a future-Monday count drop shouldn't touch
+//       past-date shifts), the fairness aggregates + WeeklyShiftSummary now
+//       IGNORE orphan shifts (slotIndex >= the resolved count for that week)
+//       so they don't inflate counts/hours. See makeWeekConfigResolver in
+//       schedule-logic.js. The records stay so a count bump-back restores them.
 //     - Explicit Save button (config surface, not a modal). Disabled until
 //       dirty AND valid.
 //   v0.7.0:
