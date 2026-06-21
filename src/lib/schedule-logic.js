@@ -1756,10 +1756,15 @@ export function countEmptyCells(weekShifts, weekStartDate, slots, openingDays) {
 // Single source of truth for the rule — consumed by the generator's
 // candidate filter, the manual picker (ShiftFormModal), and (via the
 // week-level helper below) the WeeklyShiftSummary + MonthlyFairnessPanel
-// visibility skips. Tenure gates ELIGIBILITY + VISIBILITY only; it does
-// NOT pro-rate the 28-day / calendar-month fairness target math within a
-// partially-overlapping window (documented v15.2.0 simplification, in
-// keeping with the v15.1.0 focus-week-config-across-window shortcut).
+// visibility skips. Tenure gates ELIGIBILITY + VISIBILITY.
+//
+// v15.3.0 update: tenure ALSO pro-rates the 28-day / calendar-month / weekly
+// fairness TARGET math now — see `activeRangeWithinWindow` and its callers in
+// the three aggregate builders. (The original v15.2.0 simplification that left
+// targets un-prorated no longer applies.)
+// v15.4.0 update: the aggregate windows resolve config PER WEEK
+// (`makeWeekConfigResolver`), so the v15.1.0 "focus-week config across the whole
+// window" shortcut this comment used to reference is also gone.
 export function isEmployeeActiveOnDate(emp, dateIso) {
   if (!emp || emp.active === false) return false;
   if (emp.activeFrom && dateIso < emp.activeFrom) return false;

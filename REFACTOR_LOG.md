@@ -5,6 +5,35 @@ an entry. Newest first.
 
 ---
 
+## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)
+
+**Date:** 2026-06-21
+
+**Behavioural change:** None — comments / docs only.
+
+A pre-onboarding correctness audit (multi-week / effective-dated-config
+consistency, orphan-shift handling, write-guards) found **no behavioural
+defects**: the config-consistency class is fully closed by v15.4.0, the
+generator correctly runs on the focus-week config (it only ever fills one
+week), clear/export/completeness handle orphans correctly, and the write-guard
+pattern covers every path. The only findings were stale comments that
+contradicted shipped behaviour:
+
+- `src/lib/schedule-logic.js` (`isEmployeeActiveOnDate` header) — claimed tenure
+  does NOT pro-rate fairness targets and referenced the v15.1.0
+  focus-week-config-across-window shortcut as current; both were superseded
+  (v15.3.0 tenure pro-rating, v15.4.0 per-week config). Corrected.
+- `CLAUDE.md` — the v15.1.0 "documented simplification" note and the data-model
+  tenure note annotated as superseded by v15.4.0 / v15.3.0.
+
+**Files changed:** `src/lib/schedule-logic.js` (comment), `CLAUDE.md` (2 notes +
+version-history line), `src/App.jsx` (→ 15.4.1, sha
+`doc-accuracy-tenure-perweek`), `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean; no functional change.
+
+---
+
 ## v15.4.0 — Per-week fairness config, orphan-shift ignore, slotTimeFor cleanup
 
 **Date:** 2026-06-21
