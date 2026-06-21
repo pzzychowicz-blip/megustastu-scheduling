@@ -89,6 +89,10 @@ import EmployeeFairnessModal from "./EmployeeFairnessModal.jsx";
 
 export default function MonthlyFairnessPanel({
   employees, monthlyAggregates, shifts, requests, weekStart, shiftTemplate,
+  // v15.4.0: forwarded into <EmployeeFairnessModal> so the drill-down can
+  // resolve per-week config itself (per-week blended hours target + orphan
+  // filter). `shiftTemplate` here is the BASE singleton.
+  configRevisions, settings,
   // v1.14.0 follow-up: forwarded into <EmployeeFairnessModal> so the
   // drill-down's avgShiftHours computation matches the generator's
   // eligibility filter.
@@ -391,6 +395,8 @@ export default function MonthlyFairnessPanel({
         shifts={shifts}
         requests={requests}
         shiftTemplate={shiftTemplate}
+        configRevisions={configRevisions}
+        settings={settings}
         dayRequiredRoles={dayRequiredRoles}
         openingDays={openingDays}
         isMobile={isMobile}

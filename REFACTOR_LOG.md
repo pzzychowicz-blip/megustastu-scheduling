@@ -5,6 +5,71 @@ an entry. Newest first.
 
 ---
 
+## v15.4.0 — Per-week fairness config, orphan-shift ignore, slotTimeFor cleanup
+
+**Date:** 2026-06-21
+
+**Behavioural change:** Three backlog-maintenance items. Mostly internal
+accuracy fixes; #1 changes visible fairness numbers when a slot count has
+been decreased.
+
+1. **`slotTimeFor` legacy fallback removed (#3).** The pre-v1.9.0 read-side
+   compatibility (reading `block.start` / `block.end` /
+   `secondPersonStart`) is dead now that the v1.10.1 eager migration
+   canonicalises every `/shiftTemplate` doc to the `{count, times:[...]}`
+   shape on load. `slotTimeFor` reads only `block.times`, returning
+   `OPERATING_HOURS` defaults if a slot entry is somehow missing. The
+   migration helpers (`materializeShiftTemplateBlock` / `isBlockMigrated`)
+   still read the legacy shape — they perform the conversion.
+
+2. **Orphan shifts ignored in fairness counts (#1).** When a slot count is
+   decreased, shift records at the dropped index stop rendering but used to
+   still inflate fairness counts/hours and the WeeklyShiftSummary pill.
+   Because config is effective-dated, a shift is an orphan only on dates
+   whose resolved config has the lower count — so the records are NOT
+   deleted (that would fight effective-dating and the "reappear if count
+   goes back up" semantic). Instead the three fairness aggregate builders,
+   `aggregateShiftsInRange`, and `WeeklyShiftSummary.buildCountByEmployee`
+   skip orphan shifts. Bump the count back → they re-count.
+
+3. **Per-week config resolution inside fairness windows (#2).** Replaces the
+   v15.1.0 documented simplification (focus-week config across the whole
+   28-day / calendar-month window). When a config revision lands mid-window,
+   the hours TARGET now blends each week's `avgShiftHours` weighted by the
+   employee's tenure-active days that week. `shiftsTarget` is unchanged
+   (config-independent), and actual hours come from self-contained shift
+   records. The generator inherits the fix with no generator change (it
+   consumes the same aggregate maps). Uniform-config windows are
+   byte-identical to before.
+
+**Files changed:**
+- `src/lib/schedule-logic.js` — new `makeWeekConfigResolver` +
+  `blendedAvgShiftHours`; `slotTimeFor` rewrite; orphan filter + per-week
+  blend in `build28DayAggregates` / `buildCalendarMonthAggregates` /
+  `buildEmployeeFairnessDetail`; `aggregateShiftsInRange` predicate; import
+  + comment updates.
+- `src/components/ScheduleGrid.jsx` — aggregate memos pass base
+  `shiftTemplate` + `configRevisions` + `settings`; new `template` prop to
+  `<WeeklyShiftSummary>`; forward config to `<MonthlyFairnessPanel>`.
+- `src/components/WeeklyShiftSummary.jsx` — orphan filter in
+  `buildCountByEmployee` via new `template` prop.
+- `src/components/MonthlyFairnessPanel.jsx` + `EmployeeFairnessModal.jsx` —
+  config prop pass-through; modal reads per-window `avgShiftHours` (removed
+  the now-unused single `avgShiftHours` import).
+- `src/components/Settings.jsx` — orphan comment updated.
+- `src/App.jsx` — version 15.4.0, sha
+  `orphan-ignore-perweek-config-slottime-cleanup`.
+
+**Verification:** `npm run build` clean (main bundle 181.26 kB gz, +~0.4 kB).
+Pure Node test of the new helpers: orphan shift count 2→1 on a count drop
+(both via base template and via an effective-dated revision); per-week blend
+5.786h between base 6.143h and shorter 4.714h for a 3-base + 1-shorter-week
+window. Live DEV grid renders all times/assignees correctly (slotTimeFor
+regression) and the fairness panel shows unchanged numbers (no mid-window
+revision in DEV → #2 correctly a no-op). No console errors.
+
+---
+
 ## v15.3.0 — Keyboard shortcuts, visible past shifts, tenure-aware fairness, global Esc
 
 **Date:** 2026-06-20 – 2026-06-21

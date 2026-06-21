@@ -283,28 +283,29 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // visibility surface below the request preview). Computed against
   // the FULL shifts map (not narrowed to the focus week) since the
   // window is wider than one week.
-  // v15.1.0 simplification (documented): the 28-day / calendar-month
-  // windows may straddle a config-revision boundary, but the aggregates
-  // use the FOCUS WEEK's resolved template + openingDays across the
-  // whole window. Only the fairness TARGETS are affected (actual hours
-  // come from the stored shift records, which are self-contained) —
-  // not worth per-date config resolution inside the aggregate loops.
+  // v15.4.0: the aggregate builders now resolve config PER WEEK inside their
+  // windows (was: focus-week config across the whole window — the v15.1.0
+  // simplification). We pass the BASE singletons (shiftTemplate + settings) +
+  // configRevisions so the builder can re-resolve for each week it spans. This
+  // (a) blends the hours TARGET correctly when a revision lands mid-window, and
+  // (b) lets the builder skip orphan shifts (slot index dropped from a week's
+  // resolved count) so they don't inflate fairness counts. Actual hours come
+  // from the self-contained shift records, unaffected either way.
   const monthlyAggregates = useMemo(function () {
     return build28DayAggregates({
       shifts: shifts,
       employees: employees,
       weekStart: weekStart,
       requests: requests,
-      shiftTemplate: resolvedShiftTemplate,
+      shiftTemplate: shiftTemplate,
+      configRevisions: configRevisions,
+      settings: settings,
       // v1.14.0 follow-up: per-employee avgShiftHours filters slots by
       // role + preference; the per-section day-role configuration drives
       // slotsForDay → roleMatchesSlot inside the helper.
       dayRequiredRoles: dayRequiredRoles,
-      // v1.15.0 (2nd commit): openingDays weights avgShiftHours by how
-      // often each day-part runs across the standing weekly schedule.
-      openingDays: openingDays,
     });
-  }, [shifts, employees, weekStart, requests, resolvedShiftTemplate, dayRequiredRoles, openingDays]);
+  }, [shifts, employees, weekStart, requests, shiftTemplate, configRevisions, settings, dayRequiredRoles]);
 
   // v1.14.0: calendar-month aggregates per employee. Sibling to
   // monthlyAggregates (28-day rolling) — anchored to the calendar month
@@ -318,11 +319,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       employees: employees,
       weekStart: weekStart,
       requests: requests,
-      shiftTemplate: resolvedShiftTemplate,
+      shiftTemplate: shiftTemplate,
+      configRevisions: configRevisions,
+      settings: settings,
       dayRequiredRoles: dayRequiredRoles,
-      openingDays: openingDays,
     });
-  }, [shifts, employees, weekStart, requests, resolvedShiftTemplate, dayRequiredRoles, openingDays]);
+  }, [shifts, employees, weekStart, requests, shiftTemplate, configRevisions, settings, dayRequiredRoles]);
 
   // ── Modal state ──────────────────────────────────────────────────────
   const [modalCell, setModalCell] = useState(null);  // { dateIso, slotDef, shift } or null
@@ -1661,6 +1663,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         isMobile={isMobile}
         highlightedEmployeeId={highlightedEmployeeId}
         onHighlight={onHighlight}
+        // v15.4.0: focus-week resolved template so the pill count skips orphan
+        // shifts (slot index dropped below the resolved count). All `dates` are
+        // in one week → a single resolved template applies.
+        template={template}
       />
 
       <WeeklyRequestsPreview
@@ -1676,7 +1682,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         shifts={shifts}
         requests={requests}
         weekStart={weekStart}
-        shiftTemplate={resolvedShiftTemplate}
+        shiftTemplate={shiftTemplate}
+        configRevisions={configRevisions}
+        settings={settings}
         dayRequiredRoles={dayRequiredRoles}
         openingDays={openingDays}
         highlightedEmployeeId={highlightedEmployeeId}
