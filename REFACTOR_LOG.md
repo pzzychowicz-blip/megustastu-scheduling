@@ -5,6 +5,68 @@ an entry. Newest first.
 
 ---
 
+## v16.0.0 — Bookings parity, split shifts, per-weekday template
+
+**Date:** 2026-08-05
+
+**Behavioural change:** Substantial, in three independent areas. See each
+phase below. *(Entry created with phase 1 and extended in place by every
+later commit on this branch — one entry per version.)*
+
+### Phase 1 — Design tokens + motion CSS foundation
+
+Groundwork for the MGT Bookings visual-parity pass. Purely additive: no
+existing rule changed behaviour, so the app renders identically after this
+commit.
+
+- **`--font-app`** — the app typeface becomes a single token, and a new
+  global `input, textarea, select, button { font-family: inherit }` rule
+  forces it onto form controls (which do not inherit `font-family` per
+  spec, and were falling back to browser defaults). Ported from Bookings,
+  where the same rule fixed a monospace textarea.
+- **Radii scale (`--r-pill` / `-sheet` / `-card` / `-inset` / `-tight`)**,
+  exported from `constants.js` as `R`. Values were chosen to match
+  Scheduling's *existing* dominant literal per role (999 / 16 / 12 / 10 /
+  8), so the sweep in phase 2 is a visual no-op rather than a restyle.
+  Deliberately absent from the `[data-theme="dark"]` block — radii are
+  theme-agnostic. `S.card`, `S.surfaceSoft`, `S.inputBase` and `BTN.base`
+  converted here; the remaining ~50 call sites land in phase 2.
+- **Motion vocabulary** — Scheduling had exactly one global class
+  (`.mgt-hover-scale`) and two `@keyframes` declared inline inside
+  `ScheduleGrid`. Added the modal set (`mgt-scrim/card/sheet-in|out`),
+  `mgt-toast-in|out`, the directional `mgt-view-in-left|right`,
+  `mgt-fade-in`, and `.mgt-press` (which uses `filter: brightness()`
+  rather than a transform specifically so it never fights
+  `.mgt-hover-scale`'s hover transform). Consumers arrive in phase 3.
+- **Reduced motion** — two independent kill switches, matching Bookings:
+  the OS `prefers-reduced-motion` media query, and a per-device toggle
+  writing `localStorage["mgt-reduce-motion"]` which the no-flash inline
+  script stamps onto `<html data-motion="reduce">` before React mounts.
+  The Settings toggle that drives the second one lands in phase 6.
+
+**Deliberate divergence from Bookings:** Bookings' `.mgt-hover-scale:hover`
+rule *dropped* its `border-radius` declaration in its v17.7.0 radii work,
+requiring every consumer to set its own. Scheduling keeps the declaration
+(now `var(--r-card)`) because here it is load-bearing: Toggle atoms,
+Collapsible headers and `Fld`-wrapped Settings rows carry no inline
+`border-radius` at all, and removing it would paint their hover card with
+sharp corners.
+
+**BTN parity note:** Bookings exports ten `BTN` variants, but they are
+named for its own domain (tables / edit / del / …). Scheduling's five
+semantic variants cover every call site here, so the parity pass
+deliberately did not import the other eight — dead tokens are worse than
+no tokens. What the apps now genuinely share is `R` and the motion CSS.
+
+**Files changed:** `index.html` (tokens, global rules, keyframes,
+reduced-motion, no-flash script), `src/lib/constants.js` (+`R`, 4 token
+applications), `src/App.jsx` (→ 16.0.0, sha
+`bookings-parity-split-shifts-perweekday-template`), `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean; main bundle 181.29 kB gz.
+
+---
+
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)
 
 **Date:** 2026-06-21

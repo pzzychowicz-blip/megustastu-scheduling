@@ -22,6 +22,36 @@
          blocks; never reference colours from JS directly.
       ──────────────────────────────────────────────────────────────────── */
       :root {
+        /* ── v16.0.0: font stack ──────────────────────────────────────────
+           Single source of truth for the app typeface. Ported from MGT
+           Bookings (`--font-app`) so the two apps render identically.
+           Form controls do NOT inherit font-family per spec, so a global
+           rule below forces it onto input / textarea / select / button. */
+        --font-app: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, Arial, sans-serif;
+
+        /* ── v16.0.0: radii scale ─────────────────────────────────────────
+           Ported from MGT Bookings' `R` scale. Assign BY ROLE, never by
+           matching the old literal:
+             --r-pill   fully-rounded pills, chips, toggles, badges
+             --r-sheet  modal sheets + the login card (the largest surfaces)
+             --r-card   cards, buttons, soft surfaces, Collapsible bodies
+             --r-inset  inset surfaces — grid cells, banners, popovers
+             --r-tight  small dense controls (weekday pills, mini-buttons)
+           999px is a true pill at any control height because CSS clamps an
+           oversized radius to half the box.
+
+           DELIBERATELY not duplicated into the [data-theme="dark"] block —
+           radii are theme-agnostic. Values match Scheduling's existing
+           dominant literal per role, so the v16.0.0 sweep is a visual
+           no-op. Micro-radii (Kbd keycap 6, fairness delta-bar 5, notch 1)
+           and `50%` circles stay numeric at their call sites, matching
+           Bookings' documented exceptions. */
+        --r-pill: 999px;
+        --r-sheet: 16px;
+        --r-card: 12px;
+        --r-inset: 10px;
+        --r-tight: 8px;
+
         /* Body */
         --bg-app-from: #f3f5f8;
         --bg-app-to: #e7ecf2;
@@ -294,11 +324,17 @@
 
       html, body, #root { height: 100%; margin: 0; }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-app);
         background: linear-gradient(180deg, var(--bg-app-from) 0%, var(--bg-app-to) 100%);
         color: var(--color-body);
         -webkit-font-smoothing: antialiased;
       }
+
+      /* v16.0.0: form controls don't inherit font-family per spec, so they
+         fall back to the browser default (textareas render monospace in
+         several engines). Ported from MGT Bookings, where the same rule
+         fixed a monospace Notes field. */
+      input, textarea, select, button { font-family: inherit; }
 
       /* ── v1.9.0: unified hover-scale utility ────────────────────────────
          Single reusable hover affordance, applied to every primary
@@ -363,12 +399,101 @@
            Elements that already have inline border-radius (most buttons
            via BTN.base, pills via 999, schedule cells via 10) keep their
            inline value because inline styles beat CSS at the same level.
-           12px matches S.surfaceSoft / S.card / BTN.base in
-           src/lib/constants.js. */
-        border-radius: 12px;
+           --r-card matches S.surfaceSoft / S.card / BTN.base in
+           src/lib/constants.js.
+
+           v16.0.0 divergence from MGT Bookings, deliberate: Bookings
+           REMOVED this declaration (its v17.7.0 radii work) and made every
+           consumer set its own radius. Scheduling keeps it — here the rule
+           is load-bearing for surfaces that carry NO inline border-radius
+           at all (Toggle atoms, Collapsible headers, Fld-wrapped rows in
+           Settings). Dropping it would paint their hover card with sharp
+           corners. Tokenised rather than deleted. */
+        border-radius: var(--r-card);
         position: relative;
         z-index: 2;
       }
+      }
+
+      /* ── v16.0.0: motion system, ported from MGT Bookings ───────────────
+         Scheduling had exactly one global class (.mgt-hover-scale) plus two
+         @keyframes declared inline inside ScheduleGrid. Everything below is
+         the shared vocabulary the two apps now have in common. Consumers are
+         the animation atoms in src/components/atoms.jsx — see Presence /
+         ModalPresence / Toast / SlideView there.
+
+         Durations are deliberately short and mostly `linear` for the modal
+         set: an enter/exit pair must feel symmetric, and easing a 180ms
+         fade both ways reads as sluggish.
+      ────────────────────────────────────────────────────────────────── */
+
+      /* Modal open/close. Desktop = scrim fade + card fade/scale;
+         mobile = slide-up / slide-down sheet. Driven by <ModalPresence>
+         toggling the *-in / *-out class on Overlay's nodes. */
+      @keyframes mgt-scrim-in  { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes mgt-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+      @keyframes mgt-card-in   { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+      @keyframes mgt-card-out  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(.97); } }
+      @keyframes mgt-sheet-in  { from { transform: translateY(100%); } to { transform: translateY(0); } }
+      @keyframes mgt-sheet-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+      .mgt-scrim-in  { animation: mgt-scrim-in  180ms linear both; }
+      .mgt-scrim-out { animation: mgt-scrim-out 180ms linear both; }
+      .mgt-card-in   { animation: mgt-card-in   180ms linear both; }
+      .mgt-card-out  { animation: mgt-card-out  180ms linear both; }
+      .mgt-sheet-in  { animation: mgt-sheet-in  200ms linear both; }
+      .mgt-sheet-out { animation: mgt-sheet-out 200ms linear both; }
+
+      /* Floating toasts / banners that must not reflow the layout while
+         they come and go. The <Toast> atom keeps the node mounted through
+         the out animation, then unmounts. */
+      @keyframes mgt-toast-in  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes mgt-toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-6px); } }
+      .mgt-toast-in  { animation: mgt-toast-in  220ms cubic-bezier(.4, 0, .2, 1) both; }
+      .mgt-toast-out { animation: mgt-toast-out 200ms cubic-bezier(.4, 0, .2, 1) both; }
+
+      /* Directional view transitions — tab switch (AppShell) and week
+         navigation (ScheduleGrid). The incoming view slides in from the
+         side it conceptually came from; the outgoing one is not animated
+         (it unmounts), which keeps the swap crisp instead of crossfaded. */
+      @keyframes mgt-view-in-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+      @keyframes mgt-view-in-left  { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+      .mgt-view-in-right { animation: mgt-view-in-right 220ms ease-out both; }
+      .mgt-view-in-left  { animation: mgt-view-in-left  220ms ease-out both; }
+
+      /* Plain crossfade for content swaps with no direction to express. */
+      @keyframes mgt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+      .mgt-fade-in { animation: mgt-fade-in 180ms ease-out both; }
+
+      /* Press feedback. Uses `filter: brightness()` rather than a transform
+         SPECIFICALLY so it never fights .mgt-hover-scale's hover transform —
+         an element can be hovered (scaled) and pressed (dimmed) at once. */
+      .mgt-press { transition: filter 160ms ease-out, background-color 160ms ease-out; }
+      .mgt-press:active:not(:disabled) { filter: brightness(0.86); }
+
+      /* ── Reduced motion ────────────────────────────────────────────────
+         Two independent kill switches, both collapsing every animation and
+         transition to ~instant:
+           1. the OS-level `prefers-reduced-motion` setting;
+           2. a per-device toggle in Settings → Display writing
+              localStorage["mgt-reduce-motion"] = "1", which the inline
+              script at the bottom of this file stamps onto <html> as
+              data-motion="reduce" BEFORE React mounts.
+         The !important beats inline `transition:` / `animation:` styles.
+         Any WAAPI animation added later must check the same attribute in
+         JS — CSS cannot reach the Web Animations API. */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.001ms !important;
+          animation-delay: 0ms !important;
+          transition-duration: 0.001ms !important;
+        }
+      }
+      :root[data-motion="reduce"] *,
+      :root[data-motion="reduce"] *::before,
+      :root[data-motion="reduce"] *::after {
+        animation-duration: 0.001ms !important;
+        animation-delay: 0ms !important;
+        transition-duration: 0.001ms !important;
       }
     </style>
   </head>
@@ -376,7 +501,13 @@
     <!-- v0.11.0: paint the correct theme before React mounts, so the page
          doesn't flash light-on-load for a user whose system is dark (or
          vice-versa). React's useThemeMode hook takes over after mount;
-         this only owns the initial paint. -->
+         this only owns the initial paint.
+
+         v16.0.0: also stamps data-motion="reduce" from the per-device
+         "Reduce animations" preference, for the same reason — an animation
+         that fires once during the first paint can't be un-fired by a
+         React effect. Must stay in sync with the toggle in
+         Settings → Display (localStorage key "mgt-reduce-motion"). -->
     <script>
       (function () {
         try {
@@ -384,6 +515,13 @@
           document.documentElement.dataset.theme = dark ? "dark" : "light";
         } catch (e) {
           /* leave the default data-theme="light" from the html tag */
+        }
+        try {
+          if (localStorage.getItem("mgt-reduce-motion") === "1") {
+            document.documentElement.dataset.motion = "reduce";
+          }
+        } catch (e) {
+          /* Safari private mode throws on localStorage — motion stays on */
         }
       })();
     </script>

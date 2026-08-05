@@ -252,6 +252,40 @@ export const ROLE_COLORS = Object.freeze({
 // neutral grey in both themes (lighter in dark mode automatically).
 export const ROLE_COLOR_FALLBACK = "var(--role-fallback-rgb)";
 
+// ── Radii scale (R) ──────────────────────────────────────────────────────
+// v16.0.0: ported from MGT Bookings so the two apps share one radii
+// vocabulary. Values are defined in index.html's :root and are deliberately
+// NOT duplicated into the dark block — radii are theme-agnostic.
+//
+// ASSIGN BY ROLE, never by matching the old literal. The v16.0.0 sweep
+// converted every borderRadius call site in src/ by asking "what kind of
+// surface is this?", not "which number was here?":
+//
+//   R.pill    fully-rounded — pills, chips, badges, toggles, segmented
+//             controls. 999px is a true pill at any control height
+//             because CSS clamps an oversized radius to half the box.
+//   R.sheet   the largest surfaces — modal sheets, the login card.
+//   R.card    cards, buttons, soft surfaces, Collapsible bodies. This is
+//             also what .mgt-hover-scale's hover card paints with.
+//   R.inset   inset surfaces — schedule grid cells, inline banners,
+//             popovers, inputs.
+//   R.tight   small dense controls — weekday pills, mini action buttons.
+//
+// Documented exceptions that stay NUMERIC at their call sites (mirroring
+// how Bookings handles the same cases): `borderRadius: "50%"` circles, the
+// Kbd keycap (6), and the fairness delta-bar track/fill/notch trio in
+// MonthlyFairnessPanel (5 / 5 / 1) where the radius is part of a tuned
+// geometry rather than a surface role. src/lib/pdf-export.js never reads
+// CSS vars at all (the printed palette is locked light — v0.11.0), so it
+// is out of scope entirely.
+export const R = Object.freeze({
+  pill: "var(--r-pill)",
+  sheet: "var(--r-sheet)",
+  card: "var(--r-card)",
+  inset: "var(--r-inset)",
+  tight: "var(--r-tight)",
+});
+
 // ── Style tokens (S) ─────────────────────────────────────────────────────
 // Translucent / glass aesthetic, iOS-inspired. Matches MGT Bookings.
 // v0.11.0: backed by CSS vars; theme flip swaps every value automatically.
@@ -269,7 +303,7 @@ export const S = Object.freeze({
     maxWidth: 720,
     background: "var(--bg-card)",
     border: "1px solid var(--border-card)",
-    borderRadius: 12,
+    borderRadius: R.card,
     padding: 20,
     boxShadow: "var(--shadow-card)",
   },
@@ -284,7 +318,7 @@ export const S = Object.freeze({
   surfaceSoft: {
     background: "var(--bg-soft)",
     border: "1px solid var(--border-soft)",
-    borderRadius: 12,
+    borderRadius: R.card,
     padding: 12,
     boxShadow: "var(--shadow-soft)",
   },
@@ -298,7 +332,7 @@ export const S = Object.freeze({
     color: "var(--text-input)",
     background: "var(--bg-input)",
     border: "1px solid var(--border-input)",
-    borderRadius: 10,
+    borderRadius: R.inset,
     boxShadow: "var(--shadow-input-inset)",
     outline: "none",
   },
@@ -317,11 +351,18 @@ export const S = Object.freeze({
 // ── Button tokens (BTN) ──────────────────────────────────────────────────
 // Compose mkBtn(BTN.primary, { ...overrides }) at call sites.
 // v0.11.0: theme-aware via CSS vars.
+//
+// v16.0.0 note on cross-app parity: MGT Bookings exports ten BTN variants,
+// but they are named for ITS domain (tables / edit / del / cancel / clear /
+// reset / today / nav / dismiss / orange). Scheduling's five semantic
+// variants cover every call site here, so the parity pass deliberately did
+// NOT import the extra eight — dead tokens are worse than no tokens. What
+// IS shared is the radii scale (R) and the motion vocabulary in index.html.
 export const BTN = Object.freeze({
   base: {
     appearance: "none",
     border: "1px solid transparent",
-    borderRadius: 12,
+    borderRadius: R.card,
     padding: "10px 14px",
     fontSize: 14,
     fontWeight: 600,
