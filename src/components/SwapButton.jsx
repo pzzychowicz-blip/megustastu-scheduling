@@ -57,7 +57,7 @@ export default function SwapButton({ active, onToggle, disabled }) {
   return (
     <button
       type="button"
-      className="mgt-hover-scale"
+      className="mgt-hover-scale mgt-press"
       onClick={handleClick}
       disabled={disabled}
       style={style}

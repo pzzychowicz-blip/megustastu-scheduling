@@ -470,6 +470,27 @@
       .mgt-press { transition: filter 160ms ease-out, background-color 160ms ease-out; }
       .mgt-press:active:not(:disabled) { filter: brightness(0.86); }
 
+      /* ── v16.0.0: focus-visible ring ───────────────────────────────────
+         NEITHER app had any focus affordance before this — the clearest
+         accessibility gap in both. A keyboard user tabbing through the app
+         had no way to tell where they were.
+
+         `:focus-visible` (not `:focus`) so a mouse click on a button does
+         NOT paint a ring, while Tab does. Per spec, text inputs match
+         focus-visible on any focus including click, which is what we want:
+         a focused field should always read as focused.
+
+         `outline` rather than `box-shadow` because it follows the
+         element's border-radius automatically and, being outside the box
+         model, cannot reflow the layout or fight the inset shadow that
+         S.inputBase paints. The offset keeps it clear of the element's own
+         border. NB S.inputBase's `outline: "none"` was removed so this
+         rule can reach inputs — an inline style would otherwise win. */
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
       /* ── Reduced motion ────────────────────────────────────────────────
          Two independent kill switches, both collapsing every animation and
          transition to ~instant:

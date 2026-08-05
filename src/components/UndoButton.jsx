@@ -51,7 +51,7 @@ export default function UndoButton({ stack, onUndo, isMobile, disabled: disabled
   return (
     <button
       type="button"
-      className="mgt-hover-scale"
+      className="mgt-hover-scale mgt-press"
       onClick={handleClick}
       disabled={disabled}
       style={style}

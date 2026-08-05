@@ -231,7 +231,7 @@ function GenerateButton({
     <>
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={handleClick}
         disabled={disabled}
         style={style}

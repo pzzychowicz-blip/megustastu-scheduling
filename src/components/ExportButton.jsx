@@ -104,7 +104,7 @@ function ExportButton({
     <>
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={handleClick}
         disabled={!canClick}
         style={style}

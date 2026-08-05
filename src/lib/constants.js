@@ -334,7 +334,10 @@ export const S = Object.freeze({
     border: "1px solid var(--border-input)",
     borderRadius: R.inset,
     boxShadow: "var(--shadow-input-inset)",
-    outline: "none",
+    // v16.0.0: `outline: "none"` removed. It was an inline style, so it beat
+    // the global :focus-visible rule in index.html and left every input in
+    // the app with no focus affordance at all. The browser default outline
+    // it was suppressing is now replaced by that rule's accent ring.
   },
 
   // Field block

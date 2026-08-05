@@ -214,7 +214,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
           isMobile={isMobile}
         />
         <button
-          className="mgt-hover-scale"
+          className="mgt-hover-scale mgt-press"
           style={{ ...BTN.base, ...BTN.ghost }}
           onClick={signOut}
         >
@@ -243,7 +243,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
           <button
             key={t.key}
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={function () { setTab(t.key); }}
             style={{
               ...BTN.base,

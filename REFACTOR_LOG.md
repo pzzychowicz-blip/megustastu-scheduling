@@ -198,6 +198,45 @@ children = title (19px) → body (`overflowY: auto`, scrollable) → footer
 (72px); after switching to the taller Reasoning view the sheet is 662px
 against a 661.6px cap (respected), and the footer stays on screen.
 
+### Phase 5 — Press feedback + a focus-visible ring
+
+**`.mgt-press`** is now applied centrally in `mkBtn`, so all 30 buttons
+built through the builder get the `:active` brightness dip for free, and it
+composes with whatever `className` the caller passes. The app also has 37
+raw `<button>` elements using `BTN.base` directly; the nav-bar action
+buttons among them (Generate / Swap / Undo / Clear / Export, plus the
+AppShell tab and Sign-out buttons) were opted in explicitly. Press uses
+`filter` and hover uses `transform`, so the two never clobber each other.
+
+**`:focus-visible`** — a 2px accent outline with a 2px offset, added
+globally. **Neither app had any focus affordance at all**, which was the
+clearest accessibility gap in both: a keyboard user tabbing through had no
+way to tell where they were. `:focus-visible` rather than `:focus` so a
+mouse click doesn't paint a ring while Tab does; `outline` rather than
+`box-shadow` because it follows border-radius automatically, sits outside
+the box model (no reflow), and can't fight the inset shadow `S.inputBase`
+paints.
+
+This required removing `outline: "none"` from `S.inputBase`. It was an
+*inline* style, so it beat the new global rule and would have left every
+input in the app unfocusable-looking. Note that per spec text inputs match
+`:focus-visible` on any focus including click — which is the behaviour we
+want for a field.
+
+*(A ROADMAP item is filed to port the focus ring back to MGT Bookings,
+which has the same gap.)*
+
+**Files changed:** `index.html` (focus-visible rule),
+`src/lib/constants.js` (drop `outline: "none"`),
+`src/components/atoms.jsx` (`mkBtn` applies `.mgt-press`), six nav-button /
+shell components, `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. In the DEV browser, a real Tab
+keypress lands on a button matching `:focus-visible` with a computed
+`2px solid rgb(10, 132, 255)` outline at `2px` offset; programmatic
+`.focus()` correctly does *not* match, confirming the rule is
+keyboard-scoped rather than firing on clicks.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

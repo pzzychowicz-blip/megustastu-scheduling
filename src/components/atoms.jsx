@@ -477,12 +477,21 @@ export function mkInp(props) {
 // ── mkBtn ────────────────────────────────────────────────────────────────
 // Build a <button>. Pass variant ("primary" | "secondary" | "danger" | "ghost")
 // or a direct style object to override.
+//
+// v16.0.0: every button built here gets `.mgt-press` for free — the
+// brightness dip on :active. Applying it centrally rather than at ~60 call
+// sites is the whole point of having a builder, and it composes with any
+// className the caller passes (typically "mgt-hover-scale"). The two
+// effects are deliberately independent: press uses `filter`, hover uses
+// `transform`, so a button can be hovered and pressed at once without
+// either clobbering the other.
 export function mkBtn(props) {
-  const { variant, style, children, ...rest } = props || {};
+  const { variant, style, children, className, ...rest } = props || {};
   const variantStyle = variant && BTN[variant] ? BTN[variant] : BTN.secondary;
   const merged = { ...BTN.base, ...variantStyle, ...(style || {}) };
+  const cls = className ? "mgt-press " + className : "mgt-press";
   return (
-    <button style={merged} {...rest}>
+    <button style={merged} className={cls} {...rest}>
       {children}
     </button>
   );
