@@ -777,12 +777,24 @@ export function deriveCellState(shift, slotDef) {
   };
 }
 
-// ── Same-day double-booking check (v0.8.0) ───────────────────────────────
-// STRICT rule: a single employee cannot hold more than one shift on the
-// same date — covers day + evening on the same Tuesday too (a 12-hour
-// straight stretch is a labour-law red flag and almost always manager
-// error). Enforced both by filtering the picker dropdown AND by a final
-// guard in the shift modal's save handler.
+// ── Same-day shift lookup (v0.8.0; semantics changed in v16.0.0) ─────────
+// Finds other shifts the employee already holds on the same date.
+//
+// v0.8.0–v15.4.1 this backed a STRICT rule: one employee could never hold
+// two shifts on one date, enforced by hiding them from the picker AND by a
+// refusal in the save handler.
+//
+// **v16.0.0 — split shifts are allowed, MANUALLY.** The same person may now
+// work day AND evening on one date. What changed is only who enforces it:
+//
+//   - Manual picker (ShiftFormModal) — SOFT. Same-day staff are hidden by
+//     default behind a toggle (mirroring the day-off / holiday toggle), and
+//     choosing one raises a yellow warning. The save goes through.
+//   - Swap / Move (ScheduleGrid) — SOFT, but confirmed. A landing that
+//     would create a split opens a confirm dialog first.
+//   - Auto-generator (generator.js step 4) — still HARD. The generator must
+//     never produce a split on its own; a 12-hour straight day is a
+//     deliberate manager decision, not something to stumble into.
 //
 // `excludeShiftId` lets the caller skip the shift currently being edited
 // so the assignment doesn't conflict with itself.
@@ -799,6 +811,28 @@ export function findSameDayShift(shiftsMap, employeeId, dateIso, excludeShiftId)
     return s;
   }
   return null;
+}
+
+// v16.0.0: the plural form. Under the old strict rule there could only ever
+// be one clash, so returning the first was enough. Now that splits are
+// legal, a warning wants to NAME every shift the employee already holds
+// that date — and a third assignment on one date, while unlikely, is no
+// longer impossible and should read as such rather than silently
+// mentioning only one.
+//
+// Returns an array (possibly empty), in the map's iteration order.
+export function findSameDayShifts(shiftsMap, employeeId, dateIso, excludeShiftId) {
+  const out = [];
+  if (!employeeId || !dateIso) return out;
+  const all = Object.values(shiftsMap || {});
+  for (let i = 0; i < all.length; i++) {
+    const s = all[i];
+    if (!s.employeeId || s.employeeId !== employeeId) continue;
+    if (s.date !== dateIso) continue;
+    if (excludeShiftId && s.id === excludeShiftId) continue;
+    out.push(s);
+  }
+  return out;
 }
 
 // ── Request ↔ shift conflict matching ────────────────────────────────────

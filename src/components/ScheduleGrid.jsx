@@ -1681,8 +1681,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         Click any cell to assign someone or edit the time / role. Cells marked
         with “*” have times that differ from the template defaults. The
         assignee dropdown hides staff with a day-off or holiday request on
-        that date (a toggle in the modal restores them) and anyone already
-        scheduled elsewhere on the same date.
+        that date, and staff already working that date — a toggle in the
+        modal restores either. Picking someone who already works that date
+        creates a split shift, which is allowed manually but never produced
+        by the auto-generator.
       </p>
 
       <WeeklyShiftSummary
