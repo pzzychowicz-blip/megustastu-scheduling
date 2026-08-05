@@ -432,6 +432,105 @@ stripped the leading time from each cell but not the role pill, so
 `"Carlos"` and `"ChefCarlos"` compared unequal. Re-run matching against the
 known employee names.)*
 
+### Phases 11–13 — Per-weekday shift template (times **and** headcount)
+
+Kitchen and Front of House can now be adjusted per weekday: a different
+headcount and different per-slot times on any given day, edited through a
+pill + popover mirroring the existing "Open days" picker.
+
+**Storage.** An optional `weekdays` map on each (section, dayPart) block,
+sparse, keyed by weekday: `{count, times:[{start,end}...]}`, or `{count: 0}`
+for "this row doesn't run that weekday". Absent = the block behaves exactly
+as before. It rides inside the existing `shiftTemplate` config-revision
+axis, so effective-dating, `resolveConfigForWeek` and the Scheduled-changes
+list are all untouched. Never written as `{}`, `null` or `[]` — RTDB strips
+empty collections, which is precisely the v1.12.0 Chef-pill bug.
+
+**The central decision: a UNION ladder, not a per-date one.** The slot list
+stays uniform for the week — the widest any visible weekday needs — and
+dates where a row doesn't run render an inert `—`, reusing the closed-day
+machinery. A per-date ladder was rejected because the desktop grid is a
+single CSS grid with a shared label column and `display: contents` rows,
+and the PDF is one autotable row per slot; neither can be ragged. The union
+also means `slotsByKey`, ClearConfirmModal's by-row scope,
+GenerateResultsModal's labels and the generator's stale-record lookup keep
+working with no changes at all.
+
+`slotTimesForDate` gains a third precedence tier — **per-weekday override →
+soloTimes → flat defaults** — while keeping its signature, which is what
+makes this cheap: `renderCell`, both generator call sites, `ShiftFormModal`
+and the swap payload inherit per-weekday times without a single edit.
+
+**Three things that would each have been a real bug:**
+
+1. **`isWeekComplete` / `countEmptyCells`** had to gate on the new
+   `isSlotScheduledOnDate` in the same commit as the ladder. Without it
+   every extra union row reads as unfilled on every non-overriding weekday
+   — Export PDF disabled permanently and a wildly inflated warning count.
+2. **`humanLabel`** had to switch from the block's own count to the ladder
+   length, or a base-1 block with a weekday override of 2 yields two rows
+   both called "Kitchen Day" — indistinguishable in the by-row clear scope
+   and in the PDF.
+3. **Extra rows have no entry in the flat `times` array**, so
+   `defaultStart`/`defaultEnd` would fall back to 11:00–23:00 and the row
+   label would advertise hours the slot never runs. They now inherit from
+   the first weekday override that defines the index.
+
+**Orphan predicate widened to the union**, via a new shared
+`isLiveShiftForTemplate`. The grid renders a row iff *some* weekday needs
+it, so tying "counts" to the same condition keeps "renders ⟺ counts"
+exactly true. Comparing against the base count would drop a legitimately
+generated shift; comparing against that date's own count would strip
+fairness credit for work already done because the manager later trimmed a
+weekday. This also removed two duplicated copies of the predicate inside
+`WeeklyShiftSummary` that would otherwise have disagreed with the resolver.
+
+**`avgShiftHours` generalised** from the v15.1.0 two-bucket (both-open /
+solo) weighting to a per-weekday loop, since per-weekday overrides give each
+weekday its own duration and headcount. The drop guard stays **two-pass** on
+purpose — a naive per-weekday `if (h <= 0) skip` is not equivalent (hNormal
+6, hSolo 0, five both-open + two solo gives 30/7 the old way, 30/5 the naive
+way), and this feeds the generator's fairness ranking.
+
+**Settings.** A per-weekday pill row per block: `—` inherits, `×N`
+overrides, `off` doesn't run. The popover is above-anchored (the pill row
+sits at the bottom of a block, so anchoring below would cover the next
+block's row) with a bounded, internally-scrolling times list so it stays a
+predictable size at any headcount. State is a composite string key
+(`"foh|evening|sat"`) preserving the existing toggle idiom, with a single
+`useRef` attached conditionally to whichever block owns the open popover —
+`renderBlock` is a plain function called four times and cannot call
+`useRef` itself. Opening a popover does not create the override; the first
+edit does. `blockDirty` normalizes `{}` ↔ absent, without which the dirty
+dot never clears and the 800 ms debounce re-writes the revision on every
+Firebase echo. `onCountChange` deliberately carries `weekdays` through
+untouched — overrides are explicit manager intent.
+
+**Files changed:** `src/lib/schedule-logic.js`, `src/lib/generator.js`,
+`src/lib/pdf-export.js`, `src/components/ScheduleGrid.jsx`,
+`src/components/Settings.jsx`, `src/components/WeeklyShiftSummary.jsx`,
+`REFACTOR_LOG.md`.
+
+**Verification.** A pure Node harness confirmed the logic layer before any
+UI existed: baseline `avgShiftHours` = 6.142857, matching the 6.143 recorded
+in v15.4.0's log (backward-compat exact); union ladder 7→8 with correct
+labels; the extra row inheriting 19:00–23:00 from the override rather than
+the operating-hours fallback; `isSlotScheduledOnDate` correct for every
+weekday including `count: 0`; precedence confirmed both ways (an override
+beats solo on a solo Monday, solo still wins with no override); and
+`materializeShiftTemplateBlock` a fixed point whose output does **not** flag
+`isShiftTemplateMigrated`, so the eager migration cannot loop.
+
+Then end-to-end in the DEV browser: set Kitchen Evening Saturday to 4 people
+with an 18:00 start on the new slot. The pill read `Sat ×4`; the current
+week was correctly unchanged (revisions default to next Monday); the
+following week grew a 4th Kitchen Evening row labelled 18:00–23:00 with
+`· varies` on all four evening rows and 6 `—` placeholders (the six
+non-Saturday days). Running Fill-empty filled 36 cells and left **all six
+dashes untouched**. Export reported **10** empty cells — exactly 46 rendered
+minus 36 filled, with the dashes correctly excluded; it would have said 16
+had the completeness gate been missing.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

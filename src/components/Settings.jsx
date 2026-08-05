@@ -233,6 +233,49 @@ function blockError(block, hours) {
       }
     }
   }
+  // v16.0.0: per-weekday overrides. Walked in WEEKDAYS (Mon..Sun) order so
+  // the reported message is deterministic rather than depending on object
+  // key order. Unlike the block-level count, a weekday count of 0 is legal
+  // — that's "this row doesn't run today".
+  //
+  // This gate is load-bearing beyond the message: the debounced template
+  // auto-save only fires when all four blockError results are null, so a
+  // half-typed weekday count (NaN mid-keystroke) correctly holds the write
+  // back, exactly as the block-level count does.
+  const wd = block.weekdays;
+  if (wd && typeof wd === "object") {
+    for (let d = 0; d < WEEKDAYS.length; d++) {
+      const key = WEEKDAYS[d].key;
+      const e = wd[key];
+      if (!e) continue;
+      const dayName = WEEKDAYS[d].label;
+      if (typeof e.count !== "number" || !Number.isFinite(e.count) || e.count < 0) {
+        return dayName + ": count must be 0 or more.";
+      }
+      if (e.count === 0) continue;   // no times to validate
+      if (!Array.isArray(e.times) || e.times.length !== e.count) {
+        return dayName + ": each shift needs its own start and end times.";
+      }
+      for (let i = 0; i < e.times.length; i++) {
+        const t = e.times[i];
+        const prefix = dayName + (e.times.length > 1 ? " shift " + (i + 1) : "") + ": ";
+        if (!t || !t.start || !t.end) {
+          return prefix + "start and end times required.";
+        }
+        if (t.start >= t.end) {
+          return prefix + "end time must be after start.";
+        }
+        if (hours && hours.operatingStart && hours.operatingEnd) {
+          if (t.start < hours.operatingStart) {
+            return prefix + "start cannot be earlier than operating start (" + hours.operatingStart + ").";
+          }
+          if (t.end > hours.operatingEnd) {
+            return prefix + "end cannot be later than operating end (" + hours.operatingEnd + ").";
+          }
+        }
+      }
+    }
+  }
   return null;
 }
 
@@ -312,6 +355,30 @@ function blockDirty(a, b) {
       if ((aSolo[i] && aSolo[i].end) !== (bSolo[i] && bSolo[i].end)) return true;
     }
   }
+  // v16.0.0: per-weekday axis. Both sides normalize to {} for "no
+  // overrides" — the form may hold an empty object while a saved doc OMITS
+  // the key, and those two MUST compare equal. Otherwise the dirty dot
+  // never clears and the 800ms debounce re-writes the revision on every
+  // Firebase echo, which is the exact failure the v15.1.0 comment below
+  // the auto-save effect warns about.
+  const aWd = (a.weekdays && typeof a.weekdays === "object") ? a.weekdays : {};
+  const bWd = (bMat.weekdays && typeof bMat.weekdays === "object") ? bMat.weekdays : {};
+  const aKeys = Object.keys(aWd).sort();
+  const bKeys = Object.keys(bWd).sort();
+  if (aKeys.length !== bKeys.length) return true;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return true;
+    const ae = aWd[aKeys[i]];
+    const be = bWd[bKeys[i]];
+    if ((ae && ae.count) !== (be && be.count)) return true;
+    const at = Array.isArray(ae && ae.times) ? ae.times : [];
+    const bt = Array.isArray(be && be.times) ? be.times : [];
+    if (at.length !== bt.length) return true;
+    for (let j = 0; j < at.length; j++) {
+      if ((at[j] && at[j].start) !== (bt[j] && bt[j].start)) return true;
+      if ((at[j] && at[j].end) !== (bt[j] && bt[j].end)) return true;
+    }
+  }
   return false;
 }
 
@@ -332,6 +399,26 @@ function serializeTemplateForSave(formTemplate) {
       out.soloTimes = block.soloTimes.map(function (t) {
         return { start: t.start, end: t.end };
       });
+    }
+    // v16.0.0: per-weekday overrides, same discipline as soloTimes. Emitted
+    // in Mon..Sun order for a canonical, readable doc. A count of 0 writes
+    // NO `times` key (an empty array is unrepresentable in RTDB), and an
+    // empty result omits `weekdays` entirely rather than writing {}.
+    const wd = block.weekdays;
+    if (wd && typeof wd === "object") {
+      const outWd = {};
+      WEEKDAYS.forEach(function (d) {
+        const e = wd[d.key];
+        if (!e || !Number.isFinite(e.count) || e.count < 0) return;
+        if (e.count === 0) { outWd[d.key] = { count: 0 }; return; }
+        outWd[d.key] = {
+          count: e.count,
+          times: (Array.isArray(e.times) ? e.times : []).map(function (t) {
+            return { start: t.start, end: t.end };
+          }),
+        };
+      });
+      if (Object.keys(outWd).length > 0) out.weekdays = outWd;
     }
     return out;
   }
@@ -465,6 +552,37 @@ export default function Settings({
   // the matching pill via a relative-parent + absolute-popover layout.
   const [openDayPopover, setOpenDayPopover] = useState(null);
   const popoverRef = useRef(null);
+
+  // v16.0.0: the per-weekday template popover. A COMPOSITE STRING key
+  // ("foh|evening|sat") rather than an object, so the existing
+  // `cur === key ? null : key` toggle idiom still works and we never
+  // compare object identities.
+  //
+  // Separate state from `openDayPopover` on purpose: that one lives in the
+  // Operating-time section and this one in FoH / Kitchen, and `openSection`
+  // allows only one accordion open at a time — so the two can never both
+  // be showing, and their close handlers can't fight.
+  const [tplDayPopover, setTplDayPopover] = useState(null);
+  // ONE ref, attached conditionally to whichever block currently owns the
+  // open popover. `renderBlock` is a plain function called four times per
+  // render, so it cannot call useRef itself; and since only one popover can
+  // be open, one ref is all that's ever needed. React attaches refs before
+  // effects run, so it is always current when the listener registers.
+  const tplPopoverRef = useRef(null);
+  useEffect(function () {
+    if (!tplDayPopover) return undefined;
+    function onDocMouseDown(e) {
+      const node = tplPopoverRef.current;
+      if (node && !node.contains(e.target)) setTplDayPopover(null);
+    }
+    function onKey(e) { if (e.key === "Escape") setTplDayPopover(null); }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return function () {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [tplDayPopover]);
   useEffect(function () {
     if (!openDayPopover) return undefined;
     function handleDocMouseDown(e) {
@@ -580,6 +698,11 @@ export default function Settings({
         ...prev,
         [section]: {
           ...prev[section],
+          // v16.0.0: the spread carries `weekdays` through untouched, and
+          // that is deliberate — per-weekday overrides are explicit manager
+          // intent, so changing the block's base count must not silently
+          // rewrite them. A larger override is absorbed by the union ladder;
+          // a smaller one was always legal.
           [dayPart]: { ...block, count: parsed, times: newTimes, soloTimes: newSolo },
         },
       };
@@ -645,6 +768,91 @@ export default function Settings({
           [dayPart]: { ...block, soloTimes: nextSolo },
         },
       };
+    });
+  }
+
+  // ── v16.0.0: per-weekday override editing ─────────────────────────────
+  // The form holds `weekdays` as an object (possibly empty); the SAVED doc
+  // omits the key entirely. `blockDirty` and `serializeTemplateForSave`
+  // both normalize {} ↔ absent, so the two shapes never disagree.
+  //
+  // Small read helper so `undefined` vs `{}` is resolved in exactly one
+  // place rather than at every call site.
+  function weekdaysOf(block) {
+    return (block && block.weekdays && typeof block.weekdays === "object") ? block.weekdays : {};
+  }
+
+  function setWeekdayEntry(section, dayPart, wk, updater) {
+    setForm(function (prev) {
+      const block = prev[section][dayPart];
+      const wd = { ...weekdaysOf(block) };
+      const next = updater(wd[wk], block);
+      if (next === null) delete wd[wk];
+      else wd[wk] = next;
+      return {
+        ...prev,
+        [section]: { ...prev[section], [dayPart]: { ...block, weekdays: wd } },
+      };
+    });
+  }
+
+  // ON  → seed the override from the block's own count + times, so the
+  //       popover opens showing what the day currently inherits.
+  // OFF → DELETE the key. Never null: the whole shape depends on "absent
+  //       means inherits", and a null would survive as a real key in form
+  //       state and confuse blockDirty.
+  function onWeekdayOverrideToggle(section, dayPart, wk, nextOn) {
+    setWeekdayEntry(section, dayPart, wk, function (_cur, block) {
+      if (!nextOn) return null;
+      return {
+        count: block.count,
+        times: (Array.isArray(block.times) ? block.times : []).map(function (t) {
+          return { start: t.start, end: t.end };
+        }),
+      };
+    });
+  }
+
+  // Same grow/truncate + last-entry-extend rule the block-level count uses,
+  // applied to the override's own times array. Count 0 keeps `times: []` in
+  // FORM state only — serializeTemplateForSave drops it on the way out.
+  function onWeekdayCountChange(section, dayPart, wk, e) {
+    const raw = e.target.value;
+    const parsed = raw === "" ? NaN : Number(raw);
+    setWeekdayEntry(section, dayPart, wk, function (cur, block) {
+      const base = cur || { count: block.count, times: [] };
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        // Hold the invalid value so the field stays editable mid-keystroke;
+        // blockError refuses to save until it becomes a number again.
+        return { ...base, count: parsed };
+      }
+      const target = Math.round(parsed);
+      let times = Array.isArray(base.times) ? base.times.slice() : [];
+      if (times.length > target) times = times.slice(0, target);
+      else if (times.length < target) {
+        const fallback = times[times.length - 1]
+          || (Array.isArray(block.times) ? block.times[times.length] : null)
+          || (Array.isArray(block.times) ? block.times[block.times.length - 1] : null)
+          || { start: OPERATING_HOURS.start, end: OPERATING_HOURS.end };
+        while (times.length < target) times.push({ start: fallback.start, end: fallback.end });
+      }
+      return { count: target, times: times };
+    });
+  }
+
+  function onWeekdayTimeChange(section, dayPart, wk, slotIndex, field, e) {
+    const value = e.target.value;
+    setWeekdayEntry(section, dayPart, wk, function (cur, block) {
+      const base = cur || {
+        count: block.count,
+        times: (Array.isArray(block.times) ? block.times : []).map(function (t) {
+          return { start: t.start, end: t.end };
+        }),
+      };
+      const times = (Array.isArray(base.times) ? base.times : []).map(function (t, i) {
+        return i === slotIndex ? { ...t, [field]: value } : t;
+      });
+      return { ...base, times: times };
     });
   }
 
@@ -1121,6 +1329,13 @@ export default function Settings({
     const partLabel = dayPart === "day" ? "day" : "evening";
     const siblingLabel = dayPart === "day" ? "evening" : "day";
 
+    // v16.0.0: per-weekday overrides for this block, plus whether THIS
+    // block is the one currently showing a popover (only one can be, so a
+    // single shared ref is attached to whichever block owns it).
+    const weekdays = weekdaysOf(block);
+    const blockOwnsPopover = Boolean(tplDayPopover)
+      && tplDayPopover.indexOf(section + "|" + dayPart + "|") === 0;
+
     return (
       <div style={{ marginBottom: 14 }}>
         <div style={{ ...S.fldLabel, marginBottom: 6 }}>{label}</div>
@@ -1214,6 +1429,172 @@ export default function Settings({
               </div>
             );
           }) : null}
+        </div>
+
+        {/* ── v16.0.0: per-weekday overrides ──────────────────────────────
+            One pill per weekday, mirroring the "Open days" picker in the
+            Operating-time section. Each pill shows what that weekday does:
+              —    inherits the settings above
+              ×N   overrides with N people
+              off  doesn't run that weekday at all
+            Clicking opens a popover to edit that weekday's headcount and
+            per-slot times. Opening does NOT create the override — the
+            first actual edit does. */}
+        <div style={{ marginTop: 12 }} ref={blockOwnsPopover ? tplPopoverRef : null}>
+          <div style={{ ...S.fldLabel, marginBottom: 6 }}>Adjust for specific days</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {WEEKDAYS.map(function (d) {
+              const entry = weekdays[d.key];
+              const isOverride = Boolean(entry);
+              const isOff = isOverride && entry.count === 0;
+              const stateLabel = !isOverride
+                ? "—"
+                : (isOff ? "off" : "×" + (Number.isFinite(entry.count) ? entry.count : "?"));
+              const bg = !isOverride
+                ? "var(--bg-pill)"
+                : (isOff ? "var(--accent-tint-soft)" : "var(--accent)");
+              const fg = !isOverride
+                ? "var(--text-muted)"
+                : (isOff ? "var(--accent-on-tint)" : "var(--text-on-accent)");
+              const border = !isOverride
+                ? "var(--btn-ghost-border)"
+                : (isOff ? "var(--accent-tint-strong)" : "var(--accent-deep)");
+              const popKey = section + "|" + dayPart + "|" + d.key;
+              const popped = tplDayPopover === popKey;
+              return (
+                <div key={d.key} style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    className="mgt-hover-scale"
+                    onClick={function () {
+                      setTplDayPopover(function (cur) { return cur === popKey ? null : popKey; });
+                    }}
+                    aria-haspopup="dialog"
+                    aria-expanded={popped ? "true" : "false"}
+                    style={{
+                      ...BTN.base, padding: "6px 10px", fontSize: 12, borderRadius: R.tight,
+                      minWidth: 56, background: bg, color: fg, border: "1px solid " + border,
+                      display: "flex", flexDirection: "column", alignItems: "center",
+                      gap: 2, lineHeight: 1.1,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{d.label}</span>
+                    <span style={{ fontSize: 10, opacity: 0.85 }}>{stateLabel}</span>
+                  </button>
+                  {popped ? (
+                    <div
+                      role="dialog"
+                      aria-label={d.label + " — " + label}
+                      style={{
+                        // Anchored ABOVE the pill: the pill row sits at the
+                        // bottom of each block, so a below-anchored popover
+                        // would cover the NEXT block's pill row — exactly
+                        // what the manager is comparing against.
+                        position: "absolute",
+                        bottom: "calc(100% + 6px)",
+                        left: 0,
+                        zIndex: 50,
+                        minWidth: 280,
+                        // --bg-overlay-sheet, NOT --bg-card: the latter is
+                        // 0.45 opacity and the rows beneath bleed through.
+                        background: "var(--bg-overlay-sheet)",
+                        border: "1px solid var(--hairline-strong)",
+                        borderRadius: R.inset,
+                        boxShadow: "var(--shadow-overlay)",
+                        padding: 10,
+                        display: "flex", flexDirection: "column", gap: 8,
+                      }}
+                    >
+                      <div style={{
+                        fontSize: 11, color: "var(--text-secondary)", fontWeight: 600,
+                        textTransform: "uppercase", letterSpacing: "0.04em",
+                      }}>
+                        {d.label} — {label}
+                      </div>
+
+                      {isOverride ? (
+                        <>
+                          <Fld label="People this day">
+                            {mkInp({
+                              type: "number", min: 0, step: 1, className: "mgt-hover-scale",
+                              value: Number.isFinite(entry.count) ? entry.count : "",
+                              onChange: function (e) { onWeekdayCountChange(section, dayPart, d.key, e); },
+                              style: { maxWidth: 100 },
+                            })}
+                          </Fld>
+
+                          {isOff ? (
+                            <div style={{ ...S.muted, fontSize: 12 }}>
+                              Not scheduled on {d.label}.
+                            </div>
+                          ) : (
+                            // Bounded + internally scrolling so the popover
+                            // stays a predictable size at any headcount,
+                            // which is what makes above-anchoring safe.
+                            <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                              {(Array.isArray(entry.times) ? entry.times : []).map(function (t, i) {
+                                return (
+                                  <div key={"wd-" + i} style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "70px 1fr 1fr",
+                                    gap: 8, alignItems: "end", marginTop: i === 0 ? 0 : 6,
+                                  }}>
+                                    <div style={{
+                                      fontSize: 12, fontWeight: 600, color: "var(--text-primary)",
+                                      alignSelf: "center", paddingBottom: 6,
+                                    }}>
+                                      {slotLabelFor(section, dayPart, i, entry.count)}
+                                    </div>
+                                    <Fld label="Start">
+                                      {mkInp({
+                                        type: "time", className: "mgt-hover-scale", value: t.start,
+                                        onChange: function (e) { onWeekdayTimeChange(section, dayPart, d.key, i, "start", e); },
+                                      })}
+                                    </Fld>
+                                    <Fld label="End">
+                                      {mkInp({
+                                        type: "time", className: "mgt-hover-scale", value: t.end,
+                                        onChange: function (e) { onWeekdayTimeChange(section, dayPart, d.key, i, "end", e); },
+                                      })}
+                                    </Fld>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {mkBtn({
+                            type: "button", className: "mgt-hover-scale", variant: "ghost",
+                            onClick: function () { onWeekdayOverrideToggle(section, dayPart, d.key, false); },
+                            children: "Use the same as every day",
+                            style: { fontSize: 12, padding: "6px 10px" },
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ ...S.muted, fontSize: 12 }}>
+                            {d.label} currently uses the times above
+                            ({block.count} {block.count === 1 ? "person" : "people"}).
+                          </div>
+                          {mkBtn({
+                            type: "button", className: "mgt-hover-scale", variant: "secondary",
+                            onClick: function () { onWeekdayOverrideToggle(section, dayPart, d.key, true); },
+                            children: "Set different times for " + d.label,
+                            style: { fontSize: 12, padding: "6px 10px" },
+                          })}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
+            Tap a day to give it its own headcount and times. Days marked “—”
+            follow the settings above. A per-day setting takes precedence over
+            the {partLabel}-only times.
+          </div>
         </div>
 
         {err ? (
