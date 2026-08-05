@@ -167,6 +167,37 @@ close → `mgt-scrim-out` / `mgt-card-out`, unmounted after ~200 ms. With
 `data-motion="reduce"` stamped, scrim / card / hover-scale all collapse to
 `1e-06s`, confirming both reduced-motion switches reach the new animations.
 
+### Phase 4 — Migrate the two hand-rolled modal scrollers onto `footer`
+
+`GenerateResultsModal` (v1.9.4) and `EmployeeFairnessModal` (v1.15.0) each
+carried a near-identical local workaround: a `maxHeight` + `overflowY: auto`
+box with negative horizontal margins, added because the desktop sheet is
+`overflow: visible` (the v1.9.0 hover-scale fix) and their tall content —
+35+ cleared rows on a busy Regenerate, or the Reasoning view's formulas plus
+four per-week rows — pushed the action buttons off the backdrop. Both are
+now deleted in favour of Overlay's `footer` slot, which owns the bounded
+body and the clip breathing room centrally.
+
+**Bug found and fixed while verifying:** the desktop sheet was
+`content-box`, so `maxHeight: 80vh` capped only the content box — the
+rendered sheet came out at 80vh **plus** 40px padding and 2px border (704px
+against a 661.6px cap on an 827px viewport). Pre-existing since v1.9.0 and
+harmless while the sheet merely overflowed, but the `footer` layout sizes
+its scrolling body from that cap, so it now has to be accurate. Added
+`boxSizing: "border-box"`.
+
+Both modals' buttons also picked up `.mgt-press`.
+
+**Files changed:** `src/components/GenerateResultsModal.jsx`,
+`src/components/EmployeeFairnessModal.jsx`, `src/components/atoms.jsx`
+(box-sizing), `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. In the DEV browser the fairness
+modal now measures: sheet `display: flex` / `column` / `overflow: hidden`,
+children = title (19px) → body (`overflowY: auto`, scrollable) → footer
+(72px); after switching to the taller Reasoning view the sheet is 662px
+against a 661.6px cap (respected), and the footer stays on screen.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

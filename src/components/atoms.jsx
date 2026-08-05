@@ -115,6 +115,13 @@ export function Overlay({ open, onClose, title, isMobile, children, footer }) {
         padding: 20,
         boxShadow: "var(--shadow-overlay)",
         maxHeight: "80vh",
+        // v16.0.0: without border-box the 80vh cap applied to the CONTENT
+        // box only, so the rendered sheet was 80vh + 40px padding + 2px
+        // border — measurably taller than its own max-height (704px against
+        // a 661.6px cap on an 827px viewport). Harmless while the sheet
+        // just overflowed, but the `footer` layout sizes its scrolling body
+        // from this cap, so it has to mean what it says.
+        boxSizing: "border-box",
         // v1.9.0 (perslot+ commit, fourth round): overflow is `visible`, not
         // `auto`, so transform-scaled inputs inside the modal (Notes
         // textareas, time/date inputs, selects, Toggles) can lift visibly

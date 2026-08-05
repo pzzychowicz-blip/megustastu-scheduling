@@ -238,35 +238,42 @@ export default function GenerateResultsModal({
     ? function (item) { onJumpToCell(item.date, item.slotKey); }
     : undefined;
 
-  return (
-    <Overlay open={open} onClose={onClose} title={title} isMobile={isMobile}>
-      {/* v1.9.4: scrollable list area. The Overlay desktop sheet uses
-          overflow:visible (v1.9.0 hover-scale fix) so hover-scaled
-          rows can lift past the sheet border — but that means long
-          generator outputs (35+ cleared rows on a Regenerate against
-          a busy week) spill off-screen and the Close button below
-          becomes unreachable. This inner scroller caps the list height
-          and re-introduces internal scroll for the section blocks
-          only. The summary line + Close button stay outside the
-          scroller, anchored at the modal bottom.
-          The negative horizontal margin pulls the box back to the
-          Overlay's content edge; the matching padding gives hover-
-          scaled rows 16px of breathing room before the scroll
-          container clips them (same pattern as ScheduleGrid's outer
-          wrapper). max-height adapts to viewport: mobile sheets get
-          a percentage; desktop caps at 480px so the dialog fits on
-          a typical laptop without filling the whole height.
-          The empty-state ("Nothing to report") falls outside the
-          scroller — no list to scroll when there's nothing in it. */}
-      {(hasUnfilled || hasCleared) ? (
-        <div
-          style={{
-            maxHeight: isMobile ? "55vh" : "min(60vh, 480px)",
-            overflowY: "auto",
-            padding: "4px 16px",
-            margin: "0 -16px",
-          }}
+  // v16.0.0: the summary line + Close button moved into Overlay's `footer`
+  // slot. That pins them to the sheet's bottom edge and gives everything
+  // above a bounded, scrolling region — which is exactly what the v1.9.4
+  // ad-hoc inner scroller here was hand-rolling (a maxHeight + overflowY
+  // box with negative margins) to stop long generator output, 35+ cleared
+  // rows on a Regenerate against a busy week, from pushing Close off the
+  // backdrop. Overlay owns that responsibility now, including the
+  // negative-margin breathing room that hover-scaled rows need before the
+  // scroll container clips them, so the local box is gone.
+  const footer = (
+    <>
+      <p style={{ ...S.muted, margin: 0 }}>
+        Filled {summary.filled || 0} new shift{(summary.filled || 0) === 1 ? "" : "s"}
+        {mode === "regenerate" && summary.cleared
+          ? ", cleared " + summary.cleared + " stale"
+          : ""}
+        .
+      </p>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+        <button
+          type="button"
+          className="mgt-hover-scale mgt-press"
+          onClick={onClose}
+          style={{ ...BTN.base, ...BTN.secondary, padding: "8px 14px", fontSize: 13 }}
         >
+          Close
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <Overlay open={open} onClose={onClose} title={title} isMobile={isMobile} footer={footer}>
+      {(hasUnfilled || hasCleared) ? (
+        <>
           {hasUnfilled ? (
             <Section title={"Left empty (" + unfilledCells.length + ")"} style={{ marginBottom: 12 }}>
               {unfilledGroups.map(function (g) {
@@ -310,31 +317,12 @@ export default function GenerateResultsModal({
               })}
             </Section>
           ) : null}
-        </div>
+        </>
       ) : (
         <p style={{ ...S.body, marginTop: 0 }}>
           Nothing to report — everything fell within the rules.
         </p>
       )}
-
-      <p style={{ ...S.muted, marginTop: 8 }}>
-        Filled {summary.filled || 0} new shift{(summary.filled || 0) === 1 ? "" : "s"}
-        {mode === "regenerate" && summary.cleared
-          ? ", cleared " + summary.cleared + " stale"
-          : ""}
-        .
-      </p>
-
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-        <button
-          type="button"
-          className="mgt-hover-scale"
-          onClick={onClose}
-          style={{ ...BTN.base, ...BTN.secondary, padding: "8px 14px", fontSize: 13 }}
-        >
-          Close
-        </button>
-      </div>
     </Overlay>
   );
 }

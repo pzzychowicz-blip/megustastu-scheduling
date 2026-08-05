@@ -580,61 +580,33 @@ export default function EmployeeFairnessModal({
     </>
   );
 
-  return (
-    <Overlay
-      open={open}
-      isMobile={isMobile}
-      onClose={onClose}
-      title={title}
-    >
-      {empArchived ? (
-        <div style={{ ...S.muted, fontSize: 12, marginTop: -6, marginBottom: 12 }}>
-          Archived employee — counts include any orphaned assignments still on the roster.
-        </div>
-      ) : null}
-
-      {/* v1.15.0: inner scroll wrapper. The Overlay desktop sheet uses
-          overflow:visible (v1.9.0 hover-scale fix) so any content
-          taller than maxHeight:80vh spills past the sheet. The
-          Reasoning view's multi-line formulas + 4 per-week rows is
-          taller than the data view and overflows. Cap the body
-          height and re-introduce internal scroll for the Section
-          stack only. empArchived note + footer + footnote stay
-          OUTSIDE the scroller so they always stick to the visible
-          sheet's top/bottom edges. Negative horizontal margin +
-          matching padding gives hover-scaled rows 16 px of clip
-          breathing room (same pattern as ScheduleGrid's outer
-          wrapper and GenerateResultsModal's section wrapper). */}
-      <div
-        style={{
-          maxHeight: isMobile ? "55vh" : "min(60vh, 480px)",
-          overflowY: "auto",
-          padding: "4px 16px",
-          margin: "0 -16px",
-        }}
-      >
-        {view === "data" ? dataView : reasoningView}
-      </div>
-
-      {/* v1.14.0: footer with the Reasoning toggle on the left and
-          Close on the right. justify-content: space-between achieves
-          the layout without an absolute-positioned spacer. Reasoning
-          button label flips between "Reasoning" and "Show data" so the
-          manager always sees the action they can take next, not the
-          state they're already in. */}
+  // v16.0.0: action row + footnote move into Overlay's `footer` slot, which
+  // pins them to the sheet's bottom edge and bounds the body above them.
+  // That supersedes the v1.15.0 hand-rolled inner scroller here, which
+  // existed because the desktop sheet is overflow:visible (the v1.9.0
+  // hover-scale fix) and the Reasoning view — multi-line formulas plus four
+  // per-week rows — is tall enough to push these buttons off the backdrop.
+  // Overlay now owns the bounded body and the negative-margin clip
+  // breathing room that hover-scaled rows need.
+  //
+  // v1.14.0 layout kept: Reasoning on the left, Close on the right, via
+  // space-between rather than an absolute-positioned spacer. The Reasoning
+  // label flips to "Show data" so the button always names the action the
+  // manager can take next, not the state they are already in.
+  const footer = (
+    <>
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           gap: 8,
-          marginTop: 8,
           flexWrap: "wrap",
         }}
       >
         {mkBtn({
           type: "button",
-          className: "mgt-hover-scale",
+          className: "mgt-hover-scale mgt-press",
           variant: "ghost",
           onClick: function () { setView(view === "data" ? "reasoning" : "data"); },
           children: view === "data" ? "Reasoning" : "Show data",
@@ -642,12 +614,30 @@ export default function EmployeeFairnessModal({
             ? "Show how these numbers were calculated"
             : "Back to the data view",
         })}
-        {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "ghost", onClick: onClose, children: "Close" })}
+        {mkBtn({ type: "button", className: "mgt-hover-scale mgt-press", variant: "ghost", onClick: onClose, children: "Close" })}
       </div>
 
-      <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>
+      <p style={{ ...S.muted, marginTop: 10, fontSize: 11 }}>
         Informational only. To change shifts or requests, use the Schedule or Requests tabs.
       </p>
+    </>
+  );
+
+  return (
+    <Overlay
+      open={open}
+      isMobile={isMobile}
+      onClose={onClose}
+      title={title}
+      footer={footer}
+    >
+      {empArchived ? (
+        <div style={{ ...S.muted, fontSize: 12, marginTop: -6, marginBottom: 12 }}>
+          Archived employee — counts include any orphaned assignments still on the roster.
+        </div>
+      ) : null}
+
+      {view === "data" ? dataView : reasoningView}
     </Overlay>
   );
 }
