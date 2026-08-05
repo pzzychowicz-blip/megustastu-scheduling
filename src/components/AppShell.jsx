@@ -23,7 +23,7 @@ import {
   isShiftTemplateMigrated,
   materializeShiftTemplate,
 } from "../lib/schedule-logic.js";
-import { ModalPresence } from "./atoms.jsx";
+import { ModalPresence, SlideView } from "./atoms.jsx";
 import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
@@ -152,6 +152,31 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   // instead of flashing red on every page load.
   const { connected, hasConnected } = useFirebaseConnection();
 
+  // v16.0.0: directional tab transition. The incoming view slides in from
+  // the side it conceptually came from — move right along the tab strip and
+  // the new view enters from the right, and vice versa. `slide.key` is
+  // bumped on every change so <SlideView> remounts and replays its CSS
+  // animation (remounting is the only way to re-trigger a keyframe). The
+  // outgoing view is not animated; it simply unmounts, which keeps the swap
+  // crisp rather than crossfaded.
+  //
+  // These hooks MUST sit above the `if (!ready)` early return below —
+  // hooks run unconditionally or React's ordering invariant breaks.
+  const tabIndex = TABS.findIndex(function (t) { return t.key === tab; });
+  const prevTabIndex = useRef(tabIndex);
+  const [slide, setSlide] = useState({ key: 0, dir: "mgt-view-in-right" });
+  useEffect(function () {
+    const prev = prevTabIndex.current;
+    if (tabIndex === prev || tabIndex < 0) return;
+    prevTabIndex.current = tabIndex;
+    setSlide(function (s) {
+      return {
+        key: s.key + 1,
+        dir: tabIndex > prev ? "mgt-view-in-right" : "mgt-view-in-left",
+      };
+    });
+  }, [tabIndex]);
+
   // ── Loading state ──────────────────────────────────────────────────────
   if (!ready) {
     return (
@@ -228,6 +253,11 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   );
 
   // ── Tab nav ────────────────────────────────────────────────────────────
+  // v16.0.0: aligned with MGT Bookings' pill-track styling — the track and
+  // the lifted active pill both use R.pill rather than the card/tight
+  // radii. `scrollbarWidth: none` hides the horizontal scrollbar that
+  // appears on narrow viewports; the track already scrolls rather than
+  // widening the layout, and the visible bar was pure noise.
   const tabNav = (
     <div
       style={{
@@ -236,8 +266,10 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         marginBottom: 16,
         padding: 4,
         background: "var(--bg-segment)",
-        borderRadius: R.card,
+        borderRadius: R.pill,
         overflowX: "auto",
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
       }}
     >
       {TABS.map(function (t) {
@@ -254,7 +286,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
               minWidth: 90,
               padding: "8px 12px",
               fontSize: 13,
-              borderRadius: R.tight,
+              borderRadius: R.pill,
               background: on ? "var(--bg-tab-active)" : "transparent",
               color: on ? "var(--accent)" : "var(--text-secondary)",
               border: "1px solid transparent",
@@ -267,6 +299,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
       })}
     </div>
   );
+
 
   // ── Tab body ───────────────────────────────────────────────────────────
   let body;
@@ -326,7 +359,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         {header}
         {warningBanner}
         {tabNav}
-        {body}
+        <SlideView key={slide.key} dir={slide.dir}>{body}</SlideView>
       </div>
       <ModalPresence show={showShortcuts}>
         {showShortcuts ? (

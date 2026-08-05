@@ -285,6 +285,54 @@ Bookings hit and documented).
 **Verification:** `npm run build` clean. DEV browser at 599px: popover
 measures [224, 470] — fully on screen, right-anchored as intended.
 
+### Phase 7 — Tab transitions + the reduce-animations toggle
+
+**Tab nav.** Scheduling's tab strip was already a pill track (segment
+background, lifted active pill, horizontal scroll rather than widening the
+layout) — much closer to Bookings than expected. Only two alignments were
+needed: the track and pills move from `R.card`/`R.tight` to `R.pill`, and
+`scrollbarWidth: none` hides the scrollbar that appeared on narrow
+viewports.
+
+**Directional view transitions.** The tab body is wrapped in `<SlideView>`,
+re-keyed on every tab change so the CSS keyframe replays (remounting is the
+only way to re-trigger one). Direction comes from the index delta along
+`TABS`: moving right enters from the right, moving left from the left. The
+outgoing view is not animated — it just unmounts, which keeps the swap
+crisp instead of crossfaded.
+
+The slide hooks sit **above** `AppShell`'s `if (!ready)` early return. They
+were briefly written below it, which is a Rules-of-Hooks violation — hooks
+must run unconditionally or React's ordering invariant breaks.
+
+**Reduce animations.** A new Toggle in Settings → Display, and the one
+preference on that tab that deliberately does **not** live in `/settings`:
+it is per-device (a weak tablet and a fast laptop should be able to
+disagree), so it writes `localStorage["mgt-reduce-motion"]` and stamps
+`data-motion="reduce"` on `<html>`. The same key is read by the no-flash
+inline script before React mounts, so the preference is honoured from the
+first paint. The Toggle's initial state is read in a lazy `useState`
+initializer rather than an effect — an effect would paint "off" for a frame
+on a device that has it on.
+
+**Header (A10) — deliberately not restructured.** The plan called for
+aligning the header with Bookings' two-row chrome, but that layout is
+booking-domain-specific (date nav, walk-in, waitlist badge). Scheduling's
+header is title + connection dot + sign-out, with week navigation living
+inside `ScheduleGrid` where it belongs. Copying the structure would be
+parity for its own sake. The genuinely shared part — `--font-app` reaching
+every control — landed in phase 1 and is verified.
+
+**Files changed:** `src/components/AppShell.jsx` (pill radii, SlideView,
+slide state), `src/components/Settings.jsx` (+`REDUCE_MOTION_KEY`, toggle
+and handler), `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. DEV browser: track and pills both
+compute `999px` with `scrollbar-width: none`; instrumented tab changes give
+`mgt-view-in-right` moving right and `mgt-view-in-left` moving left, with
+the class cleared after the animation ends. The reduce-animations Toggle
+flips `data-motion` and the localStorage key on, then cleanly back off.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

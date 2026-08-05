@@ -122,6 +122,13 @@ import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
 // of truth so a version bump propagates here automatically.
 import { __APP_SIGNATURE__ } from "../App.jsx";
 
+// v16.0.0: per-device "Reduce animations" preference. localStorage, NOT
+// /settings — see the handler in the Display section for why. This exact
+// key is also read by the no-flash inline script in index.html, which
+// stamps data-motion="reduce" before React mounts; change one and you must
+// change the other. Shared verbatim with MGT Bookings.
+const REDUCE_MOTION_KEY = "mgt-reduce-motion";
+
 // ── Deep-clone the template for local edit state ─────────────────────────
 // DEFAULT_SHIFT_TEMPLATE is shallow-frozen; nested objects are not. Cloning
 // avoids any chance of mutating the constant by reference, AND gives us a
@@ -673,6 +680,30 @@ export default function Settings({
   const allowIncompleteExport = settings && settings.allowIncompleteExport === true;
   function onAllowIncompleteExportChange(nextValue) {
     saveSettings({ ...(settings || {}), allowIncompleteExport: nextValue });
+  }
+
+  // v16.0.0: "Reduce animations" — the ONE preference on this tab that does
+  // NOT live in /settings. It is per-device by design (a weak tablet and a
+  // fast laptop should be able to disagree), so it is written to
+  // localStorage and applied by stamping `data-motion="reduce"` on <html>,
+  // which the two kill-switch rules in index.html key off. The same key is
+  // read by the no-flash inline script before React mounts, so the
+  // preference is honoured from the very first paint.
+  //
+  // Reading in a lazy useState initializer rather than an effect keeps the
+  // Toggle's first render truthful — an effect would paint "off" for a
+  // frame on a device that has it on.
+  const [reduceMotion, setReduceMotion] = useState(function () {
+    try { return localStorage.getItem(REDUCE_MOTION_KEY) === "1"; } catch (_e) { return false; }
+  });
+  function onReduceMotionChange(nextValue) {
+    setReduceMotion(nextValue);
+    try {
+      if (nextValue) localStorage.setItem(REDUCE_MOTION_KEY, "1");
+      else localStorage.removeItem(REDUCE_MOTION_KEY);
+    } catch (_e) { /* Safari private mode — the DOM flip below still applies */ }
+    if (nextValue) document.documentElement.dataset.motion = "reduce";
+    else delete document.documentElement.dataset.motion;
   }
 
   // v0.11.0: Dark mode auto-save. Same pattern as showRolePills above.
@@ -1588,6 +1619,18 @@ export default function Settings({
             onChange={onAllowIncompleteExportChange}
             label="Allow exporting incomplete schedules"
             helper="When on, Export PDF works even with empty cells — you'll get a warning before the PDF is generated."
+            className="mgt-hover-scale"
+          />
+          {/* v16.0.0: reduce animations. PER-DEVICE, so it is stored in
+              localStorage rather than /settings — the manager's phone and
+              the office laptop can disagree, and a weak device shouldn't
+              have its preference synced onto a fast one. Mirrors MGT
+              Bookings' identical toggle. */}
+          <Toggle
+            checked={reduceMotion}
+            onChange={onReduceMotionChange}
+            label="Reduce animations"
+            helper="Turns off the modal, tab and banner animations on this device. Your system-wide 'reduce motion' setting is always respected regardless."
             className="mgt-hover-scale"
           />
         </Collapsible>
