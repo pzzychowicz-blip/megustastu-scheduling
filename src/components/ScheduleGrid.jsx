@@ -61,7 +61,7 @@ import {
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
 import { isTypingTarget, isAnyOverlayOpen } from "../lib/keyboard.js";
-import { ModalPresence } from "./atoms.jsx";
+import { ModalPresence, SlideView } from "./atoms.jsx";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import ExportButton from "./ExportButton.jsx";
 import GenerateButton from "./GenerateButton.jsx";
@@ -261,6 +261,32 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   function goPrev()  { setWeekStart(function (d) { return addDays(d, -7); }); }
   function goNext()  { setWeekStart(function (d) { return addDays(d, 7); }); }
   function goToday() { setWeekStart(startOfWeek(new Date())); }
+
+  // v16.0.0: directional week slide, the ScheduleGrid counterpart to
+  // AppShell's tab transition. Forward in time enters from the right,
+  // backward from the left — so the motion matches the mental model of a
+  // calendar running left-to-right. Driven off the actual timestamp rather
+  // than the button pressed, so `goToday`, the keyboard shortcuts (←/→/T)
+  // and `jumpToWeek` from the fairness sparkline all animate correctly
+  // without each needing to declare a direction.
+  //
+  // Only the grid itself is wrapped — the nav bar, banners and the summary
+  // panels below stay put, which reads as the week's content changing
+  // inside a stable frame rather than the whole page lurching.
+  const prevWeekRef = useRef(weekStart.getTime());
+  const [weekSlide, setWeekSlide] = useState({ key: 0, dir: "mgt-view-in-right" });
+  useEffect(function () {
+    const t = weekStart.getTime();
+    const prev = prevWeekRef.current;
+    if (t === prev) return;
+    prevWeekRef.current = t;
+    setWeekSlide(function (s) {
+      return {
+        key: s.key + 1,
+        dir: t > prev ? "mgt-view-in-right" : "mgt-view-in-left",
+      };
+    });
+  }, [weekStart]);
 
   // v1.1.0 fairness: also narrow the PRIOR 7 days. Used by the generator
   // for combined-load ranking so employees who worked many shifts last
@@ -1645,7 +1671,11 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       {swapBannerView}
       {generateBanner}
       {allClosedNotice}
-      {dates.length > 0 ? (isMobile ? mobileStack : desktopGrid) : null}
+      {dates.length > 0 ? (
+        <SlideView key={weekSlide.key} dir={weekSlide.dir}>
+          {isMobile ? mobileStack : desktopGrid}
+        </SlideView>
+      ) : null}
 
       <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>
         Click any cell to assign someone or edit the time / role. Cells marked

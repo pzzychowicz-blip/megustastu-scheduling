@@ -333,6 +333,26 @@ compute `999px` with `scrollbar-width: none`; instrumented tab changes give
 the class cleared after the animation ends. The reduce-animations Toggle
 flips `data-motion` and the localStorage key on, then cleanly back off.
 
+### Phase 8 — Directional week slide on the schedule grid
+
+The `ScheduleGrid` counterpart to phase 7's tab transition. Forward in time
+enters from the right, backward from the left, matching the mental model of
+a calendar running left-to-right.
+
+Direction is derived from the focus week's **timestamp delta**, not from
+which control was used — so `goPrev` / `goNext`, `goToday`, the `←` / `→` /
+`T` keyboard shortcuts, and `jumpToWeek` from the fairness sparkline all
+animate correctly without any of them having to declare a direction.
+
+Only the grid itself is wrapped. The nav bar, banners, and the summary /
+requests / fairness panels below stay put, so the week's content changes
+inside a stable frame rather than the whole page lurching.
+
+**Files changed:** `src/components/ScheduleGrid.jsx`, `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. DEV browser: Next → `mgt-view-in-right`,
+Prev → `mgt-view-in-left`, grid re-renders intact (83 interactive cells).
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)
