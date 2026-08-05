@@ -48,6 +48,7 @@
 import { R, S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
 import {
   holidayDaysInWeekByEmployee,
+  isLiveShiftForTemplate,
   employeeTenureOverlapsDates,
   isEmployeeActiveOnDate,
   isoDate,
@@ -91,19 +92,12 @@ function rawQuotaFor(emp) {
 // in the resolved template (the manager dropped the slot count) — are skipped
 // so they don't inflate the pill count. They already don't render on the grid.
 function buildCountByEmployee(weekShifts, template) {
-  function isLive(s) {
-    if (!template) return true;
-    const sec = template[s.section];
-    const block = sec && sec[s.dayPart];
-    const count = block && Number.isFinite(block.count) ? block.count : 0;
-    return (s.slotIndex || 0) < count;
-  }
   const seen = {};
   const all = Object.values(weekShifts || {});
   for (let i = 0; i < all.length; i++) {
     const s = all[i];
     if (!s || !s.employeeId || !s.date) continue;
-    if (!isLive(s)) continue;
+    if (!isLiveShiftForTemplate(s, template)) continue;
     if (!seen[s.employeeId]) seen[s.employeeId] = {};
     seen[s.employeeId][s.date] = true;
   }
@@ -123,19 +117,12 @@ function buildCountByEmployee(weekShifts, template) {
 // a slot index the resolved template no longer has doesn't render on the
 // grid, so it must not be reported as half of a split either.
 function buildSplitDayCountByEmployee(weekShifts, template) {
-  function isLive(s) {
-    if (!template) return true;
-    const sec = template[s.section];
-    const block = sec && sec[s.dayPart];
-    const count = block && Number.isFinite(block.count) ? block.count : 0;
-    return (s.slotIndex || 0) < count;
-  }
   const perDate = {};
   const all = Object.values(weekShifts || {});
   for (let i = 0; i < all.length; i++) {
     const s = all[i];
     if (!s || !s.employeeId || !s.date) continue;
-    if (!isLive(s)) continue;
+    if (!isLiveShiftForTemplate(s, template)) continue;
     if (!perDate[s.employeeId]) perDate[s.employeeId] = {};
     perDate[s.employeeId][s.date] = (perDate[s.employeeId][s.date] || 0) + 1;
   }
