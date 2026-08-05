@@ -45,7 +45,7 @@
 //   highlightedEmployeeId (string|null)         — v1.7.0; currently lit pill
 //   onHighlight           (fn(id|null))         — v1.7.0; click handler
 
-import { S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
+import { R, S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
 import {
   holidayDaysInWeekByEmployee,
   employeeTenureOverlapsDates,
@@ -76,9 +76,15 @@ function rawQuotaFor(emp) {
 }
 
 // Count unique dates this employee is on in the week. Two shifts on the
-// same date (shouldn't happen per same-day strict, but defensive)
-// collapse to one — matches the `countAssignedDates` semantic in
-// generator.js.
+// same date collapse to one — matching the `countAssignedDates` semantic
+// in generator.js, and deliberately so: `workingDaysPerWeek` is a count of
+// DAYS, so a split shift consumes one day of quota, not two.
+//
+// v16.0.0: that collapse used to be described as defensive, because the
+// same-day-strict rule meant two shifts on one date couldn't happen. Split
+// shifts are now a supported manual action, so it is load-bearing rather
+// than defensive. `buildSplitDayCountByEmployee` below reports the surplus
+// separately so the pill can still show it.
 //
 // v15.4.0: `template` is the focus-week resolved shift template. When given,
 // orphan shifts — a slot index that no longer exists at its (section, dayPart)
@@ -108,6 +114,42 @@ function buildCountByEmployee(weekShifts, template) {
   return out;
 }
 
+// v16.0.0: how many dates this employee works MORE THAN ONCE in the week —
+// i.e. how many split-shift days they have. Counts records per (employee,
+// date) and adds up the surplus, so a day with two shifts contributes 1 and
+// a (pathological) day with three contributes 2.
+//
+// Shares the orphan-shift skip with buildCountByEmployee above: a shift at
+// a slot index the resolved template no longer has doesn't render on the
+// grid, so it must not be reported as half of a split either.
+function buildSplitDayCountByEmployee(weekShifts, template) {
+  function isLive(s) {
+    if (!template) return true;
+    const sec = template[s.section];
+    const block = sec && sec[s.dayPart];
+    const count = block && Number.isFinite(block.count) ? block.count : 0;
+    return (s.slotIndex || 0) < count;
+  }
+  const perDate = {};
+  const all = Object.values(weekShifts || {});
+  for (let i = 0; i < all.length; i++) {
+    const s = all[i];
+    if (!s || !s.employeeId || !s.date) continue;
+    if (!isLive(s)) continue;
+    if (!perDate[s.employeeId]) perDate[s.employeeId] = {};
+    perDate[s.employeeId][s.date] = (perDate[s.employeeId][s.date] || 0) + 1;
+  }
+  const out = {};
+  for (const id in perDate) {
+    let extra = 0;
+    for (const d in perDate[id]) {
+      if (perDate[id][d] > 1) extra += perDate[id][d] - 1;
+    }
+    if (extra > 0) out[id] = extra;
+  }
+  return out;
+}
+
 export default function WeeklyShiftSummary({
   employees, weekShifts, requests, dates, weekLabel, isMobile,
   highlightedEmployeeId, onHighlight,
@@ -115,6 +157,15 @@ export default function WeeklyShiftSummary({
   template,
 }) {
   const counts = buildCountByEmployee(weekShifts, template);
+  // v16.0.0: split shifts. `counts` deliberately counts DISTINCT DATES, so
+  // an employee working day + evening on one Tuesday still reads as one
+  // day against their weekly quota — `workingDaysPerWeek` is literally a
+  // count of days, and the generator's quota gate and every fairness
+  // target agree with that reading. But the pill would then be silent
+  // about a 12-hour double, which is exactly the thing a manager scanning
+  // this panel wants to notice. So we count the surplus records separately
+  // and surface it as a suffix, without touching any of the quota maths.
+  const splitDays = buildSplitDayCountByEmployee(weekShifts, template);
   // v1.6.0: per-employee count of visible-week dates blocked by a
   // request. v1.9.0: narrowed to `holiday` only — `dayoff` no longer
   // decrements the effective cap (it still HARD-blocks the date via
@@ -152,6 +203,7 @@ export default function WeeklyShiftSummary({
       archived: emp.active === false,
       count: count,
       quota: quota,
+      splits: splitDays[emp.id] || 0,
       // Under-utilization ratio: lower = more under-utilized → sorts first.
       // Quota=0 (someone fully on holiday) collapses to ratio=1 so they
       // don't disturb the under-utilization sort.
@@ -246,7 +298,13 @@ export default function WeeklyShiftSummary({
                 boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : undefined,
                 fontWeight: isSelected ? 700 : undefined,
               }}
-              title={r.archived ? r.name + " (archived)" : r.name}
+              title={
+                (r.archived ? r.name + " (archived)" : r.name)
+                + (r.splits > 0
+                  ? " — " + r.splits + " split shift" + (r.splits === 1 ? "" : "s")
+                    + " this week (day + evening on the same date)"
+                  : "")
+              }
             >
               <span
                 style={{
@@ -259,6 +317,27 @@ export default function WeeklyShiftSummary({
               <span style={{ marginLeft: 6, opacity: 0.85 }}>
                 {r.count} / {r.quota}
               </span>
+              {/* v16.0.0: split-shift marker. The count to its left is a
+                  count of DAYS, so a split is invisible there by design —
+                  this is what tells the manager the day was a double. In
+                  the warning palette because a 12-hour straight day is
+                  worth a second look, not because it's an error. */}
+              {r.splits > 0 ? (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "1px 5px",
+                    borderRadius: R.pill,
+                    background: "var(--bg-warning-tint)",
+                    border: "1px solid var(--border-warning-tint)",
+                    color: "var(--text-warning)",
+                  }}
+                >
+                  {r.splits === 1 ? "split" : r.splits + " splits"}
+                </span>
+              ) : null}
             </button>
           );
         })}

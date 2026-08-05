@@ -63,6 +63,7 @@ import { useUndoStack } from "../hooks/useUndoStack.js";
 import { isTypingTarget, isAnyOverlayOpen } from "../lib/keyboard.js";
 import { ModalPresence, SlideView } from "./atoms.jsx";
 import ShiftFormModal from "./ShiftFormModal.jsx";
+import SplitConfirmModal from "./SplitConfirmModal.jsx";
 import ExportButton from "./ExportButton.jsx";
 import GenerateButton from "./GenerateButton.jsx";
 import ClearButton from "./ClearButton.jsx";
@@ -371,6 +372,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // Inline banner shown above the grid: hint while a swap is in progress,
   // or an error when validation blocks the commit. { tone, text }.
   const [swapBanner, setSwapBanner] = useState(null);
+  // v16.0.0: a swap/move that would create a split shift is held here
+  // until the manager confirms it. Shape:
+  //   { source, target, sourceEmp, targetEmp, splits: [{name, dateIso, existing}] }
+  // Swap/Move commits immediately once confirmed, so unlike the picker —
+  // which can warn inline next to a Save button the manager still has to
+  // press — this flow needs an explicit dialog. Otherwise two clicks on
+  // the grid would silently produce a 12-hour straight day.
+  const [pendingSplitSwap, setPendingSplitSwap] = useState(null);
 
   function exitSwapMode() {
     setSwapMode(null);
@@ -694,35 +703,59 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       }
     }
 
-    // Same-day strict. The source shift is being deleted (move) or its
-    // assignee is changing (swap), so we exclude both shifts' ids from the
-    // check. After the swap completes, the receiving employee must not be
-    // on ANOTHER shift on the receiving date.
+    // Same-day check. Until v15.4.1 a landing that would double-book
+    // someone was REFUSED outright with a red banner. v16.0.0 makes split
+    // shifts legal, so this is now a confirm rather than a rejection: we
+    // work out who would end up doubled, stash the pending swap, and let
+    // <SplitConfirmModal> decide whether to proceed.
+    //
+    // Still gated on the dates differing. Moving someone from the day cell
+    // to the evening cell of the SAME date is a relocation, not a
+    // duplication — that path was always allowed and stays untouched.
     const targetShiftId = target.shift ? target.shift.id : null;
     if (target.dateIso !== source.dateIso) {
+      const splits = [];
       const sourceEmpClash = findSameDayShift(weekShifts, sourceEmp.id, target.dateIso, targetShiftId);
       if (sourceEmpClash && sourceEmpClash.id !== source.shift.id) {
-        setSwapBanner({
-          tone: "error",
-          text: sourceEmp.name + " is already on another shift on " + target.dateIso + ".",
-        });
-        setSwapMode(null);
-        return;
+        splits.push({ name: sourceEmp.name, dateIso: target.dateIso, existing: sourceEmpClash });
       }
       if (targetEmp) {
         const targetEmpClash = findSameDayShift(weekShifts, targetEmp.id, source.dateIso, source.shift.id);
         if (targetEmpClash && targetEmpClash.id !== targetShiftId) {
-          setSwapBanner({
-            tone: "error",
-            text: targetEmp.name + " is already on another shift on " + source.dateIso + ".",
-          });
-          setSwapMode(null);
-          return;
+          splits.push({ name: targetEmp.name, dateIso: source.dateIso, existing: targetEmpClash });
         }
+      }
+      if (splits.length > 0) {
+        // Hold the swap. Note swap mode is cleared here, not on confirm —
+        // the decision has moved into the modal, and leaving the grid in
+        // target-select mode behind a dialog would be confusing.
+        setPendingSplitSwap({
+          source: source,
+          target: target,
+          sourceEmp: sourceEmp,
+          targetEmp: targetEmp,
+          splits: splits,
+        });
+        setSwapMode(null);
+        return;
       }
     }
 
-    // Commit.
+    commitSwap(source, target, sourceEmp, targetEmp);
+  }
+
+  // v16.0.0: resume a swap the manager confirmed was meant to be a split.
+  function confirmPendingSplitSwap() {
+    if (!pendingSplitSwap) return;
+    const p = pendingSplitSwap;
+    setPendingSplitSwap(null);
+    commitSwap(p.source, p.target, p.sourceEmp, p.targetEmp);
+  }
+
+  // v16.0.0: the commit half of attemptSwap, split out so the split-shift
+  // confirm can resume it after the manager says yes. Every validation has
+  // already passed by the time this runs.
+  function commitSwap(source, target, sourceEmp, targetEmp) {
     // v1.10.0: snapshot pre-mutation records before each branch fires so
     // the undo stack can restore them. Deep-clone via JSON round-trip —
     // shift records are plain data, so this is sufficient and avoids
@@ -1753,6 +1786,21 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       {/* v1.4.0: generator-results "Details" modal. Open state is
           independent of the banner so closing the modal lets the banner
           resume its auto-dismiss countdown. */}
+      {/* v16.0.0: split-shift confirm for the Swap / Move mechanic. Unlike
+          the picker, Swap commits on the second cell click, so the warning
+          has to be a dialog rather than an inline banner. */}
+      <ModalPresence show={pendingSplitSwap !== null}>
+        {pendingSplitSwap !== null ? (
+          <SplitConfirmModal
+            open
+            splits={pendingSplitSwap.splits}
+            isMobile={isMobile}
+            onClose={function () { setPendingSplitSwap(null); }}
+            onConfirm={confirmPendingSplitSwap}
+          />
+        ) : null}
+      </ModalPresence>
+
       <ModalPresence show={showResultsModal}>
         {showResultsModal ? (
           <GenerateResultsModal

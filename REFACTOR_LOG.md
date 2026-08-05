@@ -353,6 +353,85 @@ inside a stable frame rather than the whole page lurching.
 **Verification:** `npm run build` clean. DEV browser: Next → `mgt-view-in-right`,
 Prev → `mgt-view-in-left`, grid re-renders intact (83 interactive cells).
 
+### Phases 9–10 — Split shifts (manual only)
+
+The same person may now work day **and** evening on one date. This was a
+HARD block from v0.8.0, enforced in four places; three of them soften, and
+the fourth deliberately does not.
+
+| Site | Before | After |
+|---|---|---|
+| `ShiftFormModal` picker filter | hard-excluded | hidden by default, revealed by a toggle |
+| `ShiftFormModal` save handler | red refusal | yellow warning, save proceeds |
+| `ScheduleGrid.attemptSwap` | red refusal | confirm dialog, then proceeds |
+| `generator.js` step (4) | hard filter | **unchanged** |
+
+**The generator is the load-bearing exception.** A 12-hour straight day
+should be a deliberate manager decision, never something the algorithm
+stumbles into, so `buildCandidates` keeps its same-day filter and
+`generator.js` was not touched at all in this version.
+
+**`schedule-logic`.** `findSameDayShift`'s doc block described a strict rule
+that no longer exists and was rewritten. Added `findSameDayShifts` (plural):
+under the old rule there could only ever be one clash, but a warning now
+wants to name *every* shift the employee already holds that date, and a
+third assignment on one date — while unlikely — is no longer impossible.
+
+**Picker (phase 9).** Filter (b) becomes hide-by-default, mirroring the
+day-off / holiday treatment in (c): a "Show staff already working this
+date" toggle reveals them, with the helper text saying picking one creates
+a split. Two deliberate steps rather than one mis-click in a long dropdown.
+The toggle **auto-flips ON** when the cell being edited is already half of
+an existing split — otherwise the `<select>` would render a value absent
+from its own options, the identical bug the request toggle has guarded
+against since v0.8.0. The save-time refusal is deleted; `splitShiftBanner`
+warns instead, naming the existing shift and its times, and leads the banner
+stack because it describes the most consequential thing about the
+assignment.
+
+**Swap / Move (phase 10).** New `SplitConfirmModal`. Swap commits on the
+second cell click — there is no Save step to hang an inline warning on — so
+this flow needs a real dialog or two ordinary grid clicks could silently
+produce a double. `attemptSwap` was split into validation + a new
+`commitSwap`, so the confirm can resume the exact pending operation.
+Deliberately **not** wired to Enter: the dialog exists to interrupt a
+two-click flow, so it should cost a deliberate click. Same-date day→evening
+moves are untouched — those were always allowed, being a relocation rather
+than a duplication.
+
+**Counting (phase 10).** Quota and every fairness target stay **date**-based:
+`workingDaysPerWeek` is literally a count of days, so a split consumes one
+day, and hours (which sum per record) already reflect the reality of a
+longer day. But that makes a split invisible on the "Shifts assigned" pill,
+which is exactly where a manager would want to notice it — so
+`buildSplitDayCountByEmployee` reports the surplus separately and the pill
+gains a small amber "split" marker plus an explanatory tooltip. No quota
+maths changed.
+
+**Files changed:** `src/lib/schedule-logic.js`,
+`src/components/ShiftFormModal.jsx`, `src/components/ScheduleGrid.jsx`,
+`src/components/SplitConfirmModal.jsx` (new),
+`src/components/WeeklyShiftSummary.jsx`, `REFACTOR_LOG.md`. Stale
+"same-day strict" comments corrected in each.
+
+**Verification:** `npm run build` clean. Full flow driven in the DEV
+browser: assigned Carlos to Kitchen Day Mon, then opened Kitchen Evening
+Mon — Carlos correctly hidden, toggle present reading "1 hidden — picking
+one creates a split shift"; flipping it revealed him and selecting him
+raised *"Split shift. This employee is already on Kitchen Day (11:00–16:00)
+on 2026-08-03…"* with Save enabled. After saving, the weekly pill read
+`Carlos 1 / 5 [split]` (one day of quota, split flagged) and the fairness
+row read `1 / 13 shifts, 12h` — date-based count, honest hours.
+
+**The important one:** running Fill-empty over that week produced 37 filled
+cells and, checking every column for an employee appearing twice, **exactly
+one split — the manually-created one.** The generator added none.
+
+*(First attempt at that check reported zero splits and was wrong: it
+stripped the leading time from each cell but not the role pill, so
+`"Carlos"` and `"ChefCarlos"` compared unequal. Re-run matching against the
+known employee names.)*
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)
