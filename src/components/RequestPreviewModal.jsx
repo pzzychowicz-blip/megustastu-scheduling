@@ -28,7 +28,7 @@
 // Visual: mirrors RequestFormModal's vertical Fld stack so the preview
 // feels like the "read mode" of the edit form rather than a separate UI.
 
-import { S, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { R, S, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkBtn } from "./atoms.jsx";
 import { parseIsoDate } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -143,7 +143,7 @@ export default function RequestPreviewModal({ open, request, employees, isMobile
           <span
             style={{
               padding: "3px 10px",
-              borderRadius: 999,
+              borderRadius: R.pill,
               fontSize: 12,
               fontWeight: 500,
               background: meta.palette ? meta.palette.bg : "var(--bg-pill)",

@@ -15,7 +15,7 @@
 //   appVersion— __APP_SIGNATURE__.version string (for the header label)
 
 import { useEffect, useRef, useState } from "react";
-import { S, BTN } from "../lib/constants.js";
+import { R, S, BTN } from "../lib/constants.js";
 import { usePersistence } from "../hooks/usePersistence.js";
 import { useThemeMode } from "../hooks/useThemeMode.js";
 import { useFirebaseConnection } from "../hooks/useFirebaseConnection.js";
@@ -169,7 +169,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
           background: "var(--bg-danger-tint)",
           border: "1px solid var(--border-danger-tint)",
           color: "var(--text-danger)",
-          borderRadius: 10,
+          borderRadius: R.inset,
           fontSize: 13,
           display: "flex",
           justifyContent: "space-between",
@@ -232,7 +232,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         marginBottom: 16,
         padding: 4,
         background: "var(--bg-segment)",
-        borderRadius: 12,
+        borderRadius: R.card,
         overflowX: "auto",
       }}
     >
@@ -250,7 +250,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
               minWidth: 90,
               padding: "8px 12px",
               fontSize: 13,
-              borderRadius: 8,
+              borderRadius: R.tight,
               background: on ? "var(--bg-tab-active)" : "transparent",
               color: on ? "var(--accent)" : "var(--text-secondary)",
               border: "1px solid transparent",

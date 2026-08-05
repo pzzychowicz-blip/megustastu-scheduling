@@ -30,7 +30,7 @@
 //   isMobile   (bool)
 
 import { useState } from "react";
-import { S, REQUEST_TYPES } from "../lib/constants.js";
+import { R, S, REQUEST_TYPES } from "../lib/constants.js";
 import { addDays, isoDate, parseIsoDate } from "../lib/schedule-logic.js";
 import RequestPreviewModal from "./RequestPreviewModal.jsx";
 
@@ -160,7 +160,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                 title="Preview request"
                 style={{
                   padding: "1px 8px",
-                  borderRadius: 999,
+                  borderRadius: R.pill,
                   fontSize: 11,
                   fontWeight: 500,
                   background: r.palette ? r.palette.bg : "var(--bg-pill)",

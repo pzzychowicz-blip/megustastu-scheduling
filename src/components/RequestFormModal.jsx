@@ -25,7 +25,7 @@
 //   AND dateTo >= dateFrom (lexicographic compare on "YYYY-MM-DD" works).
 
 import { useEffect, useState } from "react";
-import { S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { R, S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -198,7 +198,7 @@ export default function RequestFormModal({
         display: "inline-flex",
         flexWrap: "wrap",
         background: "var(--bg-segment-strong)",
-        borderRadius: 10,
+        borderRadius: R.inset,
         padding: 3,
       }}
     >
@@ -214,7 +214,7 @@ export default function RequestFormModal({
               ...BTN.base,
               padding: "6px 14px",
               fontSize: 13,
-              borderRadius: 8,
+              borderRadius: R.tight,
               background: on ? "var(--accent)" : "transparent",
               color: on ? "var(--text-on-accent)" : "var(--text-primary)",
               border: "1px solid transparent",
@@ -239,7 +239,7 @@ export default function RequestFormModal({
           style={{
             display: "inline-flex",
             background: "var(--bg-segment-strong)",
-            borderRadius: 10,
+            borderRadius: R.inset,
             padding: 3,
           }}
         >
@@ -258,7 +258,7 @@ export default function RequestFormModal({
                   ...BTN.base,
                   padding: "6px 14px",
                   fontSize: 13,
-                  borderRadius: 8,
+                  borderRadius: R.tight,
                   background: on ? "var(--accent)" : "transparent",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
                   border: "1px solid transparent",
@@ -297,7 +297,7 @@ export default function RequestFormModal({
                   ...BTN.base,
                   padding: "6px 12px",
                   fontSize: 13,
-                  borderRadius: 8,
+                  borderRadius: R.tight,
                   background: on ? "var(--accent)" : "var(--bg-segment-strong)",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
                   border: "1px solid transparent",

@@ -19,7 +19,7 @@
 //
 // Vite's automatic JSX runtime: NO React import required.
 
-import { S, BTN } from "../lib/constants.js";
+import { R, S, BTN } from "../lib/constants.js";
 
 // ── Overlay ──────────────────────────────────────────────────────────────
 // Props:
@@ -61,7 +61,7 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
         maxWidth: 560,
         background: "var(--bg-overlay-sheet)",
         border: "1px solid var(--border-overlay-sheet)",
-        borderRadius: 16,
+        borderRadius: R.sheet,
         padding: 20,
         boxShadow: "var(--shadow-overlay)",
         // v1.9.0 (perslot+ commit, fourth round): overflow changed from
@@ -182,7 +182,7 @@ export function Collapsible({ title, open, onToggle, dirty, className, headerCla
     display: "inline-block",
     width: 8,
     height: 8,
-    borderRadius: 999,
+    borderRadius: R.pill,
     background: "var(--accent)",
     boxShadow: "0 0 0 2px var(--dot-glow)",
   };
@@ -279,7 +279,7 @@ export function Toggle({ checked, onChange, label, helper, disabled, className }
     flexShrink: 0,
     width: 48,
     height: 28,
-    borderRadius: 999,
+    borderRadius: R.pill,
     background: checked ? "var(--toggle-track-on)" : "var(--toggle-track-off)",
     position: "relative",
     transition: "background 150ms ease",
@@ -369,7 +369,7 @@ export function TBadge({ children, palette, style }) {
     padding: "2px 8px",
     fontSize: 11,
     fontWeight: 600,
-    borderRadius: 999,
+    borderRadius: R.pill,
     border: "1px solid transparent",
     lineHeight: 1.4,
   };

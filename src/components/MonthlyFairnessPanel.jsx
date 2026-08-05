@@ -83,7 +83,7 @@
 //   isMobile              (bool)
 
 import { useState } from "react";
-import { S } from "../lib/constants.js";
+import { R, S } from "../lib/constants.js";
 import { addDays, employeeTenureOverlapsDates } from "../lib/schedule-logic.js";
 import EmployeeFairnessModal from "./EmployeeFairnessModal.jsx";
 
@@ -314,7 +314,7 @@ export default function MonthlyFairnessPanel({
             fontFamily: "inherit",
             fontSize: "inherit",
             textAlign: "left",
-            borderRadius: 8,
+            borderRadius: R.tight,
           };
 
           const nameNode = interactiveHighlight ? (
@@ -364,7 +364,7 @@ export default function MonthlyFairnessPanel({
             flexWrap: "wrap",
             width: "100%",
             padding: "6px 8px",
-            borderRadius: 8,
+            borderRadius: R.tight,
             border: isSelected ? "1px solid var(--border-active-on)" : "1px solid transparent",
             background: isSelected ? "var(--bg-active-on)" : "transparent",
             boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : "none",

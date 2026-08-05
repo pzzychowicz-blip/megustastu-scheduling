@@ -24,6 +24,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  R,
   ROLES,
   WEEKDAYS,
   S,
@@ -188,7 +189,7 @@ export default function EmployeeFormModal({
               ...BTN.base,
               padding: "6px 12px",
               fontSize: 13,
-              borderRadius: 999,
+              borderRadius: R.pill,
               background: on ? "rgb(" + rgb + ")" : "var(--bg-pill)",
               color: on ? "var(--text-on-accent)" : "var(--text-primary)",
               border: "1px solid " + (on ? "rgb(" + rgb + ")" : "var(--btn-ghost-border)"),
@@ -206,7 +207,7 @@ export default function EmployeeFormModal({
       style={{
         display: "inline-flex",
         background: "var(--bg-segment-strong)",
-        borderRadius: 10,
+        borderRadius: R.inset,
         padding: 3,
       }}
     >
@@ -226,7 +227,7 @@ export default function EmployeeFormModal({
               ...BTN.base,
               padding: "6px 14px",
               fontSize: 13,
-              borderRadius: 8,
+              borderRadius: R.tight,
               background: on ? "var(--accent)" : "transparent",
               color: on ? "var(--text-on-accent)" : "var(--text-primary)",
               border: "1px solid transparent",
@@ -246,7 +247,7 @@ export default function EmployeeFormModal({
       style={{
         display: "inline-flex",
         background: "var(--bg-segment-strong)",
-        borderRadius: 10,
+        borderRadius: R.inset,
         padding: 3,
         flexWrap: "wrap",
       }}
@@ -264,7 +265,7 @@ export default function EmployeeFormModal({
               padding: "6px 12px",
               fontSize: 13,
               minWidth: 36,
-              borderRadius: 8,
+              borderRadius: R.tight,
               background: on ? "var(--accent)" : "transparent",
               color: on ? "var(--text-on-accent)" : "var(--text-primary)",
               border: "1px solid transparent",
@@ -292,7 +293,7 @@ export default function EmployeeFormModal({
                 ...BTN.base,
                 padding: "6px 10px",
                 fontSize: 12,
-                borderRadius: 8,
+                borderRadius: R.tight,
                 minWidth: 44,
                 background: on ? "var(--accent)" : "var(--bg-pill)",
                 color: on ? "var(--text-on-accent)" : "var(--text-primary)",

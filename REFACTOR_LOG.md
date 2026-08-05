@@ -65,6 +65,47 @@ applications), `src/App.jsx` (→ 16.0.0, sha
 
 **Verification:** `npm run build` clean; main bundle 181.29 kB gz.
 
+### Phase 2 — borderRadius → `R` token sweep
+
+Mechanical conversion of every `borderRadius` literal in `src/components/`
+to an `R.*` token — 50 call sites across 16 files. Assigned **by role**
+(what kind of surface is this?) rather than by matching the old number,
+per the `R` doc block in `constants.js`.
+
+Conversions: `999 → R.pill` (10), `16 → R.sheet` (2), `12 → R.card` (5),
+`10 → R.inset` (16), `8 → R.tight` (17).
+
+**Left numeric on purpose** — these are tuned geometry or micro-detail,
+not surface roles, and match the exception classes Bookings documents for
+its own scale:
+
+- `borderRadius: "50%"` circles — `ConnectionStatus` dot (×2), `atoms`
+  Toggle knob.
+- `MonthlyFairnessPanel` delta-bar trio (5 / 5 / 1 / 4) — the radius is
+  part of a hand-tuned bar geometry from the v1.13.0 polish rounds.
+- `EmployeeFairnessModal` sparkline track/fill pair (6 / 6).
+- `Kbd` keycap (6), `ScheduleGrid`'s role chip (6), mobile section band
+  (6) and the amber "closed" tag (5).
+- `atoms` mobile Overlay sheet (0) — full-bleed by design.
+- `src/lib/pdf-export.js` — out of scope entirely; it never reads CSS
+  vars because the printed palette is locked light (v0.11.0).
+
+**Behavioural change:** None. Token values were chosen in phase 1 to equal
+the literals they replace, so this is a pure indirection change.
+
+**Files changed:** 16 files under `src/components/` (`atoms`, `AppShell`,
+`ScheduleGrid`, `Settings`, `ShiftFormModal`, `EmployeeFormModal`,
+`EmployeesList`, `RequestFormModal`, `RequestsList`,
+`RequestPreviewModal`, `WeeklyRequestsPreview`, `ClearConfirmModal`,
+`ConnectionStatus`, `LoginScreen`, `MonthlyFairnessPanel`,
+`EmployeeFairnessModal`) — radii plus the `R` import, `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean; main bundle 181.34 kB gz (+0.05).
+Static check that every `R.*` reference resolves to a defined key. In the
+DEV browser: token values resolve (`--r-card` → 12px etc.), and spot-checked
+computed radii match their pre-sweep pixel values (Generate button 12px,
+tab pill 8px, date pill 10px).
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

@@ -31,7 +31,7 @@
 //                                          slotIndex, label }
 
 import { useState, useEffect } from "react";
-import { S, BTN } from "../lib/constants.js";
+import { R, S, BTN } from "../lib/constants.js";
 import { Overlay, mkBtn } from "./atoms.jsx";
 import { isoDate, formatDayHeader } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -103,7 +103,7 @@ export default function ClearConfirmModal({
           ...BTN.base,
           padding: "8px 12px",
           fontSize: 13,
-          borderRadius: 10,
+          borderRadius: R.inset,
           flex: "0 0 auto",
           background: isSelected ? "var(--accent)" : "var(--bg-pill)",
           color: isSelected ? "var(--text-on-accent)" : "var(--text-primary)",

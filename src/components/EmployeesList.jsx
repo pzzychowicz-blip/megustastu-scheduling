@@ -11,7 +11,7 @@
 
 import { useState } from "react";
 import {
-  S, BTN, ROLE_COLORS, WEEKDAYS,
+  R, S, BTN, ROLE_COLORS, WEEKDAYS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
 import { mkBtn, TBadge } from "./atoms.jsx";
@@ -139,7 +139,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
           textAlign: "left",
           background: inactive ? "var(--bg-row-soft)" : "var(--bg-pill)",
           border: "1px solid var(--hairline-strong)",
-          borderRadius: 12,
+          borderRadius: R.card,
           padding: 12,
           marginBottom: 8,
           cursor: "pointer",

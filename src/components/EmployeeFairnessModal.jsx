@@ -39,7 +39,7 @@
 // read-only nature reads as "details panel" rather than a form.
 
 import { useState } from "react";
-import { S } from "../lib/constants.js";
+import { R, S } from "../lib/constants.js";
 import { Overlay, Section, mkBtn } from "./atoms.jsx";
 import { buildEmployeeFairnessDetail, parseIsoDate } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -190,7 +190,7 @@ function WeekBar({ row, onClick }) {
           gap: 10,
           fontSize: 12,
           padding: "4px 8px",
-          borderRadius: 8,
+          borderRadius: R.tight,
           background: "transparent",
           border: "1px solid transparent",
           color: "inherit",

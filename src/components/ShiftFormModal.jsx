@@ -70,7 +70,7 @@
 //           employee is currently hidden by this filter.
 
 import { useEffect, useMemo, useState } from "react";
-import { S, BTN, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
+import { R, S, BTN, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
 import { Overlay, Fld, Toggle, mkInp, mkBtn } from "./atoms.jsx";
 import {
   formatDayHeader,
@@ -376,7 +376,7 @@ export default function ShiftFormModal({
           background: "var(--bg-danger-tint)",
           border: "1px solid var(--border-danger-tint)",
           color: "var(--text-danger)",
-          borderRadius: 10,
+          borderRadius: R.inset,
           fontSize: 12,
         }}
       >
@@ -441,7 +441,7 @@ export default function ShiftFormModal({
     background: "var(--bg-warning-tint)",
     border: "1px solid var(--border-warning-tint)",
     color: "var(--text-warning)",
-    borderRadius: 10,
+    borderRadius: R.inset,
     fontSize: 12,
   };
 
@@ -520,7 +520,7 @@ export default function ShiftFormModal({
                   ...BTN.base,
                   padding: "6px 12px",
                   fontSize: 13,
-                  borderRadius: 999,
+                  borderRadius: R.pill,
                   background: on ? "rgb(" + rgb + ")" : "var(--bg-pill)",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
                   border: "1px solid " + (on ? "rgb(" + rgb + ")" : "var(--btn-ghost-border)"),

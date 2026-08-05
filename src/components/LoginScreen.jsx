@@ -11,7 +11,7 @@
 // Console (Authentication → Users → Add user) in each project (DEV + PROD).
 
 import { useState } from "react";
-import { S, BTN } from "../lib/constants.js";
+import { R, S, BTN } from "../lib/constants.js";
 import { Fld, mkInp, mkBtn } from "./atoms.jsx";
 
 export default function LoginScreen({ signIn, busy, error, isMobile }) {
@@ -46,7 +46,7 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
         maxWidth: 380,
         background: "var(--bg-soft)",
         border: "1px solid var(--border-soft)",
-        borderRadius: 16,
+        borderRadius: R.sheet,
         padding: 24,
         boxShadow: "var(--shadow-login-card)",
       };
@@ -61,7 +61,7 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
           background: "var(--bg-danger-tint)",
           border: "1px solid var(--border-danger-tint)",
           color: "var(--text-danger)",
-          borderRadius: 10,
+          borderRadius: R.inset,
           fontSize: 13,
         }}
       >

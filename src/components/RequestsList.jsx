@@ -13,7 +13,7 @@
 //   isMobile   (bool)
 
 import { useMemo, useState } from "react";
-import { S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { R, S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { mkBtn, TBadge } from "./atoms.jsx";
 import { isoDate, parseIsoDate } from "../lib/schedule-logic.js";
 import RequestFormModal from "./RequestFormModal.jsx";
@@ -114,7 +114,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
           textAlign: "left",
           background: isPast ? "var(--bg-row-soft)" : "var(--bg-pill)",
           border: "1px solid var(--hairline-strong)",
-          borderRadius: 12,
+          borderRadius: R.card,
           padding: 12,
           marginBottom: 8,
           cursor: "pointer",

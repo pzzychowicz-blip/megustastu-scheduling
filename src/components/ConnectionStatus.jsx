@@ -17,7 +17,7 @@
 //   isMobile   (bool)    — nudges the popover so it doesn't clip off-screen
 
 import { useEffect, useRef, useState } from "react";
-import { S } from "../lib/constants.js";
+import { R, S } from "../lib/constants.js";
 
 export default function ConnectionStatus({ connected, userEmail, isMobile }) {
   const [open, setOpen] = useState(false);
@@ -91,7 +91,7 @@ export default function ConnectionStatus({ connected, userEmail, isMobile }) {
             padding: 12,
             background: "var(--bg-overlay-sheet)",
             border: "1px solid var(--border-card)",
-            borderRadius: 12,
+            borderRadius: R.card,
             boxShadow: "var(--shadow-card)",
           }}
         >
