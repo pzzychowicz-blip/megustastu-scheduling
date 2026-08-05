@@ -183,12 +183,11 @@ separate Firebase project, same UI conventions).
   default boundary cells to *off* (false) — conservative direction
   here is the OPPOSITE of `hasConsecutiveDaysOff` (avoid
   over-reporting long runs when we lack data).
-- **Conflict semantics (revised v0.8.0):**
-  - **Same-date double-booking is a HARD block.** A single employee
-    cannot hold two shifts on the same date (covers day + evening on
-    the same Tuesday). Enforced by both the picker filter (the
-    employee is hidden from the dropdown) and the save handler
-    (refuses with a red banner if state desyncs).
+- **Conflict semantics (revised v0.8.0; same-date rule superseded v16.0.0):**
+  - **~~Same-date double-booking is a HARD block.~~** *(v0.8.0–v15.4.1.
+    Superseded by the v16.0.0 split-shift decision below — a single
+    employee MAY now hold two shifts on one date, manually. The
+    auto-generator's HARD same-day filter is unchanged.)*
   - **Day-off / holiday request conflicts hide-by-default.** Anyone
     with a covering request is hidden from the picker. A toggle in
     the modal ("Show staff on day off / holiday") restores them and
@@ -1671,6 +1670,151 @@ separate Firebase project, same UI conventions).
     base 6.143 and shorter 4.714 for a 3-base+1-shorter window) plus live DEV
     grid/fairness regression check.
 
+- **MGT Bookings visual + motion parity (v16.0.0):** the two sister apps
+  now share one design and motion vocabulary. Ported from Bookings:
+  - **Radii scale `R`** (`--r-pill/-sheet/-card/-inset/-tight`, exported
+    from `constants.js`). **Assign by ROLE, never by matching the old
+    number.** Token values were chosen to equal Scheduling's existing
+    dominant literal per role (999 / 16 / 12 / 10 / 8), so the 50-call-site
+    sweep was a visual no-op. Deliberately absent from the dark block —
+    radii are theme-agnostic. Exceptions that stay numeric: `50%` circles,
+    the `Kbd` keycap (6), the MonthlyFairnessPanel delta-bar geometry
+    (5/5/1/4), the EmployeeFairnessModal sparkline pair (6), ScheduleGrid's
+    role chip / section band / closed tag, and the mobile Overlay sheet's
+    full-bleed 0. `pdf-export.js` is out of scope — it never reads CSS vars.
+  - **`--font-app`** plus a global `input, textarea, select, button
+    { font-family: inherit }` rule (controls don't inherit per spec).
+  - **Motion vocabulary in `index.html`:** the modal set
+    (`mgt-scrim/card/sheet-in|out`), `mgt-toast-in|out`, directional
+    `mgt-view-in-left|right`, `mgt-fade-in`, and `.mgt-press`. Press uses
+    `filter: brightness()` NOT a transform, specifically so it never fights
+    `.mgt-hover-scale`'s hover transform.
+  - **Animation atoms in `atoms.jsx`:** `Presence`, `Toast`,
+    `ModalPresence` + `PresenceContext` / `usePresence`, `Reveal`,
+    `AutoHeight`, `SlideView`, sharing one `usePresenceLifecycle`.
+  - **Reduced motion:** two independent kill switches — the OS
+    `prefers-reduced-motion` query and a per-device Settings → Display
+    toggle writing `localStorage["mgt-reduce-motion"]`, stamped onto
+    `<html data-motion="reduce">` by the no-flash inline script before
+    React mounts. Per-device (localStorage), NOT `/settings` — a weak
+    tablet and a fast laptop should be able to disagree. Any future WAAPI
+    animation must check `dataset.motion` in JS; CSS can't reach WAAPI.
+  - **`:focus-visible`** ring (2px accent, 2px offset). NEITHER app had any
+    focus affordance — the clearest a11y gap in both. Required removing
+    `outline: "none"` from `S.inputBase`, an inline style that beat the
+    global rule. *(A ROADMAP item tracks porting this back to Bookings.)*
+  - **DELIBERATE DIVERGENCE:** Bookings removed `border-radius` from its
+    `.mgt-hover-scale:hover` rule; Scheduling KEEPS it (tokenised to
+    `--r-card`). Here it is load-bearing — Toggle atoms, Collapsible
+    headers and `Fld`-wrapped Settings rows carry no inline radius, and
+    dropping it paints their hover card with sharp corners.
+  - **NOT ported:** Bookings' ten domain-named `BTN` variants (Scheduling's
+    five semantic ones cover every call site; dead tokens are worse than no
+    tokens), its devices-presence list (Scheduling is single-manager), and
+    its two-row header chrome (booking-domain-specific; Scheduling's week
+    nav belongs inside ScheduleGrid).
+
+- **Overlay is animated and can pin a footer (v16.0.0):** `Overlay` reads
+  `{leaving}` from `PresenceContext` and swaps to the `*-out` keyframes
+  before unmounting. **Every modal mount is wrapped as
+  `<ModalPresence show={cond}>{cond ? <Modal open … /> : null}</ModalPresence>`**
+  — Scheduling's modals are always mounted with an `open` prop while their
+  data goes null on close, so a modal cannot animate its own exit;
+  ModalPresence caches the last truthy child ELEMENT (whose props still
+  hold the old data) and re-renders it for the exit. Consequence: the
+  cached element keeps `open={true}` for those 200 ms, so any modal binding
+  global keyboard handlers must gate on `!leaving` (the four
+  `useEnterSubmit` modals do; `useEscClose` is left ungated because closing
+  an already-closing modal is idempotent).
+  The optional **`footer` slot** makes the sheet a flex column with a
+  bounded scrolling body and a pinned footer — the supported fix for tall
+  modals spilling past the sheet, replacing the ad-hoc inner scrollers
+  `GenerateResultsModal` and `EmployeeFairnessModal` had grown. Modals
+  WITHOUT a footer keep the v1.9.0 `overflow: visible` so hover-scaled
+  inputs still lift past the border. The desktop sheet is now
+  `box-sizing: border-box` — it was content-box, so `maxHeight: 80vh`
+  excluded 40px padding + 2px border and the sheet rendered ~6% taller than
+  its own cap.
+
+- **ConnectionStatus: three states + measured anchoring (v16.0.0):**
+  `useFirebaseConnection` returns `{connected, hasConnected}`, latching
+  `hasConnected` on the first successful connect. `connected === false` used
+  to mean both "not confirmed yet" and "dropped", so the dot flashed RED on
+  every page load. Now: `!hasConnected && !connected` → amber "Connecting…",
+  `connected` → green, `hasConnected && !connected` → red.
+  The popover's anchor side is **measured at open time**, not guessed from
+  `isMobile` — Bookings' source carried a note that Scheduling had the same
+  latent bug. The dot's x position depends on header flex-wrap, not viewport
+  width; measured at 599px the old `left: 0` put a 246px popover at
+  [458, 704] on a 599px viewport, ~105px off-screen.
+
+- **Split shifts are manual-only (v16.0.0):** the same employee MAY work
+  day AND evening on one date. Enforcement by surface:
+  - **Manual picker (`ShiftFormModal`) — SOFT.** Same-day staff are hidden
+    by DEFAULT behind a "Show staff already working this date" toggle
+    (mirroring the day-off / holiday toggle); revealing and picking one
+    raises a yellow banner naming the existing shift and its times. The
+    save proceeds. The toggle auto-flips ON when the edited cell is already
+    half of a split, or the `<select>` would hold a value absent from its
+    own options.
+  - **Swap / Move — SOFT, but CONFIRMED.** `<SplitConfirmModal>` opens
+    first. Swap commits on the second cell click with no Save step, so an
+    inline warning has nothing to attach to; without the dialog two
+    ordinary grid clicks could silently produce a 12-hour day. `attemptSwap`
+    was split into validation + `commitSwap` so the confirm resumes the
+    exact pending operation. Same-date day→evening MOVES were always
+    allowed (relocation, not duplication) and are untouched.
+  - **Auto-generator — HARD, unchanged.** `buildCandidates` step (4) keeps
+    its same-day filter; `generator.js` was not modified at all. A 12-hour
+    straight day must be a deliberate manager decision.
+  - **Counting: DATES, not records.** `workingDaysPerWeek` is literally a
+    count of days, so a split consumes ONE day of quota, and every fairness
+    target agrees. Hours (summed per record) already reflect the longer
+    day, so the hours axis self-corrects. Because that makes a split
+    invisible on the pill, `<WeeklyShiftSummary>` counts the surplus
+    separately (`buildSplitDayCountByEmployee`) and shows a small amber
+    "split" marker. **No quota maths changed.**
+
+- **Per-weekday shift-template overrides (v16.0.0):** each (section,
+  dayPart) block may carry an optional sparse `weekdays` map — see the data
+  model below. Absent = pre-v16.0.0 behaviour exactly.
+  - **UNION LADDER, not per-date.** `slotsForDay` is a thin wrapper over
+    `slotsForWeek(template, dayRequiredRoles, weekdayKeys)`, which returns
+    the widest ladder any visible weekday needs; dates where a row doesn't
+    run render an inert `—` via `renderUnscheduledSlotCell`. A per-date
+    ladder was rejected: the desktop grid is one CSS grid with a shared
+    label column and `display: contents` rows, and the PDF is one autotable
+    row per slot — neither can be ragged. The union also keeps `slotsByKey`,
+    ClearConfirmModal's by-row scope, GenerateResultsModal's labels and the
+    generator's stale-record lookup working unchanged.
+  - **Precedence: per-weekday override → soloTimes → flat defaults.** A
+    weekday carrying an override ignores soloTimes even on a solo day — the
+    more specific setting wins. `slotTimesForDate`'s SIGNATURE IS UNCHANGED,
+    which is why `renderCell`, both generator call sites, `ShiftFormModal`
+    and the swap payload all inherit per-weekday times with zero edits.
+  - **`isWeekComplete` / `countEmptyCells` MUST gate on
+    `isSlotScheduledOnDate`.** Without it every extra union row reads as
+    unfilled on every non-overriding weekday → Export PDF disabled forever.
+  - **`humanLabel` uses the LADDER length**, not the block's count, or a
+    base-1 block with a weekday override of 2 yields two rows both named
+    "Kitchen Day".
+  - **Extra rows inherit times from the first weekday override** that
+    defines the index — they have no entry in the flat `times` array, so
+    they'd otherwise advertise the OPERATING_HOURS fallback.
+  - **Orphan predicate widened to the union** via the shared
+    `isLiveShiftForTemplate`, so "renders ⟺ counts" stays exactly true.
+    Removed two duplicated copies inside `WeeklyShiftSummary`.
+  - **`avgShiftHours` is a per-weekday loop** now. Its drop guard stays
+    TWO-PASS: skip a slot only when EVERY candidate duration is
+    non-positive. A naive per-weekday skip is NOT equivalent and this feeds
+    the generator's fairness ranking.
+  - **Settings UI:** per-weekday pills (`—` / `×N` / `off`) + an
+    above-anchored popover with a bounded scrolling times list. Composite
+    string popover key; ONE `useRef` attached conditionally to the owning
+    block (`renderBlock` is a plain function called four times and can't
+    call `useRef`). `blockDirty` must normalize `{}` ↔ absent or the
+    debounce re-writes the revision on every Firebase echo.
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -1693,6 +1837,12 @@ separate Firebase project, same UI conventions).
 megustastu-scheduling/
 ├── CLAUDE.md                       this file
 ├── REFACTOR_LOG.md                 version history + decisions
+├── ROADMAP.md                      v16.0.0: pending work ONLY — deferred
+│                                   features, follow-ups, ideas. No shipped
+│                                   history (that's REFACTOR_LOG.md), no
+│                                   design rationale (that's this file).
+│                                   Delete an entry in the same commit that
+│                                   resolves it.
 ├── LICENSE                         v1.14.0: proprietary licence file at
 │                                   repo root. Verbatim copy of the MGT
 │                                   Bookings LICENSE — "© 2026 Patryk
@@ -1800,6 +1950,13 @@ megustastu-scheduling/
     │                                 patch: corrected stale tenure / per-week-
     │                                 config comments after a pre-onboarding
     │                                 audit found no behavioural defects).
+    │                                 v16.0.0: → 16.0.0, sha
+    │                                 "bookings-parity-split-shifts-
+    │                                 perweekday-template". Three independent
+    │                                 areas in one version: MGT Bookings
+    │                                 visual/motion parity, manual-only split
+    │                                 shifts, and per-weekday shift-template
+    │                                 overrides (times AND headcount).
     ├── firebase.js                 dev/prod switch + coloured boot banner
     ├── hooks/
     │   ├── useAuth.js              Firebase Auth state + signIn / signOut
@@ -2433,6 +2590,31 @@ megustastu-scheduling/
     └── components/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn.
+        │                           v16.0.0: + the animation primitives ported
+        │                           from MGT Bookings — Presence, Toast,
+        │                           ModalPresence + PresenceContext /
+        │                           usePresence, Reveal, AutoHeight, SlideView,
+        │                           all sharing one usePresenceLifecycle. These
+        │                           pair with the @keyframes in index.html;
+        │                           neither half is useful alone.
+        │                           Overlay reworked: reads {leaving} from
+        │                           PresenceContext for its exit animation,
+        │                           gained an optional `footer` slot (bounded
+        │                           scrolling body + pinned footer), a mobile
+        │                           body-scroll lock, safe-area insets, and
+        │                           box-sizing: border-box (maxHeight:80vh was
+        │                           excluding padding + border). mkBtn now
+        │                           applies .mgt-press centrally.
+        ├── SplitConfirmModal.jsx   v16.0.0: NEW. Confirm dialog for a Swap /
+        │                           Move that would create a split shift.
+        │                           Exists as a dialog rather than an inline
+        │                           warning because Swap commits on the second
+        │                           cell click — there is no Save step to hang
+        │                           a banner on. Lists each employee who would
+        │                           be doubled and the shift they already hold.
+        │                           Deliberately NOT wired to Enter: it exists
+        │                           to interrupt a two-click flow, so it should
+        │                           cost a deliberate click. Esc cancels.
         │                           v15.3.0: + Kbd keycap atom (ported from
         │                           Bookings; uses --bg-kbd / --border-kbd).
         │                           Overlay backdrop gained a data-mgt-overlay
@@ -3745,6 +3927,19 @@ megustastu-scheduling/
    // v15.1.0: optional soloTimes (same length as count) — alternate
    // times used on weekdays where this day-part is the ONLY open one.
    // Absent = feature off (the writer omits the key; never []).
+   //
+   // v16.0.0: optional per-weekday overrides. SPARSE — only the weekdays
+   // that actually differ appear. Absent = the block applies every day.
+   //   weekdays?: {
+   //     mon: { count: 1, times: [{start,end}] },   // fewer people
+   //     sat: { count: 4, times: [{start,end} x4] },// more, own times
+   //     sun: { count: 0 }                          // doesn't run at all
+   //   }
+   // count 0 carries NO `times` key ([] is unrepresentable in RTDB), and
+   // an empty map omits `weekdays` entirely — never {} or null (v1.12.0
+   // Chef-pill lesson). Precedence: per-weekday → soloTimes → flat times.
+   // The grid/PDF render the UNION ladder across the visible weekdays and
+   // show "—" where a row doesn't run; see the locked decision above.
    // v15.1.0: this singleton is the FROZEN BASE — edits in Settings
    // write /configRevisions records instead. Only Reset-to-defaults
    // and the v1.10.1 eager migration still write here.

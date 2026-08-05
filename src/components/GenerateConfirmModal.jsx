@@ -98,7 +98,10 @@ export default function GenerateConfirmModal({
       </p>
 
       <ul style={{ ...S.body, margin: "0 0 12px 16px", padding: 0, fontSize: 13 }}>
-        <li>Role match + same-day strict + working-days quota.</li>
+        {/* v16.0.0: worth stating explicitly now that split shifts exist
+            as a manual action — the generator still never creates one. */}
+        <li>Role match + working-days quota, and never two shifts for the
+          same person on one date (split shifts stay manual-only).</li>
         <li>Skips any cell that's already assigned.</li>
         <li>
           Never auto-assigns over a day-off or holiday request — you can
