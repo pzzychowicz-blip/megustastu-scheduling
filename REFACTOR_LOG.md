@@ -237,6 +237,54 @@ keypress lands on a button matching `:focus-visible` with a computed
 `.focus()` correctly does *not* match, confirming the rule is
 keyboard-scoped rather than firing on clicks.
 
+### Phase 6 — ConnectionStatus: three states + the anchoring bugfix
+
+**The bug Bookings flagged for us.** `ConnectionStatus.jsx:22-28` in MGT
+Bookings carries a note left for this repo: *"NB Scheduling's copy has the
+same latent bug — port this fix on its next touch."* The popover picked its
+anchor side from `isMobile`, but the dot's x position depends on header
+flex-wrap, not viewport width — so a left-anchored popover hanging off a
+right-edge dot ran off-screen. Measured in the DEV browser at 599px
+(`isMobile` true, header unwrapped): the dot's right edge is at 470px and
+the popover is 246px wide, so the old `left: 0` put it at [458, 704] on a
+599px viewport — about 105px unreachable. The anchor side is now **measured**
+at open time, preferring right-anchoring and flipping left only when there
+is no room.
+
+**Three states, not two.** `connected === false` was doing double duty: "we
+haven't confirmed a connection yet" *and* "the connection dropped". Since
+`useFirebaseConnection` starts `false`, the dot flashed **red on every page
+load** before settling green — a false outage alarm. The hook now returns
+`{connected, hasConnected}`, latching `hasConnected` on the first successful
+connect (ref-guarded so reconnects don't re-set it), which lets the
+component distinguish:
+
+| condition | state | colour |
+|---|---|---|
+| `!hasConnected && !connected` | Connecting… | amber |
+| `connected` | Connected | green |
+| `hasConnected && !connected` | Connection lost | red |
+
+Bookings' devices-presence list was deliberately **not** ported — Scheduling
+is single-manager by design (a locked v1 decision), so there is never more
+than one device to list.
+
+**Token cleanup:** the dot's glow was two `rgba()` literals inline in the
+component, violating the v0.11.0 rule that JS carries no colour literals.
+Now `--status-{online,offline,connecting}-glow`, themed in both blocks. The
+dot button also gained an explicit `R.pill` radius — the hover rule paints
+an opaque `--bg-hover-card` behind whatever it lifts, and without a radius
+that renders as a hard-edged rectangle around a round dot (the same trap
+Bookings hit and documented).
+
+**Files changed:** `index.html` (+6 status tokens),
+`src/hooks/useFirebaseConnection.js` (returns an object),
+`src/components/ConnectionStatus.jsx`, `src/components/AppShell.jsx`,
+`REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. DEV browser at 599px: popover
+measures [224, 470] — fully on screen, right-anchored as intended.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

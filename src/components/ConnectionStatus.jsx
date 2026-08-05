@@ -11,17 +11,47 @@
 // Anchored via a relative wrapper + absolute popover, matching the
 // Settings open-days popover pattern. Closes on outside-click + Esc.
 //
+// v16.0.0 — THREE states, not two. `connected === false` used to cover both
+// "we haven't confirmed a connection yet" and "the connection dropped", so
+// the dot flashed RED on every page load before settling green. The new
+// `hasConnected` latch from useFirebaseConnection separates them, and the
+// pre-first-connect window now reads as amber "Connecting…".
+//
+// v16.0.0 — anchor-side fix, ported from MGT Bookings v16.2.0, whose source
+// flags this exact bug: "NB Scheduling's copy has the same latent bug —
+// port this fix on its next touch." The anchor side is now MEASURED at open
+// time instead of guessed from `isMobile`. The dot's x position depends on
+// header flex-wrap, not on viewport width, so a left-anchored popover from a
+// right-edge dot ran off-screen at ~599px (isMobile true, header unwrapped).
+// Prefer right-anchoring (grows leftward, the desktop look) and flip to
+// left-anchoring only when there is no room on the left.
+//
 // Props:
-//   connected  (bool)    — from useFirebaseConnection()
-//   userEmail  (string)  — currently signed-in user's email
-//   isMobile   (bool)    — nudges the popover so it doesn't clip off-screen
+//   connected     (bool)   — from useFirebaseConnection()
+//   hasConnected  (bool)   — from useFirebaseConnection(); latches on first connect
+//   userEmail     (string) — currently signed-in user's email
 
 import { useEffect, useRef, useState } from "react";
 import { R, S } from "../lib/constants.js";
 
-export default function ConnectionStatus({ connected, userEmail, isMobile }) {
+// Rendered popover width: minWidth 220 + 2×12 padding + 2×1 border.
+const POPOVER_W = 246;
+
+export default function ConnectionStatus({ connected, hasConnected, userEmail }) {
   const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(true);
   const wrapRef = useRef(null);
+
+  function toggleOpen() {
+    const node = wrapRef.current;
+    if (node) {
+      const r = node.getBoundingClientRect();
+      // A right-anchored popover spans [r.right − POPOVER_W, r.right]. Keep
+      // that unless it would run past the left viewport edge (8px margin).
+      setAlignRight(r.right - POPOVER_W >= 8);
+    }
+    setOpen(function (v) { return !v; });
+  }
 
   // Close on outside-click + Esc (mirrors Settings.jsx open-day popover).
   useEffect(function () {
@@ -41,21 +71,45 @@ export default function ConnectionStatus({ connected, userEmail, isMobile }) {
     };
   }, [open]);
 
-  const dotColor = connected ? "var(--status-online)" : "var(--status-offline)";
-  const statusText = connected ? "Connected" : "Connection lost";
+  // "connecting" is only the pre-first-connect window; once we've been up,
+  // a drop is a genuine outage and reads red.
+  const state = connected
+    ? "connected"
+    : (hasConnected ? "offline" : "connecting");
+
+  const dotColor = "var(--status-" + (state === "connected" ? "online" : state) + ")";
+  const glowColor = "var(--status-" + (state === "connected" ? "online" : state) + "-glow)";
+
+  const statusText = state === "connected"
+    ? "Connected"
+    : (state === "connecting" ? "Connecting…" : "Connection lost");
+
+  const statusBlurb = state === "connected"
+    ? "Realtime Database is connected."
+    : (state === "connecting"
+      ? "Establishing the connection to the Realtime Database…"
+      : "Lost connection to the Realtime Database. Changes will sync when it reconnects.");
+
+  const title = state === "connected"
+    ? "Connected to Firebase"
+    : (state === "connecting" ? "Connecting to Firebase…" : "Firebase connection lost");
 
   return (
     <div ref={wrapRef} style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
       <button
         type="button"
-        className="mgt-hover-scale"
-        onClick={function () { setOpen(function (v) { return !v; }); }}
-        title={connected ? "Connected to Firebase" : "Firebase connection lost"}
-        aria-label={connected ? "Connected to Firebase" : "Firebase connection lost"}
+        className="mgt-hover-scale mgt-press"
+        onClick={toggleOpen}
+        title={title}
+        aria-label={title}
         style={{
           appearance: "none",
           border: "none",
           background: "transparent",
+          // v16.0.0: the hover rule paints an opaque --bg-hover-card behind
+          // whatever it lifts, so this button needs its own radius or the
+          // hover card renders as a hard-edged rectangle around a round dot.
+          borderRadius: R.pill,
           padding: 6,
           cursor: "pointer",
           display: "inline-flex",
@@ -72,9 +126,7 @@ export default function ConnectionStatus({ connected, userEmail, isMobile }) {
             borderRadius: "50%",
             background: dotColor,
             // Soft glow in the matching colour so it reads as "illuminated".
-            boxShadow: "0 0 0 3px " + (connected
-              ? "rgba(52,199,89,0.25)"
-              : "rgba(255,59,48,0.25)"),
+            boxShadow: "0 0 0 3px " + glowColor,
           }}
         />
       </button>
@@ -84,8 +136,8 @@ export default function ConnectionStatus({ connected, userEmail, isMobile }) {
           style={{
             position: "absolute",
             top: "calc(100% + 8px)",
-            right: isMobile ? "auto" : 0,
-            left: isMobile ? 0 : "auto",
+            right: alignRight ? 0 : "auto",
+            left: alignRight ? "auto" : 0,
             zIndex: 30,
             minWidth: 220,
             padding: 12,
@@ -111,9 +163,7 @@ export default function ConnectionStatus({ connected, userEmail, isMobile }) {
             </span>
           </div>
           <div style={{ ...S.muted, fontSize: 11, marginBottom: 8 }}>
-            {connected
-              ? "Realtime Database is connected."
-              : "Lost connection to the Realtime Database. Changes will sync when it reconnects."}
+            {statusBlurb}
           </div>
           <div style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 8 }}>
             <div style={{ ...S.muted, fontSize: 11, marginBottom: 2 }}>Signed in as</div>

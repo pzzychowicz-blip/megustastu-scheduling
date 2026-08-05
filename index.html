@@ -163,9 +163,18 @@
         --bg-active-off: rgba(142,142,147,0.18);
 
         /* v15.2.0: Firebase connection status dot (AppShell) — solid
-           iOS green / red so the indicator reads clearly at small size. */
+           iOS green / red so the indicator reads clearly at small size.
+           v16.0.0: + a third "connecting" state (amber) for the window
+           before the first successful connect, and glow tokens for all
+           three. The glows used to be rgba literals inline in
+           ConnectionStatus.jsx, which broke the v0.11.0 rule that JS
+           carries no colour literals. */
         --status-online: #34c759;
+        --status-online-glow: rgba(52,199,89,0.25);
         --status-offline: #ff3b30;
+        --status-offline-glow: rgba(255,59,48,0.25);
+        --status-connecting: #ff9f0a;
+        --status-connecting-glow: rgba(255,159,10,0.25);
         --border-active-off: rgba(142,142,147,0.45);
         --text-active-off: #3a3a3c;
 
@@ -299,7 +308,11 @@
 
         /* v15.2.0: Firebase connection status dot (AppShell) */
         --status-online: #32d74b;
+        --status-online-glow: rgba(50,215,75,0.30);
         --status-offline: #ff453a;
+        --status-offline-glow: rgba(255,69,58,0.30);
+        --status-connecting: #ffd60a;
+        --status-connecting-glow: rgba(255,214,10,0.30);
         --border-active-off: rgba(152,152,157,0.50);
         --text-active-off: #d1d1d6;
 

@@ -147,7 +147,10 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   const isDark = useThemeMode(data.settings ? data.settings.darkMode : undefined);
 
   // v15.2.0: live Firebase RTDB connection state for the header status dot.
-  const connected = useFirebaseConnection();
+  // v16.0.0: the hook returns `{connected, hasConnected}` now — the latch
+  // lets <ConnectionStatus> tell "still connecting" apart from "dropped",
+  // instead of flashing red on every page load.
+  const { connected, hasConnected } = useFirebaseConnection();
 
   // ── Loading state ──────────────────────────────────────────────────────
   if (!ready) {
@@ -210,8 +213,8 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
         <ConnectionStatus
           connected={connected}
+          hasConnected={hasConnected}
           userEmail={user.email}
-          isMobile={isMobile}
         />
         <button
           className="mgt-hover-scale mgt-press"
