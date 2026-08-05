@@ -29,6 +29,7 @@ import {
   findShiftForSlot,
   deriveCellState,
   isSlotOpenOnDate,
+  isSlotScheduledOnDate,
 } from "./schedule-logic.js";
 
 function pad2(n) { return String(n).padStart(2, "0"); }
@@ -112,9 +113,15 @@ function buildTableBody(slots, dates, weekShifts, employees, openingDays) {
       // RGB triplet is intentional: pdf-export.js never reads CSS vars,
       // because the printed palette is locked to a light scheme regardless
       // of in-app theme (v0.11.0 decision).
-      if (slotClosed && !emp) {
+      // v16.0.0: two distinct inert cases now. "Closed" = the restaurant
+      // isn't open for this day-part; "—" = it is open, but a per-weekday
+      // override means this row doesn't run today. Distinct glyphs so the
+      // printed sheet doesn't conflate "we were shut" with "this position
+      // wasn't staffed today".
+      const slotUnscheduled = !isSlotScheduledOnDate(slot, d);
+      if ((slotClosed || slotUnscheduled) && !emp) {
         return {
-          content: "Closed",
+          content: slotClosed ? "Closed" : "—",
           styles: {
             fontSize: 8,
             textColor: [136, 136, 136],

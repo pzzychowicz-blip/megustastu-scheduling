@@ -48,9 +48,10 @@
 
 import {
   visibleWeekDates,
-  weekdayKeyForDate,
   isoDate,
-  slotsForDay,
+  slotsForWeek,
+  isSlotScheduledOnDate,
+  weekdayKeyForDate,
   findShiftForSlot,
   findSameDayShift,
   findRequestConflict,
@@ -634,13 +635,18 @@ export function generateWeek(args) {
     };
   }
 
-  // v1.11.0: pass the configured per-section required-role override into
-  // slotsForDay. When `dayRequiredRoles` is null (legacy call), slotsForDay
-  // falls back to the SECTIONS defaults — pre-v1.11.0 behaviour.
-  const slots = slotsForDay(shiftTemplate, dayRequiredRoles);
+  // v16.0.0: `dates` moves ABOVE `slots` — the slot ladder is now the union
+  // across the weekdays this run will actually visit, so it needs them.
+  // visibleWeekDates (not weekDatesWithShifts) is correct here: the
+  // generator must never fill into a closed day.
+  const dates = visibleWeekDates(weekStart, openingDays);
+
+  // v1.11.0: pass the configured per-section required-role override in.
+  // When `dayRequiredRoles` is null (legacy call), the resolver falls back
+  // to the SECTIONS defaults — pre-v1.11.0 behaviour.
+  const slots = slotsForWeek(shiftTemplate, dayRequiredRoles, dates.map(weekdayKeyForDate));
   const slotsByKey = {};
   for (let i = 0; i < slots.length; i++) slotsByKey[slots[i].key] = slots[i];
-  const dates = visibleWeekDates(weekStart, openingDays);
   const rarity = buildRoleRarity(employees);
 
   // v1.6.1: per-employee count of visible-week dates blocked by a
@@ -700,6 +706,10 @@ export function generateWeek(args) {
     for (let s = 0; s < slots.length; s++) {
       const slot = slots[s];
       if (!isSlotOpenOnDate(date, slot, openingDays)) continue;
+      // v16.0.0: THE line that stops the generator filling a row a
+      // per-weekday override drops on this weekday. Without it the
+      // generator would happily staff a slot the grid renders as "—".
+      if (!isSlotScheduledOnDate(slot, date)) continue;
       const existing = findShiftForSlot(workingShifts, dIso, slot);
       if (existing) continue;
       const built = buildCandidates(

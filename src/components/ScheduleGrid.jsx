@@ -43,7 +43,9 @@ import {
   parseIsoDate,
   formatDayHeader,
   formatWeekRange,
-  slotsForDay,
+  slotsForWeek,
+  isSlotScheduledOnDate,
+  weekdayKeyForDate,
   findShiftForSlot,
   deriveCellState,
   shiftsForWeek,
@@ -202,26 +204,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // full week.
   const openingDays = resolvedConfig.openingDays || DEFAULT_OPENING_DAYS;
 
-  // Slot definitions for the week.
-  // v1.11.0: pass dayRequiredRoles so the resulting slotDef.requiredRoles
-  // reflects the manager's per-section configuration. slotsForDay's bare-
-  // call behaviour is preserved (override is optional).
-  const slots = useMemo(
-    function () { return slotsForDay(template, dayRequiredRoles); },
-    [template, dayRequiredRoles]
-  );
-
-  // v1.4.0: slot lookup by key for the generator-results modal. Built off
-  // the same `slots` array so it stays in sync if the template changes.
-  const slotsByKey = useMemo(function () {
-    const m = {};
-    for (let i = 0; i < slots.length; i++) m[slots[i].key] = slots[i];
-    return m;
-  }, [slots]);
-
   // Narrow the shifts map to this week before the grid scans it. Defined
-  // here (above `dates`) so the visible-columns computation can keep any
-  // closed weekday that still carries a real shift (v15.3.0).
+  // above `dates` so the visible-columns computation can keep any closed
+  // weekday that still carries a real shift (v15.3.0).
   const weekShifts = useMemo(function () { return shiftsForWeek(shifts, weekStart); }, [shifts, weekStart]);
 
   // v15.3.0: visible columns = the open days PLUS any closed weekday that
@@ -232,6 +217,40 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     function () { return weekDatesWithShifts(weekStart, openingDays, weekShifts); },
     [weekStart, openingDays, weekShifts]
   );
+
+  // v16.0.0: which weekdays are actually on display. Feeds slotsForWeek so
+  // the ladder is the union of what THESE days need.
+  //
+  // Deriving from `dates` rather than all seven weekdays is deliberate: a
+  // Saturday-only headcount bump must not grow dead rows Mon–Fri when
+  // Saturday is closed and empty. And because weekDatesWithShifts keeps a
+  // closed weekday that still carries a shift, an orphan sitting at a high
+  // index still pulls its day into `dates`, into the union, and therefore
+  // stays visible. The two rules compose.
+  const visibleWeekdayKeys = useMemo(
+    function () { return dates.map(weekdayKeyForDate); },
+    [dates]
+  );
+
+  // Slot definitions for the week.
+  // v1.11.0: pass dayRequiredRoles so the resulting slotDef.requiredRoles
+  // reflects the manager's per-section configuration.
+  // v16.0.0: slotsForWeek returns the UNION ladder across the visible
+  // weekdays — see the design note on slotsForWeek. Defined below `dates`
+  // because it now depends on them; neither `weekShifts` nor `dates` reads
+  // `slots`, so moving them above introduces no cycle.
+  const slots = useMemo(
+    function () { return slotsForWeek(template, dayRequiredRoles, visibleWeekdayKeys); },
+    [template, dayRequiredRoles, visibleWeekdayKeys]
+  );
+
+  // v1.4.0: slot lookup by key for the generator-results modal. Built off
+  // the same `slots` array so it stays in sync if the template changes.
+  const slotsByKey = useMemo(function () {
+    const m = {};
+    for (let i = 0; i < slots.length; i++) m[slots[i].key] = slots[i];
+    return m;
+  }, [slots]);
 
   // v0.10.2: cache today's ISO once per render so the date-pill loop
   // doesn't restringify a Date on every column.
@@ -890,7 +909,11 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // the grid keeps its row/column rhythm but the manager can see the slot
   // is unavailable that day. No click handler, no border-emphasis — a
   // soft dashed muted block reading "—".
-  function renderClosedCell(date, slot) {
+  // v16.0.0: `label` distinguishes the two inert cases — "Closed" (the
+  // restaurant isn't open for this day-part) vs "—" (it is open, but a
+  // per-weekday override means this row doesn't run today). Defaults to
+  // "Closed" so every pre-v16.0.0 call site is unchanged.
+  function renderClosedCell(date, slot, label) {
     const dIso = isoDate(date);
     return (
       <div
@@ -910,7 +933,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           opacity: 0.7,
         }}
       >
-        Closed
+        {label || "Closed"}
       </div>
     );
   }
@@ -921,6 +944,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // flag rather than the inert placeholder — never hide who worked. Empty
   // closed slots keep the placeholder. Shared by the desktop + mobile gates
   // so they stay in lockstep with the PDF export's identical rule.
+  // v16.0.0: the same router for a slot the day's per-weekday override
+  // drops. Identical rule — a real shift is never hidden behind a
+  // placeholder — but the empty case reads "—" rather than "Closed", since
+  // the restaurant IS open; it's this row that doesn't run today.
+  function renderUnscheduledSlotCell(date, slot) {
+    const s = findShiftForSlot(weekShifts, isoDate(date), slot);
+    if (s && s.employeeId) return renderCell(date, slot, true);
+    return renderClosedCell(date, slot, "—");
+  }
+
   function renderClosedSlotCell(date, slot) {
     const closedShift = findShiftForSlot(weekShifts, isoDate(date), slot);
     if (closedShift && closedShift.employeeId) return renderCell(date, slot, true);
@@ -1350,9 +1383,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                 <div>{slot.humanLabel.replace(slot.sectionLabel + " ", "")}</div>
                 {/* v15.1.0: deliberately the FLAT template times — this is
                     the reference column (mirrors the PDF row label). Solo
-                    weekdays show their per-date times inside the cells. */}
+                    weekdays show their per-date times inside the cells.
+                    v16.0.0: per-weekday overrides make that divergence more
+                    common, so the row now says "· varies" when at least one
+                    visible weekday runs this slot at different times. The
+                    real hours stay per-cell; this just stops the reference
+                    column reading as though it applied to the whole row. */}
                 <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
                   {slot.defaultStart}–{slot.defaultEnd}
+                  {slot.weekdayTimes ? " · varies" : ""}
                 </div>
               </div>
               {dates.map(function (d) {
@@ -1361,8 +1400,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                 // its row alignment across columns.
                 // v15.3.0: …unless a real shift still lives in that closed
                 // slot, in which case the assignment stays visible.
+                // v16.0.0: closed-ness is checked FIRST — a closed
+                // day-part keeps the stronger "Closed" signal even if a
+                // per-weekday override would also have dropped the row.
                 if (!isSlotOpenOnDate(d, slot, openingDays)) {
                   return renderClosedSlotCell(d, slot);
+                }
+                if (!isSlotScheduledOnDate(slot, d)) {
+                  return renderUnscheduledSlotCell(d, slot);
                 }
                 return renderCell(d, slot);
               })}
@@ -1424,6 +1469,11 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                 const prev = i > 0 ? slots[i - 1] : null;
                 const showHeader = i === 0 || isSectionBoundary(prev, slot);
                 const slotOpen = isSlotOpenOnDate(d, slot, openingDays);
+                // v16.0.0: same three-way branch as desktop. Note the slot
+                // list is NOT pre-filtered — isSectionBoundary reads the
+                // full array, and filtering is exactly what broke the
+                // section headers back in v1.3.0.
+                const slotRuns = isSlotScheduledOnDate(slot, d);
                 return (
                   <div key={slot.key + "-" + dIso} style={{ display: "contents" }}>
                     {showHeader
@@ -1447,7 +1497,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                         </div>
                       )
                       : null}
-                    {slotOpen ? renderCell(d, slot) : renderClosedSlotCell(d, slot)}
+                    {!slotOpen
+                      ? renderClosedSlotCell(d, slot)
+                      : (slotRuns ? renderCell(d, slot) : renderUnscheduledSlotCell(d, slot))}
                   </div>
                 );
               })}
