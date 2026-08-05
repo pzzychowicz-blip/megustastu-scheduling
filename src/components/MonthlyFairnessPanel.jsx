@@ -85,6 +85,7 @@
 import { useState } from "react";
 import { R, S } from "../lib/constants.js";
 import { addDays, employeeTenureOverlapsDates } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import EmployeeFairnessModal from "./EmployeeFairnessModal.jsx";
 
 export default function MonthlyFairnessPanel({
@@ -388,21 +389,25 @@ export default function MonthlyFairnessPanel({
         })}
       </div>
 
-      <EmployeeFairnessModal
-        open={detailEmployee !== null}
-        employee={detailEmployee}
-        weekStart={weekStart}
-        shifts={shifts}
-        requests={requests}
-        shiftTemplate={shiftTemplate}
-        configRevisions={configRevisions}
-        settings={settings}
-        dayRequiredRoles={dayRequiredRoles}
-        openingDays={openingDays}
-        isMobile={isMobile}
-        onClose={function () { setDetailEmployeeId(null); }}
-        onJumpToWeek={typeof onJumpToWeek === "function" ? handleJumpToWeekFromModal : undefined}
-      />
+      <ModalPresence show={detailEmployee !== null}>
+        {detailEmployee !== null ? (
+          <EmployeeFairnessModal
+            open
+            employee={detailEmployee}
+            weekStart={weekStart}
+            shifts={shifts}
+            requests={requests}
+            shiftTemplate={shiftTemplate}
+            configRevisions={configRevisions}
+            settings={settings}
+            dayRequiredRoles={dayRequiredRoles}
+            openingDays={openingDays}
+            isMobile={isMobile}
+            onClose={function () { setDetailEmployeeId(null); }}
+            onJumpToWeek={typeof onJumpToWeek === "function" ? handleJumpToWeekFromModal : undefined}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

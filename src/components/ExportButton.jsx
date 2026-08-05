@@ -24,6 +24,7 @@
 import { useState, forwardRef, useImperativeHandle } from "react";
 import { BTN } from "../lib/constants.js";
 import { isWeekComplete, countEmptyCells } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import ExportWarningModal from "./ExportWarningModal.jsx";
 
 // pdf-export.js (and its jspdf dependency tree, ~150KB gz with html2canvas
@@ -111,13 +112,17 @@ function ExportButton({
       >
         Export PDF
       </button>
-      <ExportWarningModal
-        open={warnOpen}
-        emptyCount={emptyCount}
-        isMobile={isMobile === true}
-        onClose={function () { setWarnOpen(false); }}
-        onConfirm={handleConfirmIncomplete}
-      />
+      <ModalPresence show={warnOpen}>
+        {warnOpen ? (
+          <ExportWarningModal
+            open
+            emptyCount={emptyCount}
+            isMobile={isMobile === true}
+            onClose={function () { setWarnOpen(false); }}
+            onConfirm={handleConfirmIncomplete}
+          />
+        ) : null}
+      </ModalPresence>
     </>
   );
 }

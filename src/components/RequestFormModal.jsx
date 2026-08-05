@@ -26,7 +26,7 @@
 
 import { useEffect, useState } from "react";
 import { R, S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
-import { Overlay, Fld, mkInp, mkBtn } from "./atoms.jsx";
+import { Overlay, Fld, mkInp, mkBtn, usePresence } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
 
@@ -96,7 +96,11 @@ export default function RequestFormModal({
     (form.type !== "shift-preference" ||
       form.preferredDayPart === "day" ||
       form.preferredDayPart === "evening");
-  useEnterSubmit(open, enterCanSave, handleSave);
+  // v16.0.0: during ModalPresence's 200ms exit the cached element still
+  // carries open={true}, so a stray Enter would re-fire the primary
+  // action on a modal that is already closing. Gate on !leaving.
+  const { leaving } = usePresence();
+  useEnterSubmit(open && !leaving, enterCanSave, handleSave);
   useEscClose(open, onClose);
 
   if (!open) return null;

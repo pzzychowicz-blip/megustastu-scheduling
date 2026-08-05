@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from "react";
 import { R, S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
-import { mkBtn, TBadge } from "./atoms.jsx";
+import { mkBtn, TBadge, ModalPresence } from "./atoms.jsx";
 import { isoDate, parseIsoDate } from "../lib/schedule-logic.js";
 import RequestFormModal from "./RequestFormModal.jsx";
 
@@ -254,15 +254,19 @@ export default function RequestsList({ requests, employees, actions, isMobile })
       {pastHeader}
       {pastSection}
 
-      <RequestFormModal
-        open={modalOpen}
-        request={editing}
-        employees={employees}
-        isMobile={isMobile}
-        onClose={closeModal}
-        onSave={handleSave}
-        onDelete={handleDelete}
-      />
+      <ModalPresence show={modalOpen}>
+        {modalOpen ? (
+          <RequestFormModal
+            open
+            request={editing}
+            employees={employees}
+            isMobile={isMobile}
+            onClose={closeModal}
+            onSave={handleSave}
+            onDelete={handleDelete}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

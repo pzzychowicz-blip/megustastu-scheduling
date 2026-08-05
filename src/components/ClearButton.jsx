@@ -29,6 +29,7 @@
 import { useState, forwardRef, useImperativeHandle } from "react";
 import { BTN } from "../lib/constants.js";
 import { formatWeekRange, isoDate } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import ClearConfirmModal from "./ClearConfirmModal.jsx";
 
 // v15.3.0: forwardRef so the `C` keyboard shortcut in ScheduleGrid can open
@@ -149,17 +150,21 @@ function ClearButton({
         Clear…
       </button>
 
-      <ClearConfirmModal
-        open={open}
-        weekLabel={formatWeekRange(weekStart)}
-        weekDates={weekDates}
-        weekShifts={weekShifts}
-        slots={slots}
-        busy={busy}
-        isMobile={isMobile}
-        onClose={handleClose}
-        onConfirm={handleConfirm}
-      />
+      <ModalPresence show={open}>
+        {open ? (
+          <ClearConfirmModal
+            open
+            weekLabel={formatWeekRange(weekStart)}
+            weekDates={weekDates}
+            weekShifts={weekShifts}
+            slots={slots}
+            busy={busy}
+            isMobile={isMobile}
+            onClose={handleClose}
+            onConfirm={handleConfirm}
+          />
+        ) : null}
+      </ModalPresence>
     </>
   );
 }

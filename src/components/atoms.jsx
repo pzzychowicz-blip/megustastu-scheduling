@@ -17,8 +17,22 @@
 //   - mkInp        — builder for an <input> with S.inputBase + overrides.
 //   - mkBtn        — builder for a <button> with BTN.base + variant.
 //
+// v16.0.0 — animation primitives, ported from MGT Bookings so the two apps
+// share one motion vocabulary. These pair with the keyframes defined in
+// index.html; neither half is useful without the other.
+//   - Presence     — generic enter/exit primitive (delayed unmount so the
+//                    exit animation can actually run).
+//   - Toast        — thin alias: Presence + the toast keyframes.
+//   - ModalPresence— the same lifecycle, but renders NO wrapper element;
+//                    publishes `{leaving}` on PresenceContext for Overlay.
+//   - usePresence  — read that context.
+//   - Reveal       — height (or width) expand/collapse via grid 0fr↔1fr.
+//   - AutoHeight   — eases its own height when its content is replaced.
+//   - SlideView    — directional slide-in wrapper for view/tab switches.
+//
 // Vite's automatic JSX runtime: NO React import required.
 
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { R, S, BTN } from "../lib/constants.js";
 
 // ── Overlay ──────────────────────────────────────────────────────────────
@@ -28,11 +42,40 @@ import { R, S, BTN } from "../lib/constants.js";
 //   title      (str)  — header title text
 //   isMobile   (bool) — toggle full-sheet vs centered-card layout
 //   children   (node) — modal body
+//   footer     (node) — v16.0.0, optional. When given, the sheet becomes a
+//                       flex column: `children` scroll in a bounded region
+//                       and `footer` stays pinned to the bottom edge.
 //
 // The only backdropFilter blur in the app lives here. Other surfaces
 // must NOT add blur — see CLAUDE.md "Performance gotcha".
-export function Overlay({ open, onClose, title, isMobile, children }) {
+//
+// v16.0.0 — enter/exit animation. Overlay reads `{leaving}` from
+// PresenceContext and swaps its scrim + sheet to the *-out keyframes before
+// unmounting. That context is provided by <ModalPresence> at the mount
+// site; with no provider the default `{leaving: false}` applies, so an
+// un-wrapped modal still works exactly as before (enter animation only,
+// then a hard unmount).
+export function Overlay({ open, onClose, title, isMobile, children, footer }) {
+  const { leaving } = usePresence();
+
+  // v16.0.0: mobile body-scroll lock. Without it the page behind a
+  // full-screen sheet scrolls under the user's finger. Desktop doesn't need
+  // it — the scrim covers a centred card and the page beneath is inert.
+  // Hooks must run unconditionally, so the guard lives inside the effect
+  // rather than around it.
+  useEffect(function () {
+    if (!open || !isMobile) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return function () { document.body.style.overflow = prev; };
+  }, [open, isMobile]);
+
   if (!open) return null;
+
+  const scrimClass = leaving ? "mgt-scrim-out" : "mgt-scrim-in";
+  const sheetClass = isMobile
+    ? (leaving ? "mgt-sheet-out" : "mgt-sheet-in")
+    : (leaving ? "mgt-card-out" : "mgt-card-in");
 
   const backdropStyle = {
     position: "fixed",
@@ -53,8 +96,15 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
         height: "100%",
         background: "var(--bg-overlay-sheet)",
         borderRadius: 0,
+        // v16.0.0: safe-area insets so a full-screen sheet clears the
+        // notch and the home indicator on iOS.
         padding: 16,
-        overflow: "auto",
+        paddingTop: "max(16px, env(safe-area-inset-top))",
+        paddingBottom: "max(16px, env(safe-area-inset-bottom))",
+        boxSizing: "border-box",
+        overflow: footer ? "hidden" : "auto",
+        display: footer ? "flex" : undefined,
+        flexDirection: footer ? "column" : undefined,
       }
     : {
         width: "100%",
@@ -64,23 +114,50 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
         borderRadius: R.sheet,
         padding: 20,
         boxShadow: "var(--shadow-overlay)",
-        // v1.9.0 (perslot+ commit, fourth round): overflow changed from
-        // `auto` to `visible` so transform-scaled inputs inside the modal
-        // (Notes textareas, time/date inputs, selects, Toggles) can lift
-        // visibly past the sheet's border on hover. Trade-off: long
-        // modal content (taller than maxHeight) extends past the sheet
-        // boundary into the backdrop. Typical form heights stay well
-        // under 80vh (the longest is RequestFormModal at ~620 px max),
-        // so this rarely happens in practice. Mobile sheet keeps
-        // overflow:auto since it fills the full viewport and tall
-        // content needs internal scrolling there.
         maxHeight: "80vh",
-        overflow: "visible",
+        // v1.9.0 (perslot+ commit, fourth round): overflow is `visible`, not
+        // `auto`, so transform-scaled inputs inside the modal (Notes
+        // textareas, time/date inputs, selects, Toggles) can lift visibly
+        // past the sheet's border on hover. Trade-off: content taller than
+        // maxHeight spills past the sheet into the backdrop.
+        //
+        // v16.0.0: passing `footer` is the supported fix for that spill —
+        // the sheet becomes a flex column with a bounded, scrolling body
+        // and a pinned footer, so the action buttons can never be pushed
+        // off the backdrop. Modals WITHOUT a footer keep the historic
+        // overflow:visible behaviour untouched.
+        overflow: footer ? "hidden" : "visible",
+        display: footer ? "flex" : undefined,
+        flexDirection: footer ? "column" : undefined,
       };
+
+  // The scrolling body region only exists in the footer layout. `minHeight:
+  // 0` is required for a flex child to be allowed to shrink below its
+  // content height — without it the body refuses to scroll and pushes the
+  // footer out instead. The negative margin + matching padding give
+  // hover-scaled rows room to lift before the clip kicks in (same trick the
+  // grid's outer wrapper uses).
+  const bodyStyle = footer
+    ? {
+        flex: "1 1 auto",
+        minHeight: 0,
+        overflowY: "auto",
+        margin: isMobile ? "0 -16px" : "0 -20px",
+        padding: isMobile ? "4px 16px" : "4px 20px",
+      }
+    : undefined;
+
+  const footerStyle = {
+    flexShrink: 0,
+    borderTop: "1px solid var(--hairline)",
+    paddingTop: 12,
+    marginTop: 12,
+  };
 
   return (
     <div
       style={backdropStyle}
+      className={scrimClass}
       // v15.3.0: sentinel for the shared keyboard handlers. Every modal
       // renders through Overlay, so a mounted backdrop carrying this
       // attribute means "a modal is open" — isAnyOverlayOpen() in
@@ -91,11 +168,12 @@ export function Overlay({ open, onClose, title, isMobile, children }) {
         if (e.target === e.currentTarget && onClose) onClose();
       }}
     >
-      <div style={sheetStyle}>
+      <div style={sheetStyle} className={sheetClass}>
         {title ? (
-          <div style={{ ...S.h2, marginBottom: 12 }}>{title}</div>
+          <div style={{ ...S.h2, marginBottom: 12, flexShrink: 0 }}>{title}</div>
         ) : null}
-        {children}
+        {footer ? <div style={bodyStyle}>{children}</div> : children}
+        {footer ? <div style={footerStyle}>{footer}</div> : null}
       </div>
     </div>
   );
@@ -400,5 +478,246 @@ export function mkBtn(props) {
     <button style={merged} {...rest}>
       {children}
     </button>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v16.0.0 — Animation primitives (ported from MGT Bookings)
+//
+// These pair with the @keyframes + utility classes in index.html. Both apps
+// now share the same motion vocabulary; improve a primitive in one and port
+// the change to the other, exactly as the .mgt-hover-scale contract works.
+//
+// Every one of these honours the reduced-motion kill switches for free,
+// because they drive CSS animations/transitions rather than the Web
+// Animations API. Anything added here that uses WAAPI must check
+// `document.documentElement.dataset.motion === "reduce"` in JS itself —
+// CSS cannot reach WAAPI.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── usePresenceLifecycle ─────────────────────────────────────────────────
+// The bare "keep it mounted long enough for the exit animation" state
+// machine. Returns [render, leaving]:
+//   render  — whether to render at all
+//   leaving — whether the exit animation should be playing right now
+//
+// On show→false the node stays mounted, `leaving` flips true (so the caller
+// can swap to an *-out class), and `render` drops after outMs. Shared by
+// Presence and ModalPresence so the timing logic exists once.
+function usePresenceLifecycle(show, outMs) {
+  const [render, setRender] = useState(show === true);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(function () {
+    if (show) {
+      setRender(true);
+      setLeaving(false);
+      return undefined;
+    }
+    if (!render) return undefined;   // never shown → nothing to animate out
+    setLeaving(true);
+    const t = setTimeout(function () {
+      setRender(false);
+      setLeaving(false);
+    }, outMs);
+    return function () { clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `render` is read as a closure snapshot on purpose
+  }, [show]);
+  return [render, leaving];
+}
+
+// ── Presence ─────────────────────────────────────────────────────────────
+// Generic enter/exit wrapper. Caches the last truthy children so the exit
+// animation still has something to show when the source expression goes
+// null mid-flight (the common case: `cond ? <Thing/> : null`).
+//
+//   <Presence show={x} inClass="mgt-slide-in" outClass="mgt-slide-out">…</Presence>
+export function Presence({ show, inClass, outClass, outMs = 200, children, style, tag = "div" }) {
+  const last = useRef(null);
+  if (children) last.current = children;
+  const [render, leaving] = usePresenceLifecycle(show, outMs);
+  if (!render) return null;
+  const Tag = tag;
+  return <Tag className={leaving ? outClass : inClass} style={style}>{children || last.current}</Tag>;
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────
+// Thin alias: a floating status message = Presence + the toast keyframes.
+// `style` lets a one-slot toast layer pass `gridArea` so a leaving and an
+// entering toast overlap in the same cell and crossfade in place rather
+// than stacking and reflowing the layout.
+export function Toast({ show, children, style }) {
+  return (
+    <Presence show={show} inClass="mgt-toast-in" outClass="mgt-toast-out" outMs={210} style={style}>
+      {children}
+    </Presence>
+  );
+}
+
+// ── ModalPresence + PresenceContext ──────────────────────────────────────
+// Exit animations for Overlay-based modals.
+//
+// Scheduling's modals are ALWAYS mounted and toggle an `open` prop, while
+// the data behind them goes null the moment the parent closes them (e.g.
+// ScheduleGrid sets `modalCell = null`, so `slotDef` becomes null and the
+// modal's `if (!open || !slotDef) return null` fires). That means the modal
+// cannot animate its own exit — by the time it knows it is closing, its
+// content is gone.
+//
+// ModalPresence solves it by caching the last truthy CHILD ELEMENT, whose
+// props still hold the old data. During the exit it re-renders that cached
+// element, so the modal paints exactly as it did before the close, and
+// publishes `{leaving: true}` on PresenceContext for Overlay to read.
+//
+// Usage at the mount site:
+//   <ModalPresence show={cond}>{cond ? <SomeModal open … /> : null}</ModalPresence>
+//
+// It renders NO wrapper element, so the modal's own fixed positioning is
+// untouched.
+//
+// NB the cached element keeps `open={true}` in its props for the duration
+// of the exit. Modals that bind global keyboard handlers must gate them on
+// `!leaving` (via usePresence) so a stray Enter can't re-submit a form that
+// is already closing.
+export const PresenceContext = createContext({ leaving: false });
+export function usePresence() { return useContext(PresenceContext); }
+
+export function ModalPresence({ show, children, outMs = 200 }) {
+  const last = useRef(null);
+  if (children) last.current = children;
+  const [render, leaving] = usePresenceLifecycle(show, outMs);
+  if (!render) return null;
+  return (
+    <PresenceContext.Provider value={{ leaving: leaving }}>
+      {children || last.current}
+    </PresenceContext.Provider>
+  );
+}
+
+// ── Reveal ───────────────────────────────────────────────────────────────
+// Expand/collapse without knowing the content height, via a CSS grid track
+// easing between 0fr and 1fr. Set `horizontal` to ease the WIDTH instead.
+//
+// Three subtleties, all load-bearing:
+//   1. Double requestAnimationFrame — the 0fr→1fr change must land in a
+//      different frame from the mount, or React batches them and the
+//      transition never fires.
+//   2. `last.current` caches children so a collapse still has content to
+//      animate when the source expression goes null.
+//   3. `revealed` flips the inner track to overflow:visible 320ms after
+//      opening, so a `.mgt-hover-scale` child isn't clipped at rest. It
+//      goes back to hidden immediately on close so the collapse still
+//      clips cleanly. Timeout-driven rather than transitionend, which is
+//      unreliable on grid-template-rows across browsers.
+export function Reveal({ show, children, style, horizontal = false }) {
+  const last = useRef(null);
+  if (children) last.current = children;
+  const [mounted, setMounted] = useState(show === true);
+  const [open, setOpen] = useState(show === true);
+  const [revealed, setRevealed] = useState(show === true);
+  useEffect(function () {
+    if (show) {
+      setMounted(true);
+      let r2 = 0;
+      const r1 = requestAnimationFrame(function () {
+        r2 = requestAnimationFrame(function () { setOpen(true); });
+      });
+      const tv = setTimeout(function () { setRevealed(true); }, 320);
+      return function () {
+        cancelAnimationFrame(r1);
+        cancelAnimationFrame(r2);
+        clearTimeout(tv);
+      };
+    }
+    setOpen(false);
+    setRevealed(false);
+    const t = setTimeout(function () { setMounted(false); }, 300);
+    return function () { clearTimeout(t); };
+  }, [show]);
+  if (!mounted) return null;
+  const track = horizontal
+    ? {
+        display: "inline-grid",
+        gridTemplateColumns: open ? "1fr" : "0fr",
+        transition: "grid-template-columns 280ms cubic-bezier(.4,0,.2,1), opacity 220ms ease",
+      }
+    : {
+        display: "grid",
+        gridTemplateRows: open ? "1fr" : "0fr",
+        transition: "grid-template-rows 280ms cubic-bezier(.4,0,.2,1), opacity 220ms ease",
+      };
+  const innerStyle = horizontal
+    ? { overflow: revealed ? "visible" : "hidden", minWidth: 0, minHeight: 0, display: "flex", alignItems: "center" }
+    : { overflow: revealed ? "visible" : "hidden", minHeight: 0 };
+  return (
+    <div style={{ ...track, opacity: open ? 1 : 0, ...(style || {}) }}>
+      <div style={innerStyle}>{children || last.current}</div>
+    </div>
+  );
+}
+
+// ── AutoHeight ───────────────────────────────────────────────────────────
+// For content-REPLACE cases where there is no clean show/hide to drive a
+// Reveal (a tab swap, a form section switching shape). A ResizeObserver
+// measures the inner content and the wrapper eases `height` to match.
+//
+// `overflow` is visible AT REST and hidden ONLY while the height transition
+// runs: clipping at rest would cut off any `.mgt-hover-scale` lift inside,
+// but not clipping during the transition would let the new content pop out
+// at full size on the first frame.
+export function AutoHeight({ children, style, linear }) {
+  const inner = useRef(null);
+  const hRef = useRef(null);
+  const [h, setH] = useState(null);          // null = auto until first measure
+  const [animating, setAnimating] = useState(false);
+  useLayoutEffect(function () {
+    const el = inner.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    function measure() {
+      const next = el.offsetHeight;
+      const prev = hRef.current;
+      // Only a CHANGE from a known prior height animates. The first
+      // (null → number) measure must not clip the rest state.
+      if (prev != null && next !== prev) setAnimating(true);
+      hRef.current = next;
+      setH(next);
+    }
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return function () { ro.disconnect(); };
+  }, []);
+  return (
+    <div
+      onTransitionEnd={function (e) { if (e.propertyName === "height") setAnimating(false); }}
+      style={{
+        height: h == null ? "auto" : h,
+        overflow: animating ? "hidden" : "visible",
+        transition: "height 280ms " + (linear ? "linear" : "ease"),
+        ...(style || {}),
+      }}
+    >
+      <div ref={inner}>{children}</div>
+    </div>
+  );
+}
+
+// ── SlideView ────────────────────────────────────────────────────────────
+// Directional slide-in for view/tab switches. The PARENT re-keys it
+// (`key={something}`) so a change remounts it and replays the animation;
+// `dir` is "mgt-view-in-left" or "mgt-view-in-right".
+//
+// `overflow: hidden` applies ONLY while the slide runs, so the 28px
+// translateX can't spawn a transient horizontal scrollbar — then it goes
+// back to visible so hover lifts aren't clipped at rest.
+export function SlideView({ dir, children, style }) {
+  const [animating, setAnimating] = useState(true);
+  return (
+    <div
+      className={animating ? dir : undefined}
+      onAnimationEnd={function () { setAnimating(false); }}
+      style={{ overflow: animating ? "hidden" : "visible", ...(style || {}) }}
+    >
+      {children}
+    </div>
   );
 }

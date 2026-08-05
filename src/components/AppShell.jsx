@@ -23,6 +23,7 @@ import {
   isShiftTemplateMigrated,
   materializeShiftTemplate,
 } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
@@ -324,11 +325,15 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         {tabNav}
         {body}
       </div>
-      <ShortcutsModal
-        open={showShortcuts}
-        isMobile={isMobile}
-        onClose={function () { setShowShortcuts(false); }}
-      />
+      <ModalPresence show={showShortcuts}>
+        {showShortcuts ? (
+          <ShortcutsModal
+            open
+            isMobile={isMobile}
+            onClose={function () { setShowShortcuts(false); }}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

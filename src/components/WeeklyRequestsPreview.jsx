@@ -32,6 +32,7 @@
 import { useState } from "react";
 import { R, S, REQUEST_TYPES } from "../lib/constants.js";
 import { addDays, isoDate, parseIsoDate } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import RequestPreviewModal from "./RequestPreviewModal.jsx";
 
 // Local copy of the RequestsList row formatter so we don't introduce a
@@ -184,13 +185,17 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
       {/* v1.9.0: read-only preview modal. Owned locally — ScheduleGrid
           doesn't see this state. The modal closes via Close button,
           backdrop click, or Esc (handled by the Overlay atom). */}
-      <RequestPreviewModal
-        open={previewRequest !== null}
-        request={previewRequest}
-        employees={employees}
-        isMobile={isMobile}
-        onClose={function () { setPreviewRequest(null); }}
-      />
+      <ModalPresence show={previewRequest !== null}>
+        {previewRequest !== null ? (
+          <RequestPreviewModal
+            open
+            request={previewRequest}
+            employees={employees}
+            isMobile={isMobile}
+            onClose={function () { setPreviewRequest(null); }}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

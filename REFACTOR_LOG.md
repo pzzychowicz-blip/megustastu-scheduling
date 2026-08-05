@@ -106,6 +106,67 @@ DEV browser: token values resolve (`--r-card` → 12px etc.), and spot-checked
 computed radii match their pre-sweep pixel values (Generate button 12px,
 tab pill 8px, date pill 10px).
 
+### Phase 3 — Animation primitives + animated modals
+
+Ported Bookings' animation atoms into `atoms.jsx` (`Presence`, `Toast`,
+`ModalPresence` + `PresenceContext` / `usePresence`, `Reveal`,
+`AutoHeight`, `SlideView`, and the shared `usePresenceLifecycle` state
+machine), then used them to give every modal a real open/close animation.
+
+**The structural problem this had to solve.** Scheduling's modals are
+*always mounted* and toggle an `open` prop, while the data behind them
+goes null the instant the parent closes them — `ScheduleGrid` sets
+`modalCell = null`, so `slotDef` becomes null and
+`if (!open || !slotDef) return null` fires. A modal therefore cannot
+animate its own exit: by the time it knows it is closing, its content is
+already gone. `ModalPresence` fixes this by caching the last truthy child
+*element*, whose props still hold the old data, and re-rendering it for
+the duration of the exit while publishing `{leaving: true}` on
+`PresenceContext`. All ten mount sites were converted to
+`<ModalPresence show={cond}>{cond ? <Modal open … /> : null}</ModalPresence>`.
+
+`Overlay` now reads that context and swaps its scrim and sheet to the
+`*-out` keyframes before unmounting. With no provider the context default
+`{leaving: false}` applies, so an un-wrapped Overlay still behaves exactly
+as before.
+
+Also on `Overlay`:
+
+- **`footer` slot (new, optional).** The sheet becomes a flex column with a
+  bounded scrolling body and a pinned footer. This is the supported fix for
+  the "tall modal spills past the sheet" problem that v1.9.0's
+  `overflow: visible` introduced and that two modals had patched with
+  ad-hoc inner scrollers. Modals *without* a footer keep `overflow: visible`
+  untouched, so hover-scaled inputs still lift past the border.
+- **Mobile body-scroll lock** — the page behind a full-screen sheet no
+  longer scrolls under the user's finger.
+- **Safe-area insets** on the mobile sheet, so it clears the notch and the
+  home indicator.
+
+**Enter-key guard.** Because the cached element keeps `open={true}` through
+the 200 ms exit, a stray Enter could re-fire a modal's primary action while
+it was closing. The four modals wired to `useEnterSubmit` (`ShiftFormModal`,
+`EmployeeFormModal`, `RequestFormModal`, `ExportWarningModal`) now read
+`usePresence()` and gate on `open && !leaving`. `useEscClose` was left
+ungated on purpose — `onClose` during a close is idempotent.
+
+**Known minor consequence:** `isAnyOverlayOpen()` (`src/lib/keyboard.js`)
+probes for a mounted `data-mgt-overlay`, so the global keyboard shortcuts
+stay suppressed for the 200 ms of the exit animation. A keypress landing in
+that window does nothing. Accepted rather than worked around.
+
+**Files changed:** `src/components/atoms.jsx` (+7 exports, Overlay rewrite),
+the ten mount sites (`ScheduleGrid` ×2, `AppShell`, `ClearButton`,
+`ExportButton`, `GenerateButton`, `EmployeesList`, `RequestsList`,
+`WeeklyRequestsPreview`, `MonthlyFairnessPanel`), the four Enter-submit
+modals, `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. In the DEV browser, instrumented
+the full modal lifecycle: open → `mgt-scrim-in` / `mgt-card-in`, settled,
+close → `mgt-scrim-out` / `mgt-card-out`, unmounted after ~200 ms. With
+`data-motion="reduce"` stamped, scrim / card / hover-scale all collapse to
+`1e-06s`, confirming both reduced-motion switches reach the new animations.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

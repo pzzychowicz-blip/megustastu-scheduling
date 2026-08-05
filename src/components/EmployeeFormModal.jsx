@@ -32,7 +32,7 @@ import {
   ROLE_COLORS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
-import { Overlay, Fld, mkInp, mkBtn, TBadge } from "./atoms.jsx";
+import { Overlay, Fld, mkInp, mkBtn, TBadge, usePresence } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
 
@@ -105,7 +105,11 @@ export default function EmployeeFormModal({
     form.name.trim().length > 0 &&
     form.roles.length > 0 &&
     !(Boolean(form.activeFrom) && Boolean(form.activeUntil) && form.activeUntil < form.activeFrom);
-  useEnterSubmit(open, enterCanSave, handleSave);
+  // v16.0.0: during ModalPresence's 200ms exit the cached element still
+  // carries open={true}, so a stray Enter would re-fire the primary
+  // action on a modal that is already closing. Gate on !leaving.
+  const { leaving } = usePresence();
+  useEnterSubmit(open && !leaving, enterCanSave, handleSave);
   useEscClose(open, onClose);
 
   if (!open) return null;

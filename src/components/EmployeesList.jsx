@@ -14,7 +14,7 @@ import {
   R, S, BTN, ROLE_COLORS, WEEKDAYS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
-import { mkBtn, TBadge } from "./atoms.jsx";
+import { mkBtn, TBadge, ModalPresence } from "./atoms.jsx";
 import { parseIsoDate } from "../lib/schedule-logic.js";
 import EmployeeFormModal from "./EmployeeFormModal.jsx";
 
@@ -294,14 +294,18 @@ export default function EmployeesList({ employees, actions, isMobile }) {
       {archivedHeader}
       {archivedSection}
 
-      <EmployeeFormModal
-        open={modalOpen}
-        employee={editing}
-        isMobile={isMobile}
-        onClose={closeModal}
-        onSave={handleSave}
-        onDelete={handleDelete}
-      />
+      <ModalPresence show={modalOpen}>
+        {modalOpen ? (
+          <EmployeeFormModal
+            open
+            employee={editing}
+            isMobile={isMobile}
+            onClose={closeModal}
+            onSave={handleSave}
+            onDelete={handleDelete}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

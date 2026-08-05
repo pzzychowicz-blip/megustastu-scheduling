@@ -61,6 +61,7 @@ import {
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
 import { isTypingTarget, isAnyOverlayOpen } from "../lib/keyboard.js";
+import { ModalPresence } from "./atoms.jsx";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import ExportButton from "./ExportButton.jsx";
 import GenerateButton from "./GenerateButton.jsx";
@@ -1693,38 +1694,46 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         isMobile={isMobile}
       />
 
-      <ShiftFormModal
-        open={modalCell !== null}
-        dateIso={modalCell ? modalCell.dateIso : ""}
-        slotDef={modalCell ? modalCell.slotDef : null}
-        shift={modalCell ? modalCell.shift : null}
-        employees={employees}
-        requests={requests}
-        weekShifts={weekShifts}
-        priorWeekShifts={priorWeekShifts}
-        nextWeekShifts={nextWeekShifts}
-        minConsecutiveDaysOff={minConsecutiveDaysOff}
-        maxConsecutiveWorkingDays={maxConsecutiveWorkingDays}
-        isMobile={isMobile}
-        readOnly={isReadOnly}
-        onClose={closeModal}
-        onSave={handleSave}
-        onDelete={handleDelete}
-        onStartSwap={enterSwapTargetFromModal}
-      />
+      <ModalPresence show={modalCell !== null}>
+        {modalCell !== null ? (
+          <ShiftFormModal
+            open
+            dateIso={modalCell ? modalCell.dateIso : ""}
+            slotDef={modalCell ? modalCell.slotDef : null}
+            shift={modalCell ? modalCell.shift : null}
+            employees={employees}
+            requests={requests}
+            weekShifts={weekShifts}
+            priorWeekShifts={priorWeekShifts}
+            nextWeekShifts={nextWeekShifts}
+            minConsecutiveDaysOff={minConsecutiveDaysOff}
+            maxConsecutiveWorkingDays={maxConsecutiveWorkingDays}
+            isMobile={isMobile}
+            readOnly={isReadOnly}
+            onClose={closeModal}
+            onSave={handleSave}
+            onDelete={handleDelete}
+            onStartSwap={enterSwapTargetFromModal}
+          />
+        ) : null}
+      </ModalPresence>
 
       {/* v1.4.0: generator-results "Details" modal. Open state is
           independent of the banner so closing the modal lets the banner
           resume its auto-dismiss countdown. */}
-      <GenerateResultsModal
-        open={showResultsModal}
-        onClose={function () { setShowResultsModal(false); }}
-        summary={resultBanner}
-        employees={employees}
-        slotsByKey={slotsByKey}
-        onJumpToCell={jumpToCell}
-        isMobile={isMobile}
-      />
+      <ModalPresence show={showResultsModal}>
+        {showResultsModal ? (
+          <GenerateResultsModal
+            open
+            onClose={function () { setShowResultsModal(false); }}
+            summary={resultBanner}
+            employees={employees}
+            slotsByKey={slotsByKey}
+            onJumpToCell={jumpToCell}
+            isMobile={isMobile}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

@@ -71,7 +71,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { R, S, BTN, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
-import { Overlay, Fld, Toggle, mkInp, mkBtn } from "./atoms.jsx";
+import { Overlay, Fld, Toggle, mkInp, mkBtn, usePresence } from "./atoms.jsx";
 import {
   formatDayHeader,
   parseIsoDate,
@@ -229,7 +229,11 @@ export default function ShiftFormModal({
     open && !readOnly && Boolean(slotDef) &&
     Boolean(form.start && form.end && form.start < form.end) &&
     !((slotDef && !slotDef.isDay) && form.employeeId && !form.role);
-  useEnterSubmit(open, enterCanSave, handleSave);
+  // v16.0.0: during ModalPresence's 200ms exit the cached element still
+  // carries open={true}, so a stray Enter would re-fire the primary
+  // action on a modal that is already closing. Gate on !leaving.
+  const { leaving } = usePresence();
+  useEnterSubmit(open && !leaving, enterCanSave, handleSave);
   // v15.3.0: Esc closes the cell editor (read-only mode included — the
   // footer there is a single Close, and onClose is the same handler).
   useEscClose(open, onClose);
