@@ -198,7 +198,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
           background: "var(--bg-danger-tint)",
           border: "1px solid var(--border-danger-tint)",
           color: "var(--text-danger)",
-          borderRadius: R.inset,
+          borderRadius: R.card,
           fontSize: 13,
           display: "flex",
           justifyContent: "space-between",

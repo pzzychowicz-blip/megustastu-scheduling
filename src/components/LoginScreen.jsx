@@ -46,7 +46,9 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
         maxWidth: 380,
         background: "var(--bg-soft)",
         border: "1px solid var(--border-soft)",
-        borderRadius: R.sheet,
+        // v16.0.0 pill radius: the login card is the one --r-auth user —
+        // a 40px soft slab, matching MGT Bookings' auth surface.
+        borderRadius: R.auth,
         padding: 24,
         boxShadow: "var(--shadow-login-card)",
       };
@@ -61,7 +63,7 @@ export default function LoginScreen({ signIn, busy, error, isMobile }) {
           background: "var(--bg-danger-tint)",
           border: "1px solid var(--border-danger-tint)",
           color: "var(--text-danger)",
-          borderRadius: R.inset,
+          borderRadius: R.card,
           fontSize: 13,
         }}
       >

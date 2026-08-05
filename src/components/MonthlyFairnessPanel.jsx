@@ -315,7 +315,7 @@ export default function MonthlyFairnessPanel({
             fontFamily: "inherit",
             fontSize: "inherit",
             textAlign: "left",
-            borderRadius: R.tight,
+            borderRadius: R.pill,
           };
 
           const nameNode = interactiveHighlight ? (
@@ -365,7 +365,7 @@ export default function MonthlyFairnessPanel({
             flexWrap: "wrap",
             width: "100%",
             padding: "6px 8px",
-            borderRadius: R.tight,
+            borderRadius: R.pill,
             border: isSelected ? "1px solid var(--border-active-on)" : "1px solid transparent",
             background: isSelected ? "var(--bg-active-on)" : "transparent",
             boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : "none",

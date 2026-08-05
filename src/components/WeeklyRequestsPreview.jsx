@@ -58,7 +58,7 @@ function typeMeta(key) {
   for (let i = 0; i < REQUEST_TYPES.length; i++) {
     if (REQUEST_TYPES[i].key === key) return REQUEST_TYPES[i];
   }
-  return { key: key, label: key, palette: null };
+  return { key: key, label: key, solidPalette: null };
 }
 
 export default function WeeklyRequestsPreview({ requests, employees, weekStart, isMobile }) {
@@ -92,7 +92,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
       archived: emp ? emp.active === false : false,
       type: r.type,
       typeLabel: typeMeta(r.type).label,
-      palette: typeMeta(r.type).palette,
+      palette: typeMeta(r.type).solidPalette,
       range: formatRange(from, to),
       dateFrom: from,
     });

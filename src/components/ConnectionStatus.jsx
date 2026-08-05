@@ -143,7 +143,7 @@ export default function ConnectionStatus({ connected, hasConnected, userEmail })
             padding: 12,
             background: "var(--bg-overlay-sheet)",
             border: "1px solid var(--border-card)",
-            borderRadius: R.card,
+            borderRadius: R.sheet,
             boxShadow: "var(--shadow-card)",
           }}
         >

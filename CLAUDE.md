@@ -1672,11 +1672,14 @@ separate Firebase project, same UI conventions).
 
 - **MGT Bookings visual + motion parity (v16.0.0):** the two sister apps
   now share one design and motion vocabulary. Ported from Bookings:
-  - **Radii scale `R`** (`--r-pill/-sheet/-card/-inset/-tight`, exported
+  - **Radii scale `R`** (`--r-pill/-auth/-sheet/-card/-inset`, exported
     from `constants.js`). **Assign by ROLE, never by matching the old
-    number.** Token values were chosen to equal Scheduling's existing
-    dominant literal per role (999 / 16 / 12 / 10 / 8), so the 50-call-site
-    sweep was a visual no-op. Deliberately absent from the dark block —
+    number.** Values are IDENTICAL to Bookings v17.7.0 — 999 / 40 / 20 /
+    14 / 10. CONTROLS (every button, input, select, chip, badge, segmented
+    track and its segments) are pills; the schedule grid cells are a
+    CANVAS EXCEPTION and stay `inset`, exactly as Bookings excepts its
+    timeline blocks. Scheduling's interim `--r-tight` was retired when its
+    17 sites were re-read as 14 controls and 3 surfaces. Deliberately absent from the dark block —
     radii are theme-agnostic. Exceptions that stay numeric: `50%` circles,
     the `Kbd` keycap (6), the MonthlyFairnessPanel delta-bar geometry
     (5/5/1/4), the EmployeeFairnessModal sparkline pair (6), ScheduleGrid's
@@ -1703,11 +1706,13 @@ separate Firebase project, same UI conventions).
     focus affordance — the clearest a11y gap in both. Required removing
     `outline: "none"` from `S.inputBase`, an inline style that beat the
     global rule. *(A ROADMAP item tracks porting this back to Bookings.)*
-  - **DELIBERATE DIVERGENCE:** Bookings removed `border-radius` from its
-    `.mgt-hover-scale:hover` rule; Scheduling KEEPS it (tokenised to
-    `--r-card`). Here it is load-bearing — Toggle atoms, Collapsible
-    headers and `Fld`-wrapped Settings rows carry no inline radius, and
-    dropping it paints their hover card with sharp corners.
+  - **The `.mgt-hover-scale:hover` radius is DELETED**, matching Bookings —
+    it would otherwise square off every pill on hover. Deleted rather than
+    set to `inherit`, which resolves against the PARENT and so goes square
+    inside a square parent anyway. Scheduling briefly diverged here (it had
+    three bare surfaces relying on the rule for their hover-card shape);
+    the pill pass gave the Toggle row, the Collapsible header and
+    `S.fldRow` their own `R.card`, so the divergence is closed.
   - **NOT ported:** Bookings' ten domain-named `BTN` variants (Scheduling's
     five semantic ones cover every call site; dead tokens are worse than no
     tokens), its devices-presence list (Scheduling is single-manager), and

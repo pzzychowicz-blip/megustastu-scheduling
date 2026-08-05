@@ -190,7 +190,7 @@ function WeekBar({ row, onClick }) {
           gap: 10,
           fontSize: 12,
           padding: "4px 8px",
-          borderRadius: R.tight,
+          borderRadius: R.pill,
           background: "transparent",
           border: "1px solid transparent",
           color: "inherit",

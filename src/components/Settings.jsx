@@ -1472,7 +1472,7 @@ export default function Settings({
                     aria-haspopup="dialog"
                     aria-expanded={popped ? "true" : "false"}
                     style={{
-                      ...BTN.base, padding: "6px 10px", fontSize: 12, borderRadius: R.tight,
+                      ...BTN.base, padding: "6px 10px", fontSize: 12, borderRadius: R.pill,
                       minWidth: 56, background: bg, color: fg, border: "1px solid " + border,
                       display: "flex", flexDirection: "column", alignItems: "center",
                       gap: 2, lineHeight: 1.1,
@@ -1499,7 +1499,7 @@ export default function Settings({
                         // 0.45 opacity and the rows beneath bleed through.
                         background: "var(--bg-overlay-sheet)",
                         border: "1px solid var(--hairline-strong)",
-                        borderRadius: R.inset,
+                        borderRadius: R.sheet,
                         boxShadow: "var(--shadow-overlay)",
                         padding: 10,
                         display: "flex", flexDirection: "column", gap: 8,
@@ -1694,7 +1694,7 @@ export default function Settings({
                       gap: 8,
                       flexWrap: "wrap",
                       padding: "6px 8px",
-                      borderRadius: R.tight,
+                      borderRadius: R.inset,
                       background: "var(--bg-chip)",
                       border: "1px solid var(--hairline)",
                     }}
@@ -1742,7 +1742,7 @@ export default function Settings({
                         marginLeft: "auto",
                         padding: "4px 10px",
                         fontSize: 11,
-                        borderRadius: R.tight,
+                        borderRadius: R.pill,
                         background: "var(--bg-pill)",
                         color: "var(--text-danger)",
                         border: "1px solid var(--btn-ghost-border)",
@@ -1847,7 +1847,7 @@ export default function Settings({
                         ...BTN.base,
                         padding: "6px 10px",
                         fontSize: 12,
-                        borderRadius: R.tight,
+                        borderRadius: R.pill,
                         minWidth: 56,
                         background: bg,
                         color: fg,
@@ -1889,7 +1889,7 @@ export default function Settings({
                           // it.
                           background: "var(--bg-overlay-sheet)",
                           border: "1px solid var(--hairline-strong)",
-                          borderRadius: R.inset,
+                          borderRadius: R.sheet,
                           boxShadow: "var(--shadow-overlay)",
                           padding: 10,
                           display: "flex",
@@ -1925,7 +1925,7 @@ export default function Settings({
                                 ...BTN.base,
                                 padding: "8px 12px",
                                 fontSize: 13,
-                                borderRadius: R.tight,
+                                borderRadius: R.pill,
                                 textAlign: "left",
                                 background: opt.on ? "var(--accent)" : "var(--bg-pill)",
                                 color: opt.on ? "var(--text-on-accent)" : "var(--text-primary)",
@@ -2063,7 +2063,7 @@ export default function Settings({
                       ...BTN.base,
                       padding: "6px 14px",
                       fontSize: 13,
-                      borderRadius: R.tight,
+                      borderRadius: R.pill,
                       minWidth: 40,
                       background: on ? "var(--accent)" : "var(--bg-pill)",
                       color: on ? "var(--text-on-accent)" : "var(--text-primary)",

@@ -23,7 +23,9 @@ function typeMeta(key) {
   for (let i = 0; i < REQUEST_TYPES.length; i++) {
     if (REQUEST_TYPES[i].key === key) return REQUEST_TYPES[i];
   }
-  return { key: key, label: key, palette: { bg: "var(--status-open-bg)", text: "var(--status-open-text)", border: "var(--status-open-border)" } };
+  // v16.0.0: unknown-type fallback uses the SOLID grey, matching the
+  // known types below — a label renders solid everywhere.
+  return { key: key, label: key, solidPalette: { bg: "var(--status-open-solid)", text: "var(--text-on-accent)", border: "var(--border-overlay-sheet)" } };
 }
 
 // Pretty range: "12 May 2026" or "12–14 May 2026" or "29 Apr–2 May 2026".
@@ -142,7 +144,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
           >
             {empName}
           </div>
-          <TBadge palette={meta.palette}>{meta.label}</TBadge>
+          <TBadge palette={meta.solidPalette}>{meta.label}</TBadge>
         </div>
         <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
           {formatRange(req.dateFrom, req.dateTo)}

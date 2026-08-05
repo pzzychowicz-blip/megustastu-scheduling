@@ -30,27 +30,41 @@
         --font-app: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, Arial, sans-serif;
 
         /* ── v16.0.0: radii scale ─────────────────────────────────────────
-           Ported from MGT Bookings' `R` scale. Assign BY ROLE, never by
-           matching the old literal:
-             --r-pill   fully-rounded pills, chips, toggles, badges
-             --r-sheet  modal sheets + the login card (the largest surfaces)
-             --r-card   cards, buttons, soft surfaces, Collapsible bodies
-             --r-inset  inset surfaces — grid cells, banners, popovers
-             --r-tight  small dense controls (weekday pills, mini-buttons)
-           999px is a true pill at any control height because CSS clamps an
-           oversized radius to half the box.
+           The SAME five tokens, with the same values, as MGT Bookings
+           v17.7.0's pill radius system. Assign BY ROLE, never by matching
+           the old literal:
+             --r-pill   CONTROLS — buttons, inputs, selects, chips, badges,
+                        segmented tracks and their segments, weekday pills
+             --r-auth   the login card, only
+             --r-sheet  modal shells + popovers
+             --r-card   cards, banners, panels, Collapsible bodies
+             --r-inset  rows nested inside a card, and the schedule grid
+                        cells (see the canvas exception below)
+
+           999px rather than a real pill radius: CSS clamps an oversized
+           radius to half the box, so ONE token is a true pill at every
+           control height in the app — 28px weekday pills, 40px buttons,
+           44px sheet actions — with no per-element arithmetic and nothing
+           to re-tune when a control's height changes.
 
            DELIBERATELY not duplicated into the [data-theme="dark"] block —
-           radii are theme-agnostic. Values match Scheduling's existing
-           dominant literal per role, so the v16.0.0 sweep is a visual
-           no-op. Micro-radii (Kbd keycap 6, fairness delta-bar 5, notch 1)
-           and `50%` circles stay numeric at their call sites, matching
-           Bookings' documented exceptions. */
+           radii are theme-agnostic.
+
+           CANVAS EXCEPTION: the schedule grid cells stay --r-inset. They
+           are a data grid, the direct analogue of Bookings' timeline
+           blocks (also an explicit exception there) — a 100×60px cell at
+           999px reads as a lozenge and the grid stops reading as a table.
+
+           Micro-radii that stay numeric at their call sites, as geometry
+           rather than style: the Kbd keycap (6), the MonthlyFairnessPanel
+           delta-bar trio (5/5/1/4), the EmployeeFairnessModal sparkline
+           pair (6), ScheduleGrid's section band / closed tag, the mobile
+           Overlay sheet's full-bleed 0, and every `50%` circle. */
         --r-pill: 999px;
-        --r-sheet: 16px;
-        --r-card: 12px;
+        --r-auth: 40px;
+        --r-sheet: 20px;
+        --r-card: 14px;
         --r-inset: 10px;
-        --r-tight: 8px;
 
         /* Body */
         --bg-app-from: #f3f5f8;
@@ -100,6 +114,19 @@
         --status-cancelled-bg: rgba(255,59,48,0.18);
         --status-cancelled-text: #9a1f17;
         --status-cancelled-border: rgba(255,59,48,0.45);
+
+        /* v16.0.0 (pill radius pass): SOLID status fills. The -bg tokens
+           above are translucent tints; these are the same hues at full
+           strength, for status LABELS — which now render solid so a label
+           carries the same visual weight as the action button beside it,
+           instead of reading lighter on some screens than others.
+           Scheduling's analogue of MGT Bookings' BLOCK_BG.
+           Status PICKERS keep chosen = solid, rest = tinted, so both
+           families are needed. */
+        --status-open-solid: #8e8e93;
+        --status-assigned-solid: #007AFF;
+        --status-confirmed-solid: #34c759;
+        --status-cancelled-solid: #ff3b30;
 
         /* Role channels (RGB triplets — composers add alpha at use site,
            e.g. background: rgba(var(--role-bar-rgb), 0.2)) */
@@ -246,6 +273,12 @@
         --status-cancelled-bg: rgba(255,69,58,0.22);
         --status-cancelled-text: #FF6B61;
         --status-cancelled-border: rgba(255,69,58,0.50);
+
+        /* v16.0.0: solid status fills — Apple's dark system variants. */
+        --status-open-solid: #98989d;
+        --status-assigned-solid: #0A84FF;
+        --status-confirmed-solid: #32d74b;
+        --status-cancelled-solid: #ff453a;
 
         /* Role channels — Apple dark system variants (lighter / more saturated) */
         --role-bar-rgb: 255, 179, 64;
@@ -412,17 +445,23 @@
            Elements that already have inline border-radius (most buttons
            via BTN.base, pills via 999, schedule cells via 10) keep their
            inline value because inline styles beat CSS at the same level.
-           --r-card matches S.surfaceSoft / S.card / BTN.base in
-           src/lib/constants.js.
 
-           v16.0.0 divergence from MGT Bookings, deliberate: Bookings
-           REMOVED this declaration (its v17.7.0 radii work) and made every
-           consumer set its own radius. Scheduling keeps it — here the rule
-           is load-bearing for surfaces that carry NO inline border-radius
-           at all (Toggle atoms, Collapsible headers, Fld-wrapped rows in
-           Settings). Dropping it would paint their hover card with sharp
-           corners. Tokenised rather than deleted. */
-        border-radius: var(--r-card);
+           v16.0.0 pill-radius pass: the `border-radius` declaration that
+           used to live here is GONE, matching MGT Bookings v17.7.0. It
+           hard-set a card radius on hover, which would have squared off
+           every pill button and input the instant the pointer touched it.
+
+           Deleted rather than set to `inherit` — `inherit` resolves
+           against the PARENT's radius, so a bare element inside a square
+           parent goes square anyway, which is the opposite of the intent.
+           Bookings reached the same conclusion during its rollout.
+
+           Deleting it was safe in Bookings because nothing there relied on
+           it. Scheduling DID have three such surfaces — the Toggle row,
+           the Collapsible header and the Fld-wrapped Settings row, none of
+           which carried a radius of their own — so they were each given an
+           explicit one in atoms.jsx / S.fldRow as part of this change.
+           Nothing now depends on this rule for its shape. */
         position: relative;
         z-index: 2;
       }

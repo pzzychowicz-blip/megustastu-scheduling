@@ -257,6 +257,10 @@ export function Collapsible({ title, open, onToggle, dirty, className, headerCla
     padding: "12px 14px",
     cursor: "pointer",
     userSelect: "none",
+    // v16.0.0 (pill radius): see the Toggle row above — the header has no
+    // resting background and previously took its hover shape from the
+    // `.mgt-hover-scale` declaration that is now gone.
+    borderRadius: R.card,
   };
   const titleStyle = {
     ...S.h2,
@@ -337,6 +341,12 @@ export function Toggle({ checked, onChange, label, helper, disabled, className }
     display: "flex",
     alignItems: "center",
     gap: 12,
+    // v16.0.0 (pill radius): its OWN radius now. This row carries no
+    // background at rest and used to borrow its hover-card shape from
+    // `.mgt-hover-scale`, whose border-radius declaration was deleted so
+    // that pills stay pills on hover. `card` rather than `pill` — a
+    // full-width settings row is a surface, not a control.
+    borderRadius: R.card,
     // v1.9.0 (perslot+ commit, third round): row padding bumped from
     // "6px 0" to "10px 12px" so the hover background (added in the
     // sixth v1.9.0 commit) has visible breathing room around the

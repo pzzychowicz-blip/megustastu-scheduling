@@ -257,33 +257,42 @@ export const ROLE_COLOR_FALLBACK = "var(--role-fallback-rgb)";
 // vocabulary. Values are defined in index.html's :root and are deliberately
 // NOT duplicated into the dark block — radii are theme-agnostic.
 //
-// ASSIGN BY ROLE, never by matching the old literal. The v16.0.0 sweep
-// converted every borderRadius call site in src/ by asking "what kind of
-// surface is this?", not "which number was here?":
+// ASSIGN BY ROLE, never by matching the old literal — the same
+// `borderRadius: 12` meant "control" in one file and "card" in another, so
+// every call site is read rather than pattern-replaced:
 //
-//   R.pill    fully-rounded — pills, chips, badges, toggles, segmented
-//             controls. 999px is a true pill at any control height
-//             because CSS clamps an oversized radius to half the box.
-//   R.sheet   the largest surfaces — modal sheets, the login card.
-//   R.card    cards, buttons, soft surfaces, Collapsible bodies. This is
-//             also what .mgt-hover-scale's hover card paints with.
-//   R.inset   inset surfaces — schedule grid cells, inline banners,
-//             popovers, inputs.
-//   R.tight   small dense controls — weekday pills, mini action buttons.
+//   R.pill    CONTROLS — every button, input, select, chip, badge,
+//             segmented track AND its segments, weekday pill, stepper.
+//             999px is a true pill at any control height because CSS
+//             clamps an oversized radius to half the box, so one token
+//             covers 28px pills and 44px sheet actions alike with no
+//             per-element arithmetic.
+//   R.auth    the login card, only.
+//   R.sheet   modal shells + popovers.
+//   R.card    cards, banners, panels, soft surfaces, Collapsible bodies.
+//   R.inset   rows nested inside a card, and the schedule grid cells.
 //
-// Documented exceptions that stay NUMERIC at their call sites (mirroring
-// how Bookings handles the same cases): `borderRadius: "50%"` circles, the
-// Kbd keycap (6), and the fairness delta-bar track/fill/notch trio in
-// MonthlyFairnessPanel (5 / 5 / 1) where the radius is part of a tuned
-// geometry rather than a surface role. src/lib/pdf-export.js never reads
-// CSS vars at all (the printed palette is locked light — v0.11.0), so it
-// is out of scope entirely.
+// CANVAS EXCEPTION — the schedule grid cells stay `inset`. They are a data
+// grid, the direct analogue of Bookings' timeline blocks (an explicit
+// exception there too): a 100×60px cell at 999px reads as a lozenge and
+// the grid stops reading as a table.
+//
+// Documented exceptions that stay NUMERIC at their call sites, because
+// they are geometry rather than a surface role: `borderRadius: "50%"`
+// circles, the Kbd keycap (6), the MonthlyFairnessPanel delta-bar trio
+// (5/5/1/4), the EmployeeFairnessModal sparkline pair (6), ScheduleGrid's
+// section band and closed tag, and the mobile Overlay sheet's full-bleed 0.
+// src/lib/pdf-export.js is out of scope entirely — it never reads CSS vars
+// (the printed palette is locked light, v0.11.0).
+//
+// Values are IDENTICAL to MGT Bookings v17.7.0's scale, token for token.
+// That is the point: a shared vocabulary that can't drift apart again.
 export const R = Object.freeze({
   pill: "var(--r-pill)",
+  auth: "var(--r-auth)",
   sheet: "var(--r-sheet)",
   card: "var(--r-card)",
   inset: "var(--r-inset)",
-  tight: "var(--r-tight)",
 });
 
 // ── Style tokens (S) ─────────────────────────────────────────────────────
@@ -332,7 +341,9 @@ export const S = Object.freeze({
     color: "var(--text-input)",
     background: "var(--bg-input)",
     border: "1px solid var(--border-input)",
-    borderRadius: R.inset,
+    // v16.0.0 pill radius: inputs are CONTROLS. 999px clamps to half the
+    // box, so this is a true pill at every input height in the app.
+    borderRadius: R.pill,
     boxShadow: "var(--shadow-input-inset)",
     // v16.0.0: `outline: "none"` removed. It was an inline style, so it beat
     // the global :focus-visible rule in index.html and left every input in
@@ -341,7 +352,11 @@ export const S = Object.freeze({
   },
 
   // Field block
-  fldRow: { marginBottom: 12 },
+  // v16.0.0 (pill radius): Fld-wrapped rows opt into `.mgt-hover-scale` in
+  // Settings and had no radius of their own — they took their hover-card
+  // shape from that rule's border-radius, which is now deleted so pills
+  // survive hover. `card`, not `pill`: a labelled field row is a surface.
+  fldRow: { marginBottom: 12, borderRadius: R.card },
   fldLabel: {
     display: "block",
     fontSize: 12,
@@ -365,7 +380,10 @@ export const BTN = Object.freeze({
   base: {
     appearance: "none",
     border: "1px solid transparent",
-    borderRadius: R.card,
+    // v16.0.0 pill radius: buttons are CONTROLS. This one line is the
+    // highest-leverage edit in the rollout — every mkBtn call site, and
+    // every raw `...BTN.base` button, becomes a pill from here.
+    borderRadius: R.pill,
     padding: "10px 14px",
     fontSize: 14,
     fontWeight: 600,
@@ -415,6 +433,16 @@ export const REQUEST_TYPES = Object.freeze([
       text: "var(--status-open-text)",
       border: "var(--status-open-border)",
     },
+    // v16.0.0: the SOLID variant, used wherever this type renders as a
+    // LABEL (requests list, weekly preview, preview modal) so it reads at
+    // the same weight as the buttons beside it. The tinted `palette` above
+    // stays for PICKERS, where "chosen = solid, rest = tinted" is the only
+    // thing distinguishing the selected option.
+    solidPalette: {
+      bg: "var(--status-open-solid)",
+      text: "var(--text-on-accent)",
+      border: "var(--border-overlay-sheet)",
+    },
   },
   {
     key: "holiday",
@@ -424,6 +452,16 @@ export const REQUEST_TYPES = Object.freeze([
       text: "var(--status-confirmed-text)",
       border: "var(--status-confirmed-border)",
     },
+    // v16.0.0: the SOLID variant, used wherever this type renders as a
+    // LABEL (requests list, weekly preview, preview modal) so it reads at
+    // the same weight as the buttons beside it. The tinted `palette` above
+    // stays for PICKERS, where "chosen = solid, rest = tinted" is the only
+    // thing distinguishing the selected option.
+    solidPalette: {
+      bg: "var(--status-confirmed-solid)",
+      text: "var(--text-on-accent)",
+      border: "var(--border-overlay-sheet)",
+    },
   },
   {
     key: "shift-preference",
@@ -432,6 +470,16 @@ export const REQUEST_TYPES = Object.freeze([
       bg: "var(--status-cancelled-bg)",
       text: "var(--status-cancelled-text)",
       border: "var(--status-cancelled-border)",
+    },
+    // v16.0.0: the SOLID variant, used wherever this type renders as a
+    // LABEL (requests list, weekly preview, preview modal) so it reads at
+    // the same weight as the buttons beside it. The tinted `palette` above
+    // stays for PICKERS, where "chosen = solid, rest = tinted" is the only
+    // thing distinguishing the selected option.
+    solidPalette: {
+      bg: "var(--status-cancelled-solid)",
+      text: "var(--text-on-accent)",
+      border: "var(--border-overlay-sheet)",
     },
   },
 ]);

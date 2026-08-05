@@ -432,6 +432,85 @@ stripped the leading time from each cell but not the role pill, so
 `"Carlos"` and `"ChefCarlos"` compared unequal. Re-run matching against the
 known employee names.)*
 
+### Phase 15 — The pill radius system + solid status labels
+
+Ports MGT Bookings **v17.7.0** wholesale. Phase 2 of this version had
+already built the token layer, but chose values that made that sweep a
+visual no-op; this is the change the tokens existed to make possible.
+
+**Token values now match Bookings exactly, token for token** — `--r-pill`
+999, `--r-auth` 40 (new), `--r-sheet` 16→20, `--r-card` 12→14, `--r-inset`
+10. Scheduling's extra `--r-tight` (8px) is **retired**: all 17 of its call
+sites were re-read and turned out to be 14 controls (now pills) and 3
+surfaces (2 inset, 1 card). The two apps are now on one scale that can't
+drift apart again.
+
+**Two edits did most of the work:** `BTN.base` and `S.inputBase` moving to
+`R.pill`, which pills every button, input and `<select>` in the app from a
+single line each — including both native selects, which compose from
+`S.inputBase`.
+
+**Role assignments, all re-read rather than pattern-replaced:** segmented
+tracks and their segments, weekday pills, scope buttons, date chips and the
+in-cell "closed" tag → `pill`; the two popovers and the connection popover
+→ `sheet` (popovers sit with modal shells); every banner → `card`; the
+login card → the new `auth`.
+
+**`.mgt-hover-scale` had to be fixed first.** Its hover rule hard-set a card
+radius, which would have squared off every pill the instant the pointer
+touched it. The declaration is **deleted**, not set to `inherit` — `inherit`
+resolves against the PARENT's radius, so a bare element inside a square
+parent goes square anyway. Bookings reached the same conclusion mid-rollout
+and its brief's original `inherit` instruction was wrong.
+
+Deleting it was safe in Bookings because nothing relied on it. **Scheduling
+had three surfaces that did** — the Toggle row, the Collapsible header and
+the `Fld`-wrapped Settings row, none of which carried a radius of their own.
+That is exactly the divergence phase 1 documented. Each was given an
+explicit `R.card`, so nothing depends on the hover rule for its shape any
+more and the v16.0.0 divergence note is now obsolete.
+
+**Canvas exception — the schedule grid cells stay `inset`.** They are a data
+grid, the direct analogue of Bookings' timeline blocks (an explicit
+exception there too): a 100×60px cell at 999px reads as a lozenge and the
+grid stops reading as a table. The mobile day-card cells match.
+
+**Solid status labels (Bookings' companion rule).** Scheduling had no solid
+status colours at all — Bookings has `BLOCK_BG`; the `--status-*-bg` tokens
+here are translucent tints. Four `--status-*-solid` tokens were added in
+both themes, plus a `solidPalette` on each `REQUEST_TYPES` entry.
+
+- **Labels → solid:** request-type pills in the requests list, the weekly
+  preview and the preview modal; role chips on employee rows and inside
+  schedule cells.
+- **Pickers → unchanged.** Both role pickers (employee form, shift form)
+  already did chosen-solid / rest-tinted, which is precisely Bookings' picker
+  rule — there the tint is the only thing marking an option unselected, so
+  solid-filling everything would erase the distinction. Verified still
+  correct after the change.
+- The in-cell role chip keeps its local `fontSize: 10` / `padding: 1px 6px`
+  rather than Bookings' standalone-label metrics (`11.5` / `5px 11px`),
+  which would blow out a grid cell. The **fill** is what makes it read as a
+  label; the metrics are the app-specific part.
+
+**Noted at decision time:** solid role chips sit inside schedule cells
+alongside the green pill-highlight and amber swap states. Checked live —
+the chips read clearly as labels against the muted cell background.
+
+**Files changed:** `index.html` (token values, 8 solid status tokens, hover
+rule), `src/lib/constants.js` (`R` reshaped, `BTN.base`, `S.inputBase`,
+`S.fldRow`, `solidPalette` ×3), `src/components/atoms.jsx` (Toggle +
+Collapsible radii), and 12 component files.
+
+**Verification.** `npm run build` clean. Live in DEV: tokens resolve
+`999 / 40 / 20 / 14 / 10` with `--r-tight` gone; a Generate button and a tab
+pill both compute `999px`; a grid cell computes `10px`; the hover rule's
+`cssText` no longer contains `border-radius`; request pills render solid
+(`rgb(50,215,75)` green / `rgb(152,152,157)` grey, white text, `999px`); the
+role picker still shows one solid selected chip against neutral siblings;
+and the light-theme solid token resolves to `#34c759`. Only 14 numeric
+radius literals remain in `src/`, all documented exceptions.
+
 ### Phases 11–13 — Per-weekday shift template (times **and** headcount)
 
 Kitchen and Front of House can now be adjusted per weekday: a different

@@ -66,7 +66,7 @@ function typeMeta(key) {
   for (let i = 0; i < REQUEST_TYPES.length; i++) {
     if (REQUEST_TYPES[i].key === key) return REQUEST_TYPES[i];
   }
-  return { key: key, label: key, palette: null };
+  return { key: key, label: key, palette: null, solidPalette: null };
 }
 
 // Mon..Sun source-order rendering of the recurringDaysOfWeek list.
@@ -146,10 +146,10 @@ export default function RequestPreviewModal({ open, request, employees, isMobile
               borderRadius: R.pill,
               fontSize: 12,
               fontWeight: 500,
-              background: meta.palette ? meta.palette.bg : "var(--bg-pill)",
-              color: meta.palette ? meta.palette.text : "var(--text-secondary)",
-              border: meta.palette
-                ? ("1px solid " + meta.palette.border)
+              background: meta.solidPalette ? meta.solidPalette.bg : "var(--bg-pill)",
+              color: meta.solidPalette ? meta.solidPalette.text : "var(--text-secondary)",
+              border: meta.solidPalette
+                ? ("1px solid " + meta.solidPalette.border)
                 : "1px solid var(--hairline-strong)",
               display: "inline-block",
             }}

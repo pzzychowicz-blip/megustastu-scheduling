@@ -1002,10 +1002,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             display: "inline-block",
             fontSize: 10,
             padding: "1px 6px",
-            borderRadius: 6,
-            background: "rgba(" + roleRgb + ", 0.20)",
-            color: "rgb(" + roleRgb + ")",
-            border: "1px solid rgba(" + roleRgb + ", 0.40)",
+            // v16.0.0: a pill, and SOLID like every other role label.
+            // Local padding / fontSize kept deliberately — this chip sits
+            // INSIDE a grid cell next to the assignee name, so Bookings'
+            // standalone-label metrics (5px 11px / 11.5px) would blow out
+            // the cell. The fill is what makes it read as a label.
+            borderRadius: R.pill,
+            background: "rgb(" + roleRgb + ")",
+            color: "var(--text-on-accent)",
+            border: "1px solid var(--border-overlay-sheet)",
             marginLeft: 6,
           }}
         >
@@ -1120,7 +1125,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                   textTransform: "uppercase",
                   letterSpacing: "0.04em",
                   padding: "1px 5px",
-                  borderRadius: 5,
+                  borderRadius: R.pill,
                   background: "var(--bg-warning-tint)",
                   color: "var(--text-warning)",
                   border: "1px solid var(--border-warning-tint)",
@@ -1163,7 +1168,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           padding: "8px 12px",
           background: "var(--bg-band)",
           border: "1px solid var(--hairline)",
-          borderRadius: R.tight,
+          borderRadius: R.card,
           fontSize: 12,
           fontWeight: 800,
           letterSpacing: "0.06em",
@@ -1342,7 +1347,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                 padding: "6px 8px",
                 fontSize: 12,
                 fontWeight: 600,
-                borderRadius: R.inset,
+                borderRadius: R.pill,
                 textAlign: "center",
                 background: isToday ? "var(--accent-tint-soft)" : "var(--bg-pill)",
                 border: isToday ? "1px solid var(--accent-tint-strong)" : "1px solid var(--hairline)",
@@ -1369,7 +1374,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                 style={{
                   background: "var(--bg-chip)",
                   border: "1px solid var(--hairline)",
-                  borderRadius: R.tight,
+                  borderRadius: R.inset,
                   padding: "6px 10px",
                   display: "flex",
                   flexDirection: "column",
@@ -1489,7 +1494,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                             padding: "4px 8px",
                             background: "var(--bg-band)",
                             border: "1px solid var(--hairline)",
-                            borderRadius: 6,
+                            borderRadius: R.card,
                             textAlign: "center",
                           }}
                         >
@@ -1583,7 +1588,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           background: "var(--accent-tint-soft)",
           border: "1px solid var(--accent-tint-strong)",
           color: "var(--accent-on-tint)",
-          borderRadius: R.inset,
+          borderRadius: R.card,
           fontSize: 13,
           display: "flex",
           justifyContent: "space-between",
@@ -1656,7 +1661,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             swapBanner.tone === "error"
               ? "var(--text-danger)"
               : "var(--text-warning)",
-          borderRadius: R.inset,
+          borderRadius: R.card,
           fontSize: 13,
           display: "flex",
           justifyContent: "space-between",
@@ -1738,7 +1743,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             background: "var(--bg-warning-tint)",
             border: "1px solid var(--border-warning-tint)",
             color: "var(--text-warning)",
-            borderRadius: R.inset,
+            borderRadius: R.card,
             fontSize: 13,
             display: "flex",
             alignItems: "center",

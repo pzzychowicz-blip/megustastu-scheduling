@@ -103,7 +103,7 @@ export default function ClearConfirmModal({
           ...BTN.base,
           padding: "8px 12px",
           fontSize: 13,
-          borderRadius: R.inset,
+          borderRadius: R.pill,
           flex: "0 0 auto",
           background: isSelected ? "var(--accent)" : "var(--bg-pill)",
           color: isSelected ? "var(--text-on-accent)" : "var(--text-primary)",

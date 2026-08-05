@@ -116,10 +116,14 @@ export default function EmployeesList({ employees, actions, isMobile }) {
       return (
         <TBadge
           key={r}
+          // v16.0.0: role chips render SOLID as labels — same weight as
+          // the buttons beside them. The role PICKERS in the employee and
+          // shift modals keep chosen-solid / rest-tinted, since there the
+          // tint is the only thing marking an option as unselected.
           palette={{
-            bg: "rgba(" + rgb + ", 0.15)",
-            text: "rgb(" + rgb + ")",
-            border: "rgba(" + rgb + ", 0.33)",
+            bg: "rgb(" + rgb + ")",
+            text: "var(--text-on-accent)",
+            border: "var(--border-overlay-sheet)",
           }}
         >
           {r}

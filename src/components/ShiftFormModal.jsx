@@ -436,7 +436,7 @@ export default function ShiftFormModal({
           background: "var(--bg-danger-tint)",
           border: "1px solid var(--border-danger-tint)",
           color: "var(--text-danger)",
-          borderRadius: R.inset,
+          borderRadius: R.card,
           fontSize: 12,
         }}
       >
@@ -501,7 +501,7 @@ export default function ShiftFormModal({
     background: "var(--bg-warning-tint)",
     border: "1px solid var(--border-warning-tint)",
     color: "var(--text-warning)",
-    borderRadius: R.inset,
+    borderRadius: R.card,
     fontSize: 12,
   };
 

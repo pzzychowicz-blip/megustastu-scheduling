@@ -202,7 +202,7 @@ export default function RequestFormModal({
         display: "inline-flex",
         flexWrap: "wrap",
         background: "var(--bg-segment-strong)",
-        borderRadius: R.inset,
+        borderRadius: R.pill,
         padding: 3,
       }}
     >
@@ -218,7 +218,7 @@ export default function RequestFormModal({
               ...BTN.base,
               padding: "6px 14px",
               fontSize: 13,
-              borderRadius: R.tight,
+              borderRadius: R.pill,
               background: on ? "var(--accent)" : "transparent",
               color: on ? "var(--text-on-accent)" : "var(--text-primary)",
               border: "1px solid transparent",
@@ -243,7 +243,7 @@ export default function RequestFormModal({
           style={{
             display: "inline-flex",
             background: "var(--bg-segment-strong)",
-            borderRadius: R.inset,
+            borderRadius: R.pill,
             padding: 3,
           }}
         >
@@ -262,7 +262,7 @@ export default function RequestFormModal({
                   ...BTN.base,
                   padding: "6px 14px",
                   fontSize: 13,
-                  borderRadius: R.tight,
+                  borderRadius: R.pill,
                   background: on ? "var(--accent)" : "transparent",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
                   border: "1px solid transparent",
@@ -301,7 +301,7 @@ export default function RequestFormModal({
                   ...BTN.base,
                   padding: "6px 12px",
                   fontSize: 13,
-                  borderRadius: R.tight,
+                  borderRadius: R.pill,
                   background: on ? "var(--accent)" : "var(--bg-segment-strong)",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
                   border: "1px solid transparent",
