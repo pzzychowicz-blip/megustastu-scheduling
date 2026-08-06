@@ -30,12 +30,10 @@ sequence.
 11. Patryk reviews + merges. Vercel auto-deploys from `main`.
 12. Confirm the console boot banner / `window.__MGT_SCHED_BUILD__.version`
     matches the new version on production.
-13. **Sync the local working folder** (locked v0.10.1, extended v1.5.0):
+13. **Sync the local working folder** (locked v0.10.1, revised 2026-08-06):
 
     ```
     git -C /Users/patrykzychowicz/Desktop/megustastu-scheduling pull --ff-only origin main
-    cp /Users/patrykzychowicz/Desktop/megustastu-scheduling/CLAUDE.md \
-       "/Users/patrykzychowicz/Desktop/megustastu-scheduling Claude context/CLAUDE.md"
     cp /Users/patrykzychowicz/Desktop/megustastu-scheduling/REFACTOR_LOG.md \
        "/Users/patrykzychowicz/Desktop/megustastu-scheduling Claude context/REFACTOR_LOG.md"
     ```
@@ -45,11 +43,13 @@ sequence.
     hunting. The local folder never rides a feature branch — branches live
     only in the `.claude/worktrees/` subfolders.
 
-    The two `cp` lines (v1.5.0) keep the Claude-context folder copy of
-    `CLAUDE.md` + `REFACTOR_LOG.md` in sync. That folder is what Patryk
-    attaches to fresh chats; if the copy is stale, the next session loads
-    with outdated architectural context (we hit this exact failure mode
-    pre-v1.4.0).
+    **There is no longer a `CLAUDE.md` mirror in the Claude-context
+    folder** (removed 2026-08-06). The repo copy is the single source of
+    truth and Claude Code loads it automatically from the project root —
+    the mirror only existed to be attached to fresh chats manually, and in
+    practice it drifted two months stale, which is worse than not having
+    it. Do not recreate it. `REFACTOR_LOG.md` still mirrors, since it is
+    not auto-loaded.
 
 ## Why one version per branch
 
