@@ -183,12 +183,45 @@ export function usePersistence() {
     return out;
   }
 
+  // v16.0.0: report a REJECTED write to the user, not just the console.
+  //
+  // The guards above (1–3) refuse a write before it leaves the browser and
+  // surface that in the banner. Nothing did the same for a write the SERVER
+  // rejects, which is a worse failure to hide: Firebase RTDB applies `set()`
+  // to its local cache immediately and fires the `onValue` listener, so the
+  // UI updates — then the server refuses, Firebase rolls the value back and
+  // fires `onValue` again. To the user a toggle flips and then silently
+  // snaps back about a second later, with nothing on screen to explain it.
+  //
+  // That is exactly how a Realtime Database RULES problem presented during
+  // the v16.0.0 review: every write to /settings returned PERMISSION_DENIED
+  // while signed in, and the only evidence anywhere was a console.warn.
+  //
+  // `isSilent` is honoured the same way the pre-write guards honour it —
+  // auto-effects (the eager shiftTemplate migration) must not raise a
+  // banner for something the manager did not initiate.
+  function reportWriteError(verb, path, err, isSilent) {
+    const code = (err && err.code) ? err.code : "unknown error";
+    console.warn("[persistence] " + verb + " failed", path, code);
+    if (isSilent) return;
+    const denied = String(code).toUpperCase().indexOf("PERMISSION_DENIED") !== -1;
+    setWriteWarning(
+      denied
+        ? ("Couldn't save " + path + " — the database refused the write "
+           + "(permission denied). Your change has been rolled back. This is "
+           + "a Firebase Database Rules problem, not a problem with what you "
+           + "entered.")
+        : ("Couldn't save " + path + " — " + code + ". Your change has been "
+           + "rolled back.")
+    );
+  }
+
   function upsertCollection(path, record, isSilent) {
     if (!refuseUnlessLoaded(path, isSilent)) return null;
     const id = (record && record.id) ? record.id : push(ref(db, path)).key;
     const next = stripUndefined({ ...record, id });
     set(ref(db, path + "/" + id), next).catch(function (err) {
-      console.warn("[persistence] write failed", path, id, err && err.code);
+      reportWriteError("write", path, err, isSilent);
     });
     return id;
   }
@@ -197,7 +230,7 @@ export function usePersistence() {
     if (!refuseUnlessLoaded(path, isSilent)) return;
     if (!id) return;
     remove(ref(db, path + "/" + id)).catch(function (err) {
-      console.warn("[persistence] delete failed", path, id, err && err.code);
+      reportWriteError("delete", path, err, isSilent);
     });
   }
 
@@ -226,7 +259,7 @@ export function usePersistence() {
       return;
     }
     set(ref(db, path), value).catch(function (err) {
-      console.warn("[persistence] write failed", path, err && err.code);
+      reportWriteError("write", path, err, isSilent);
     });
   }
 
