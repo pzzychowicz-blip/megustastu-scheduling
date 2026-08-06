@@ -485,7 +485,7 @@ export function Kbd({ k }) {
         fontSize: 12,
         fontWeight: 600,
         color: "var(--text-primary)",
-        boxShadow: "0 1px 2px rgba(0,0,0,0.06), inset 0 -1px 0 rgba(0,0,0,0.08)",
+        boxShadow: "var(--shadow-keycap)",
         minWidth: 22,
         textAlign: "center",
         boxSizing: "border-box",

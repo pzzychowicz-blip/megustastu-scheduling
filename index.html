@@ -87,6 +87,12 @@
         --bg-input: rgba(255,255,255,0.85);
         --border-input: rgba(0,0,0,0.08);
         --shadow-input-inset: inset 0 1px 2px rgba(0,0,0,0.06);
+        /* v16.0.0 (phase 27): the Kbd keycap's drop + inset-bottom pair.
+           Was hardcoded in atoms.jsx as rgba(0,0,0,0.06)/rgba(0,0,0,0.08),
+           the last colour literal outside pdf-export.js. A 6%-black drop
+           is invisible on a dark keycap, so the key read flat in dark
+           mode; every other shadow token already has a dark variant. */
+        --shadow-keycap: 0 1px 2px rgba(0,0,0,0.06), inset 0 -1px 0 rgba(0,0,0,0.08);
         --text-input: #111;
 
         /* Text */
@@ -247,6 +253,7 @@
         --bg-input: rgba(28,28,30,0.85);
         --border-input: rgba(255,255,255,0.10);
         --shadow-input-inset: inset 0 1px 2px rgba(0,0,0,0.25);
+        --shadow-keycap: 0 1px 2px rgba(0,0,0,0.35), inset 0 -1px 0 rgba(0,0,0,0.45);
         --text-input: #f2f2f7;
 
         /* Text */
@@ -412,8 +419,42 @@
          CSS rules at the same level — the new `background-color`
          declaration only fills in the gap for elements that had none.
       ────────────────────────────────────────────────────────────────── */
-      .mgt-hover-scale {
-        transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease, border-radius 120ms ease;
+      /* ONE transition declaration for BOTH motion classes, and it has to
+         stay that way.
+
+         `transition` is a shorthand: when two rules of equal specificity
+         set it, the later one REPLACES the earlier one outright — the
+         properties do not merge. `.mgt-hover-scale` and `.mgt-press` are
+         both single-class selectors, so an element carrying both got only
+         whichever rule appeared later in this file. That is exactly what
+         happened: `.mgt-press` was defined below and listed only `filter`
+         and `background-color`, so every button with both classes silently
+         lost its `transform` transition and its hover SNAPPED to 1.08
+         instead of easing.
+
+         It went unnoticed while only 11 buttons had `.mgt-press`. Phase 22
+         put it on all 48, at which point every interactive surface in the
+         app was snapping. Measured in DEV before the fix: an element with
+         both classes computed `transition: filter 0.16s, background-color
+         0.16s` — no transform at all.
+
+         Listing both selectors here means neither can shadow the other.
+         An element with only one class carries a few transitions for
+         properties it never changes, which costs nothing.
+
+         `outline-color` / `outline-offset` are in the list so the
+         :focus-visible ring below fades in and out rather than snapping,
+         matching how hover already behaves. */
+      .mgt-hover-scale,
+      .mgt-press {
+        transition:
+          transform 120ms ease,
+          background-color 120ms ease,
+          box-shadow 120ms ease,
+          border-radius 120ms ease,
+          filter 160ms ease-out,
+          outline-color 140ms ease,
+          outline-offset 140ms ease;
       }
       /* v15.1.1: the :hover rule is wrapped in
          `@media (hover: hover) and (pointer: fine)` — iOS Safari keeps
@@ -520,8 +561,10 @@
 
       /* Press feedback. Uses `filter: brightness()` rather than a transform
          SPECIFICALLY so it never fights .mgt-hover-scale's hover transform —
-         an element can be hovered (scaled) and pressed (dimmed) at once. */
-      .mgt-press { transition: filter 160ms ease-out, background-color 160ms ease-out; }
+         an element can be hovered (scaled) and pressed (dimmed) at once.
+         The `transition` that used to live here moved up to the shared
+         declaration alongside .mgt-hover-scale; see the note there for why
+         splitting it across two rules was silently breaking hover. */
       .mgt-press:active:not(:disabled) { filter: brightness(0.86); }
 
       /* ── v16.0.0: hide a scroll container's scrollbar ──────────────────
