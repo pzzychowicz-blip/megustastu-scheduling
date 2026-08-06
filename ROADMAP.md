@@ -7,6 +7,15 @@ Nothing else belongs here:
 
 - shipped-version history → `REFACTOR_LOG.md`
 - design rationale and locked decisions → `CLAUDE.md`
+- **work that belongs to MGT Bookings → that repo's own `ROADMAP.md`**
+
+That last rule is the one this file got wrong first time round. The two
+apps share a design and motion vocabulary, so a fix made here often needs
+porting there — and those port-back notes were being written down *here*,
+in the repo that cannot act on them. A Bookings session reading Bookings'
+ROADMAP would never have seen them. Anything actionable only in Bookings
+now goes straight into
+`megustastu-bookings/ROADMAP.md`; this file stays Scheduling-only.
 
 When a task resolves an entry, **delete it in the same commit**. If the
 detail is worth keeping, it goes in that version's `REFACTOR_LOG.md` entry,
@@ -19,16 +28,6 @@ summaries where the next session couldn't reliably find them.)*
 ---
 
 ## Deferred
-
-### Port the `:focus-visible` ring back to MGT Bookings
-v16.0.0 added a global focus ring to Scheduling
-(`index.html`, 2px accent / 2px offset) after finding that **neither app had
-any focus affordance at all** — the clearest accessibility gap in both. The
-same rule should land in Bookings.
-
-Note the one prerequisite that bit here: Bookings' input style may set
-`outline: "none"` inline, which beats a global CSS rule. Scheduling had to
-drop it from `S.inputBase` for the ring to reach inputs at all.
 
 ### Eager migration never repairs config revisions
 `AppShell`'s eager `/shiftTemplate` migration (v1.10.1) only touches the
@@ -69,17 +68,6 @@ Both live in `megustastu-bookings/src/components/atoms.jsx`. Everything
 they depend on is already here — `usePresenceLifecycle` is shared with
 `Presence`, `ModalPresence`/`usePresence`, `SlideView`, `Toast` and
 `Reveal`.
-
-### Port the shared-transition fix back to MGT Bookings
-v16.0.0 phase 27 found that `.mgt-hover-scale` and `.mgt-press` each
-declared their own `transition`. Being equal-specificity single-class
-selectors, the later rule REPLACED the earlier one, so every element
-carrying both classes lost its `transform` transition and its hover
-snapped. Scheduling now declares the transition once for both selectors.
-
-**Check whether Bookings has the same bug** — the two classes came from
-there, and if its `.mgt-press` also sits below `.mgt-hover-scale` with its
-own `transition`, the same silent hover-snap applies.
 
 ### Card width jumps on tab switch
 [AppShell.jsx:360](src/components/AppShell.jsx:360) sets
