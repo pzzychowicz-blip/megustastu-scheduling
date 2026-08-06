@@ -388,9 +388,37 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   //     enters "target-select" phase with `source` preloaded.
   // Cell-click behaviour branches on the phase. See cellClick().
   const [swapMode, setSwapMode] = useState(null);
-  // Inline banner shown above the grid: hint while a swap is in progress,
-  // or an error when validation blocks the commit. { tone, text }.
-  const [swapBanner, setSwapBanner] = useState(null);
+  // v16.0.0 (phase 37): a refused swap. `{ cellKey, reason }` — the cell that
+  // was rejected (so it can shake) and a short noun phrase naming why.
+  //
+  // This replaces the v1.7.0 `swapBanner`, which carried THREE tones. The
+  // other two are gone rather than re-homed:
+  //   info    — narrated the phase in prose ("Pick a filled cell as the
+  //             source."). The armed SwapButton and the cell cursors say the
+  //             same thing without a paragraph.
+  //   success — announced a result the grid had already rendered. The two
+  //             cells visibly changed hands; saying so as well is the app
+  //             talking about itself.
+  // Only the refusal survives, because it is the one case with information
+  // the grid CANNOT show: nothing moved, and why not is not deducible.
+  const [swapReject, setSwapReject] = useState(null);
+  // v16.0.0 (phase 37): drag-and-drop, the second path into the SAME
+  // mechanic. A filled cell is draggable; dropping it on another cell calls
+  // attemptSwap with exactly the source/target pair the two-click flow
+  // builds, so validation, the split-shift confirm and the undo op are
+  // shared and cannot drift.
+  //
+  // Both paths stay because they answer different questions. Dragging is
+  // faster and needs no mode when both cells are on screen together; the
+  // two-click flow survives a scroll between picking source and target, is
+  // reachable from the `S` shortcut and from ShiftFormModal's "Move / Swap",
+  // and is the only one that works without a pointer.
+  //
+  // `dragSource` mirrors swapMode.source's shape. `dragOverKey` is the cell
+  // currently under the pointer, so it can paint the same selected ring the
+  // two-click target-select uses.
+  const [dragSource, setDragSource] = useState(null);
+  const [dragOverKey, setDragOverKey] = useState(null);
   // v16.0.0: a swap/move that would create a split shift is held here
   // until the manager confirms it. Shape:
   //   { source, target, sourceEmp, targetEmp, splits: [{name, dateIso, existing}] }
@@ -402,24 +430,26 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
 
   function exitSwapMode() {
     setSwapMode(null);
-    setSwapBanner(null);
+    setSwapReject(null);
   }
   function toggleSwapMode() {
     if (swapMode) {
       exitSwapMode();
     } else {
       setSwapMode({ phase: "source-select" });
-      setSwapBanner({ tone: "info", text: "Pick a filled cell as the source." });
     }
   }
   function enterSwapTargetFromModal(source) {
     // source = { dateIso, slotDef, shift } from ShiftFormModal.
     closeModal();
     setSwapMode({ phase: "target-select", source: source });
-    setSwapBanner({
-      tone: "info",
-      text: "Pick the target cell to move or swap. Click the source again to cancel.",
-    });
+  }
+  // v16.0.0 (phase 37): refuse a swap. The target cell shakes and a compact
+  // chip names the reason; both clear together on a timer. Swap mode drops,
+  // matching the pre-existing behaviour on every refusal path.
+  function rejectSwap(cellKey, reason) {
+    setSwapReject({ cellKey: cellKey, reason: reason });
+    setSwapMode(null);
   }
 
   // v1.12.0: if the manager navigates from a current/future week into a
@@ -675,69 +705,50 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   //     payload with source.employeeId).
   //   - swap (target filled): upsertShift each side, employeeIds swapped.
   // Times and roles stay with the cell — the cell, not the employee, owns
-  // those. Failures surface as a red banner; the swap mode exits either way.
+  // those. Swap mode exits either way.
+  //
+  // v16.0.0 (phase 37): refusals shake the target cell and name the reason as
+  // a short noun phrase instead of the v1.7.0 red sentence-banner. The
+  // phrasing rule is the one applied across the app in this pass: no trailing
+  // period, no em dash, no "you can" framing — a label, not a remark.
   function attemptSwap(source, target) {
+    const rejectKey = target.dateIso + "|" + target.slotDef.key;
     const sourceEmp = employees[source.shift.employeeId];
     const targetEmp = target.shift && target.shift.employeeId
       ? employees[target.shift.employeeId]
       : null;
 
     if (!sourceEmp) {
-      setSwapBanner({ tone: "error", text: "Source employee no longer exists." });
-      setSwapMode(null);
+      rejectSwap(rejectKey, "Source employee no longer exists");
       return;
     }
 
     // Role match for receivers.
     if (!roleMatchesSlot(sourceEmp, target.slotDef)) {
-      setSwapBanner({
-        tone: "error",
-        text: sourceEmp.name + " doesn't hold a role for " + target.slotDef.humanLabel + ".",
-      });
-      setSwapMode(null);
+      rejectSwap(rejectKey, sourceEmp.name + " has no role for " + target.slotDef.humanLabel);
       return;
     }
     if (targetEmp && !roleMatchesSlot(targetEmp, source.slotDef)) {
-      setSwapBanner({
-        tone: "error",
-        text: targetEmp.name + " doesn't hold a role for " + source.slotDef.humanLabel + ".",
-      });
-      setSwapMode(null);
+      rejectSwap(rejectKey, targetEmp.name + " has no role for " + source.slotDef.humanLabel);
       return;
     }
 
     // Request conflicts on receiving cells.
     if (findRequestConflict(requests, sourceEmp.id, target.dateIso)) {
-      setSwapBanner({
-        tone: "error",
-        text: sourceEmp.name + " has a day-off or holiday on the target date.",
-      });
-      setSwapMode(null);
+      rejectSwap(rejectKey, sourceEmp.name + " is off on the target date");
       return;
     }
     if (findShiftPreferenceMismatch(requests, sourceEmp.id, target.dateIso, target.slotDef.dayPart)) {
-      setSwapBanner({
-        tone: "error",
-        text: sourceEmp.name + "'s shift-preference request excludes the target day-part.",
-      });
-      setSwapMode(null);
+      rejectSwap(rejectKey, sourceEmp.name + " has a shift preference against that day part");
       return;
     }
     if (targetEmp) {
       if (findRequestConflict(requests, targetEmp.id, source.dateIso)) {
-        setSwapBanner({
-          tone: "error",
-          text: targetEmp.name + " has a day-off or holiday on the source date.",
-        });
-        setSwapMode(null);
+        rejectSwap(rejectKey, targetEmp.name + " is off on the source date");
         return;
       }
       if (findShiftPreferenceMismatch(requests, targetEmp.id, source.dateIso, source.slotDef.dayPart)) {
-        setSwapBanner({
-          tone: "error",
-          text: targetEmp.name + "'s shift-preference request excludes the source day-part.",
-        });
-        setSwapMode(null);
+        rejectSwap(rejectKey, targetEmp.name + " has a shift preference against that day part");
         return;
       }
     }
@@ -809,10 +820,8 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       // Swap two assignments. Each cell keeps its own role/start/end.
       actions.upsertShift({ ...source.shift, employeeId: targetEmp.id });
       actions.upsertShift({ ...target.shift, employeeId: sourceEmp.id });
-      setSwapBanner({
-        tone: "success",
-        text: "Swapped " + sourceEmp.name + " ↔ " + targetEmp.name + ".",
-      });
+      // v16.0.0 (phase 37): no success banner. Both cells just changed hands
+      // on screen; announcing it is the app narrating its own output.
       // v1.10.0: undo restores both employees to their original cells
       // (the cells themselves keep their ids — only employeeId moved).
       // No removeIds: nothing was deleted or freshly created.
@@ -846,10 +855,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       //   - a fresh push key when there was no placeholder
       //   - null when the write-guard refused (initial load incomplete)
       const newTargetId = actions.upsertShift(targetPayload);
-      setSwapBanner({
-        tone: "success",
-        text: "Moved " + sourceEmp.name + " to " + target.slotDef.humanLabel + ".",
-      });
+      // v16.0.0 (phase 37): no success banner — see the swap branch above.
       // v1.10.0: undo logic depends on whether target had an existing
       // record before the move.
       //   - Placeholder existed: restore both snapshots (re-upserting
@@ -885,19 +891,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       // Source-select: only filled cells qualify.
       if (swapMode.phase === "source-select") {
         if (!shift || !shift.employeeId) {
-          setSwapBanner({
-            tone: "info",
-            text: "Pick a filled cell as the source (this cell is empty).",
-          });
+          // v16.0.0 (phase 37): silent no-op. The cell already renders a
+          // `not-allowed` cursor in this phase, which says the same thing at
+          // the point of contact and before the click rather than after it.
           return;
         }
         setSwapMode({
           phase: "target-select",
           source: { dateIso: dateIso, slotDef: slotDef, shift: shift },
-        });
-        setSwapBanner({
-          tone: "info",
-          text: "Pick the target cell to move or swap. Click the source again to cancel.",
         });
         return;
       }
@@ -915,15 +916,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     openCell(dateIso, slotDef, shift);
   }
 
-  // Auto-dismiss the swap success/error banner after a short delay so the
-  // grid stays clean. Info banners (during in-progress swap selection)
-  // persist until swap mode exits.
+  // v16.0.0 (phase 37): clear a refusal after long enough to read a short
+  // phrase. The cell's shake is over in 400ms; the chip carries the reason
+  // for the rest of the window. Was 4000ms for a full sentence.
   useEffect(function () {
-    if (!swapBanner) return undefined;
-    if (swapBanner.tone === "info") return undefined;
-    const t = setTimeout(function () { setSwapBanner(null); }, 4000);
+    if (!swapReject) return undefined;
+    const t = setTimeout(function () { setSwapReject(null); }, 2600);
     return function () { clearTimeout(t); };
-  }, [swapBanner]);
+  }, [swapReject]);
 
   // v1.3.0: closed-dayPart placeholder. Renders a non-interactive cell so
   // the grid keeps its row/column rhythm but the manager can see the slot
@@ -1064,10 +1064,21 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     //                   the grid. Reuses --bg-active-on / --border-active-on
     //                   (iOS-green) — same tokens as the pill's selected
     //                   state, single visual identity.
-    //   isSwapSource  — swap mode picked this cell as the source. Pulsing
-    //                   yellow outline via @keyframes mgt-swap-pulse;
-    //                   yellow keeps swap visually distinct from green
-    //                   pill-highlights and blue accent surfaces.
+    //   isSwapSource  — swap mode (or a drag) picked this cell as the
+    //                   source.
+    //
+    // v16.0.0 (phase 37) restyles isSwapSource. It was a PULSING YELLOW
+    // outline, and both halves of that were wrong for what it means:
+    //   • Yellow is this app's warning tint — it marks a request conflict, a
+    //     rest-rule breach, a cell left open on a closed day-part. A cell the
+    //     manager just deliberately picked is not a warning.
+    //   • An infinite pulse is an attention-getter. Selection does not need
+    //     to keep asking for attention; it needs to stay legible while the
+    //     manager reads the rest of the grid to choose a target.
+    // It now paints solid `--accent` with an accent ring and no animation —
+    // the same ON language phase 23 gave every selectable control via
+    // pillTone(true), and the same identity the armed SwapButton wears. The
+    // yellow is left to mean only what it means everywhere else.
     // v1.9.3 adds:
     //   isJumpTarget  — this cell is the one-shot focus from a click on
     //                   a GenerateResultsModal row. Shares the green
@@ -1079,40 +1090,95 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     //                   scale bounce) that plays once when the jump
     //                   fires, drawing the eye. The cell-key state
     //                   auto-clears 1.7s later via the highlight effect.
+    const cellKey = dIso + "|" + slot.key;
+    const isFilled = Boolean(existing && existing.employeeId);
     const isHighlighted =
       highlightedEmployeeId && existing && existing.employeeId === highlightedEmployeeId;
+    // Source of the two-click flow, OR the cell currently being dragged.
+    // One flag: the two paths mean the same thing and must look the same.
     const isSwapSource =
-      swapMode && swapMode.phase === "target-select" &&
-      swapMode.source && existing && existing.id === swapMode.source.shift.id;
-    const isJumpTarget = highlightedCellKey === (dIso + "|" + slot.key);
+      (swapMode && swapMode.phase === "target-select" &&
+        swapMode.source && existing && existing.id === swapMode.source.shift.id) ||
+      (dragSource && existing && existing.id === dragSource.shift.id);
+    // The cell a drag is hovering. Paints the same accent ring as the source
+    // so "these two are the pair" reads without any text.
+    const isDropTarget = Boolean(dragSource) && dragOverKey === cellKey &&
+      !(existing && existing.id === dragSource.shift.id);
+    const isJumpTarget = highlightedCellKey === cellKey;
+    const isRejected = Boolean(swapReject) && swapReject.cellKey === cellKey;
     const isAnyHighlight = isHighlighted || isJumpTarget;
+    const isAccentPicked = isSwapSource || isDropTarget;
 
-    const baseBg = isAnyHighlight ? "var(--bg-active-on)" : palette.bg;
-    const baseBorder = isSwapSource
-      ? "var(--border-warning-tint)"
-      : isAnyHighlight
-        ? "var(--border-active-on)"
-        : palette.border;
-    const baseBorderWidth = (isSwapSource || isAnyHighlight) ? 2 : 1;
+    // SOLID accent, not an accent tint. This matters: an ASSIGNED cell's
+    // resting background is already `--status-assigned-bg`, which is the
+    // accent at 22%. A selection painted in `--accent-tint-soft` (18%) is
+    // therefore FAINTER than the cell it is supposed to be highlighting, and
+    // reads as no change at all — measured in the browser before this line
+    // was written, which is the only reason it was caught.
+    //
+    // Solid `--accent` is unambiguous against a 22% tint of the same hue,
+    // needs no new colour, and is what phase 23's rule actually says: ON is
+    // solid accent. The armed SwapButton and the selected cell now wear the
+    // identical fill, which is what ties the tool to its selection.
+    //
+    // (This is the constraint v1.7.0's yellow was working around — that the
+    // grid's own palette is accent-blue. Going solid answers it without
+    // borrowing the warning colour.)
+    const baseBg = isRejected
+      ? "var(--bg-danger-tint)"
+      : isAccentPicked
+        ? "var(--accent)"
+        : isAnyHighlight
+          ? "var(--bg-active-on)"
+          : palette.bg;
+    const baseBorder = isRejected
+      ? "var(--border-danger-tint)"
+      : isAccentPicked
+        ? "var(--accent-deep)"
+        : isAnyHighlight
+          ? "var(--border-active-on)"
+          : palette.border;
+    // On a solid accent fill the status palette's text colour has no
+    // contrast; everything in the cell flips to the on-accent colour.
+    const cellText = isAccentPicked ? "var(--text-on-accent)" : palette.text;
+    const baseBorderWidth = (isAccentPicked || isAnyHighlight || isRejected) ? 2 : 1;
     // v15.3.0: inert-but-occupied cells get a dashed amber border. Swap /
     // highlight states win (they own the border), so the flag only paints
     // when the cell is at rest.
-    const showClosedFlag = Boolean(inertTag) && !isSwapSource && !isAnyHighlight;
+    const showClosedFlag =
+      Boolean(inertTag) && !isAccentPicked && !isAnyHighlight && !isRejected;
     const effBorderColor = showClosedFlag ? "var(--border-warning-tint)" : baseBorder;
     const borderDash = showClosedFlag ? "dashed" : "solid";
-    const ringShadow = isSwapSource
-      ? "0 0 0 3px var(--bg-warning-tint), var(--shadow-soft)"
-      : isAnyHighlight
-        ? "0 0 0 3px var(--bg-active-on), var(--shadow-soft)"
-        : "var(--shadow-soft)";
-    // v1.9.3: swap pulse takes priority (it's intentionally infinite while
-    // swap-mode is armed). Jump pulse plays once; after it ends the
-    // cell-key state has likely already auto-cleared.
-    const cellAnimation = isSwapSource
-      ? "mgt-swap-pulse 1.6s ease-in-out infinite"
+    const ringShadow = isRejected
+      ? "0 0 0 3px var(--bg-danger-tint), var(--shadow-soft)"
+      : isAccentPicked
+        ? "0 0 0 3px var(--accent-tint-strong), var(--shadow-soft)"
+        : isAnyHighlight
+          ? "0 0 0 3px var(--bg-active-on), var(--shadow-soft)"
+          : "var(--shadow-soft)";
+    // v16.0.0 (phase 37): the only cell animations left are ONE-SHOT
+    // reactions to something the manager just did — a refusal shake and the
+    // jump bounce. The infinite swap-source pulse is gone; selection is now
+    // a static state, as it is everywhere else in the app.
+    const cellAnimation = isRejected
+      ? "mgt-cell-reject 400ms ease-in-out 1"
       : isJumpTarget
         ? "mgt-jump-pulse 1.6s ease-out 1"
         : undefined;
+
+    // v16.0.0 (phase 37): the cursor carries what the info banner used to
+    // say. Armed for a source and hovering an empty cell → `not-allowed`;
+    // hovering a filled one → `grab`, which also advertises that the cell
+    // can be dragged. This is feedback at the point of contact, before the
+    // click, instead of a sentence after it.
+    const canDrag = !isReadOnly && isFilled;
+    const cellCursor = isReadOnly
+      ? "pointer"
+      : swapMode && swapMode.phase === "source-select"
+        ? (isFilled ? "grab" : "not-allowed")
+        : swapMode && swapMode.phase === "target-select"
+          ? "pointer"
+          : canDrag ? "grab" : "pointer";
 
     return (
       <button
@@ -1120,6 +1186,43 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         type="button"
         className="mgt-hover-scale mgt-press"
         onClick={function () { cellClick(dIso, effSlot, existing); }}
+        draggable={canDrag}
+        onDragStart={canDrag ? function (e) {
+          // Some browsers refuse to start a drag with no payload set.
+          try { e.dataTransfer.setData("text/plain", existing.id); } catch (_err) { /* ignore */ }
+          e.dataTransfer.effectAllowed = "move";
+          setDragSource({ dateIso: dIso, slotDef: effSlot, shift: existing });
+        } : undefined}
+        onDragEnd={canDrag ? function () {
+          setDragSource(null);
+          setDragOverKey(null);
+        } : undefined}
+        // The three drop handlers are attached UNCONDITIONALLY (subject only
+        // to read-only) and guard on `dragSource` inside. Gating the props
+        // themselves on `dragSource` made the cell's ability to receive a
+        // drop depend on it having re-rendered since dragstart — which holds
+        // in a real drag but is a needless ordering dependency, and it left
+        // the element with no handler at all in any frame where the state had
+        // been cleared.
+        onDragOver={!isReadOnly ? function (e) {
+          if (!dragSource) return;
+          // preventDefault is what marks this element as a valid drop target.
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (dragOverKey !== cellKey) setDragOverKey(cellKey);
+        } : undefined}
+        onDragLeave={!isReadOnly ? function () {
+          setDragOverKey(function (k) { return k === cellKey ? null : k; });
+        } : undefined}
+        onDrop={!isReadOnly ? function (e) {
+          if (!dragSource) return;
+          e.preventDefault();
+          const src = dragSource;
+          setDragSource(null);
+          setDragOverKey(null);
+          if (existing && existing.id === src.shift.id) return;
+          attemptSwap(src, { dateIso: dIso, slotDef: effSlot, shift: existing || null });
+        } : undefined}
         style={{
           width: "100%",
           textAlign: "left",
@@ -1128,7 +1231,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           borderRadius: R.inset,
           padding: "8px 10px",
           fontSize: 12,
-          cursor: "pointer",
+          cursor: cellCursor,
           minHeight: 60,
           display: "flex",
           flexDirection: "column",
@@ -1136,6 +1239,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           gap: 4,
           boxShadow: ringShadow,
           animation: cellAnimation,
+          // The cell being dragged fades, so the pointer's payload reads as
+          // "lifted out of here" rather than duplicated.
+          opacity: dragSource && existing && existing.id === dragSource.shift.id ? 0.5 : undefined,
         }}
       >
         <div
@@ -1143,7 +1249,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            color: palette.text,
+            color: cellText,
             fontWeight: 600,
           }}
         >
@@ -1174,7 +1280,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         <div
           style={{
             fontSize: 13,
-            color: emp ? "var(--text-primary)" : palette.text,
+            color: isAccentPicked
+              ? "var(--text-on-accent)"
+              : (emp ? "var(--text-primary)" : palette.text),
             fontWeight: emp ? 600 : 500,
             opacity: empArchived ? 0.5 : 1,
             textDecoration: empArchived ? "line-through" : "none",
@@ -1708,97 +1816,69 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     </Reveal>
   );
 
-  // v1.7.0: swap-mode banner. Three tones:
-  //   info    — yellow guidance during in-progress source/target selection
-  //   success — yellow confirmation after a commit (same palette so
-  //              the manager visually parses swap output as one family)
-  //   error   — red banner when validation refused a swap
-  const swapBannerView = swapBanner
+  // v16.0.0 (phase 37): the refusal chip that replaced the swap banner.
+  //
+  // Deliberately NOT a banner. It is auto-width, pill-radius and BADGE_SIZE
+  // metrics — a status marker, the same object class as the "closed" tag in
+  // a cell — so it reads as a label attached to what just happened rather
+  // than as the app addressing the manager. No dismiss button: the shake and
+  // the chip expire together on their own, and a control to acknowledge a
+  // two-word phrase is more chrome than the phrase.
+  //
+  // The cell that was refused shakes at the same moment (see cellAnimation),
+  // so WHICH cell and WHY arrive together without the text naming the cell.
+  const swapRejectView = swapReject
     ? (
-      <div
-        style={{
-          marginBottom: 12,
-          padding: "8px 12px",
-          background:
-            swapBanner.tone === "error"
-              ? "var(--bg-danger-tint)"
-              : "var(--bg-warning-tint)",
-          border:
-            "1px solid " +
-            (swapBanner.tone === "error"
-              ? "var(--border-danger-tint)"
-              : "var(--border-warning-tint)"),
-          color:
-            swapBanner.tone === "error"
-              ? "var(--text-danger)"
-              : "var(--text-warning)",
-          borderRadius: R.card,
-          fontSize: 13,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 8,
-          boxShadow: "var(--shadow-soft)",
-        }}
-      >
-        <span>{swapBanner.text}</span>
-        {/* v1.7.0: dismiss control. Both the in-progress "Cancel" and
-            the end-of-flow "×" use the danger palette tokens
-            (`--btn-danger-bg` / `--btn-danger-border` /
-            `--text-on-accent`) — the same colors mkBtn(variant:
-            "danger") gives the Delete button in EmployeeFormModal —
-            but keep the compact banner-button sizing (padding 2/8,
-            no shadow) so the row height isn't affected. */}
-        {swapMode || swapBanner.tone !== "info" ? (
-          <button
-            type="button"
-            className="mgt-hover-scale mgt-press"
-            onClick={swapMode ? exitSwapMode : function () { setSwapBanner(null); }}
-            aria-label={swapMode ? "Cancel" : "Dismiss"}
-            style={{
-              ...BTN.base,
-              ...BTN_SIZE.xs,
-              background: "var(--btn-danger-bg)",
-              color: "var(--text-on-accent)",
-              border: "1px solid var(--btn-danger-border)",
-              // GLYPH EXCEPTION (see BTN_SIZE): the label is "×" or the one
-              // word "Cancel"; keep the glyph legible at xs padding.
-              fontSize: 14,
-              lineHeight: 1,
-              boxShadow: "none",
-              flexShrink: 0,
-            }}
-          >
-            {swapMode ? "Cancel" : "×"}
-          </button>
-        ) : null}
+      <div style={{ display: "flex", marginBottom: 12 }}>
+        <span
+          role="status"
+          style={{
+            ...BADGE_SIZE.base,
+            borderRadius: R.pill,
+            background: "var(--bg-danger-tint)",
+            border: "1px solid var(--border-danger-tint)",
+            color: "var(--text-danger)",
+            fontWeight: 600,
+            boxShadow: "var(--shadow-soft)",
+          }}
+        >
+          {swapReject.reason}
+        </span>
       </div>
     )
     : null;
 
   return (
     <div>
-      {/* v1.7.0: keyframes block for the swap-source pulse (yellow,
-          infinite while swap-mode is armed).
-          v1.9.3 adds mgt-jump-pulse — a one-shot scale bounce played
-          on the cell jumped to from GenerateResultsModal. Transform-
-          only so it composes with the box-shadow ring set inline
-          (the green palette is applied separately via baseBg /
-          baseBorder / ringShadow when isJumpTarget is true). 1.6s
-          single iteration so the animation ends just before the
-          1.7s state-auto-clear in the highlight effect — the cell
-          settles back to its base state without flicker. */}
+      {/* Cell keyframes. Both are ONE-SHOT reactions to a manager action —
+          v16.0.0 (phase 37) removed mgt-swap-pulse, the one infinite
+          animation on this surface, when swap-source selection became a
+          static accent state.
+
+          mgt-jump-pulse (v1.9.3) — scale bounce on a cell jumped to.
+          mgt-cell-reject (v16.0.0) — a short horizontal shake on a cell
+          whose swap was refused. Both are transform-only so they compose
+          with the box-shadow ring set inline rather than fighting it.
+          Under `prefers-reduced-motion` the shake collapses to no movement;
+          the danger tint and the chip still carry the refusal, so nothing
+          is lost, only the motion. */}
       <style>{
-        "@keyframes mgt-swap-pulse {" +
-        "  0%,100% { box-shadow: 0 0 0 3px var(--bg-warning-tint), var(--shadow-soft); }" +
-        "  50%     { box-shadow: 0 0 0 6px var(--border-warning-tint), var(--shadow-soft); }" +
-        "}" +
         "@keyframes mgt-jump-pulse {" +
         "  0%   { transform: scale(1); }" +
         "  25%  { transform: scale(1.12); }" +
         "  55%  { transform: scale(0.98); }" +
         "  80%  { transform: scale(1.04); }" +
         "  100% { transform: scale(1); }" +
+        "}" +
+        "@keyframes mgt-cell-reject {" +
+        "  0%,100% { transform: translateX(0); }" +
+        "  20%     { transform: translateX(-5px); }" +
+        "  40%     { transform: translateX(5px); }" +
+        "  60%     { transform: translateX(-3px); }" +
+        "  80%     { transform: translateX(3px); }" +
+        "}" +
+        "@media (prefers-reduced-motion: reduce) {" +
+        "  @keyframes mgt-cell-reject { 0%,100% { transform: translateX(0); } }" +
         "}"
       }</style>
       {navBar}
@@ -1837,7 +1917,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         </div>
         ) : null}
       </Reveal>
-      <Reveal show={Boolean(swapBannerView)}>{swapBannerView}</Reveal>
+      <Reveal show={Boolean(swapRejectView)}>{swapRejectView}</Reveal>
       {generateBanner}
       {allClosedNotice}
       {dates.length > 0 ? (
