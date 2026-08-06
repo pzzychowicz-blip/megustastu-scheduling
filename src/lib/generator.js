@@ -52,6 +52,7 @@ import {
   slotsForWeek,
   isSlotScheduledOnDate,
   weekdayKeyForDate,
+  WEEKDAY_KEYS,
   findShiftForSlot,
   findSameDayShift,
   findRequestConflict,
@@ -635,16 +636,28 @@ export function generateWeek(args) {
     };
   }
 
-  // v16.0.0: `dates` moves ABOVE `slots` — the slot ladder is now the union
-  // across the weekdays this run will actually visit, so it needs them.
-  // visibleWeekDates (not weekDatesWithShifts) is correct here: the
-  // generator must never fill into a closed day.
+  // visibleWeekDates (not weekDatesWithShifts): the generator must never
+  // fill into a closed day.
   const dates = visibleWeekDates(weekStart, openingDays);
 
   // v1.11.0: pass the configured per-section required-role override in.
   // When `dayRequiredRoles` is null (legacy call), the resolver falls back
   // to the SECTIONS defaults — pre-v1.11.0 behaviour.
-  const slots = slotsForWeek(shiftTemplate, dayRequiredRoles, dates.map(weekdayKeyForDate));
+  //
+  // v16.0.0: the ladder is built over ALL SEVEN weekdays, not just the ones
+  // this run visits. That matters because `slotsByKey` is also what
+  // `wipeShiftsWithPolicy` uses to decide whether an existing record is a
+  // stale leftover — and a missing key there means DELETE. Narrowing the
+  // ladder to the open days would make Regenerate destroy a real assignment
+  // sitting at an index that only a per-weekday override creates, on a
+  // weekday the manager has since closed: ScheduleGrid still renders that
+  // shift (weekDatesWithShifts keeps the day) and the fairness aggregates
+  // still count it (isLiveShiftForTemplate scans all seven keys), so the
+  // generator must agree. One definition of "this slot row exists", shared
+  // by all three. Filling is unaffected — the worklist below gates every
+  // cell on isSlotOpenOnDate AND isSlotScheduledOnDate, so a row that runs
+  // on no visible weekday is simply never visited.
+  const slots = slotsForWeek(shiftTemplate, dayRequiredRoles, WEEKDAY_KEYS);
   const slotsByKey = {};
   for (let i = 0; i < slots.length; i++) slotsByKey[slots[i].key] = slots[i];
   const rarity = buildRoleRarity(employees);

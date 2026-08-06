@@ -432,6 +432,51 @@ stripped the leading time from each cell but not the role pill, so
 `"Carlos"` and `"ChefCarlos"` compared unequal. Re-run matching against the
 known employee names.)*
 
+### Phase 16 — Pre-push code-review fix: one ladder definition
+
+`/code-review` on the branch diff found a **data-loss** path introduced by
+Phase C8, fixed here before the push.
+
+`generateWeek` built its slot ladder from `visibleWeekDates`, so a slot index
+that exists only because of a per-weekday override was absent from the ladder
+whenever that weekday happened to be **closed**. `slotsByKey` is not only the
+fill worklist's lookup — it is also what `wipeShiftsWithPolicy` consults to
+decide whether an existing record is a stale leftover, and a missing key there
+means *delete*. So Regenerate would permanently destroy a real assignment that
+ScheduleGrid was still rendering (`weekDatesWithShifts` keeps a closed day that
+carries a shift, v15.3.0) and that the fairness aggregates were still counting
+(`isLiveShiftForTemplate` scans all seven weekday keys).
+
+Three different ladder widths had ended up standing for one concept:
+all-seven (`isLiveShiftForTemplate`), visible-days (`ScheduleGrid`), open-days
+(the generator). The fix collapses the generator onto the same all-seven basis
+the orphan predicate already uses, so "this slot row exists" means one thing
+everywhere. Filling is untouched: the worklist still gates every cell on
+`isSlotOpenOnDate` **and** `isSlotScheduledOnDate`, so a row that runs on no
+visible weekday is simply never visited.
+
+`WEEKDAY_KEYS` is exported from `schedule-logic.js` for this (it was already
+the basis of `unionSlotCountForBlock`).
+
+**Files changed:** `src/lib/schedule-logic.js` (export `WEEKDAY_KEYS`),
+`src/lib/generator.js` (ladder basis + import). Net +20 / −5 lines, almost all
+comment.
+
+**Verification** — pure Node harness against the real module:
+
+| Check | Result |
+|---|---|
+| No weekday overrides: all-seven ladder vs open-days ladder | **identical** (7 slots) — strict no-op on every existing doc |
+| FoH Evening base 2 + Sat override 3, Saturday closed — old basis | `foh-evening-2` **absent** → Regenerate deletes the shift |
+| Same, new basis | `foh-evening-2` **present** → record survives |
+| Extra row on a Monday | `isSlotScheduledOnDate` → **false** (still un-fillable) |
+| Extra row's `defaultStart–End` | `19:00–23:00`, i.e. the override's own times, not the `OPERATING_HOURS` fallback |
+
+`npm run build` green; bundle unchanged at 185.93 kB gz.
+
+The review's other 13 findings were reported to Patryk rather than fixed here
+— none is a correctness emergency and each is its own decision.
+
 ### Phase 15 — The pill radius system + solid status labels
 
 Ports MGT Bookings **v17.7.0** wholesale. Phase 2 of this version had

@@ -79,7 +79,11 @@ export function isPastWeek(weekStart, todayIso) {
 // dependency-light (it's loaded by pdf-export which is a lazy chunk).
 // Mon = 0 in the WEEKDAYS array; JS getDay() returns 0=Sun..6=Sat.
 const WEEKDAY_KEY_FROM_JS_DAY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+// Exported since v16.0.0: `generator.js` needs the same all-seven-weekday
+// ladder that `unionSlotCountForBlock` / `isLiveShiftForTemplate` use, so
+// that "this slot row exists" means one thing everywhere. See the note on
+// the `slotsForWeek` call in generateWeek.
+export const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 export function weekdayKeyForDate(date) {
   return WEEKDAY_KEY_FROM_JS_DAY[date.getDay()];
