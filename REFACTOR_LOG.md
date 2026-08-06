@@ -752,6 +752,79 @@ dashes untouched**. Export reported **10** empty cells — exactly 46 rendered
 minus 36 filled, with the dashes correctly excluded; it would have said 16
 had the completeness gate been missing.
 
+### Phases 22–28 — Design unification pass
+
+Triggered by a direct review: the app "looks agentic and very AI",
+inconsistent element to element. Investigation found one root cause behind
+almost all of it, plus a genuine animation regression this version had
+introduced.
+
+**Root cause.** ~40 sites hand-rolled
+`<button style={{ ...BTN.base, padding, fontSize }}>` instead of calling
+`mkBtn`. Each one therefore (a) invented its own size and (b) missed the
+`.mgt-press` that `mkBtn` applies centrally. Measured: **13 distinct
+control sizes** (10/14, 8/14, 8/12, 6/14, 6/12·13, 6/12·12, 6/10·13,
+6/10·12, 4/10·12, 4/10·11, 3/9, 2/10, 2/8) and press feedback on **11 of
+~40** buttons.
+
+- **Phase 22 — `BTN_SIZE = {lg, md, sm, xs}`.** Every call site assigned a
+  tier by role. `.mgt-press` added to all 48 interactive buttons. Three
+  buttons documented as deliberately off-scale, including the fairness NAME
+  button whose `4px 8px` Patryk explicitly confirmed in v1.13.0 round 5
+  after rejecting this scale's `sm`.
+- **Phase 23 — `pillTone` / `segmentTone`.** Inside the single Edit-employee
+  form, three booleans disagreed about ON: Active green, "Fixed days: ON"
+  tinted accent, "Priority: ON" solid accent. Eleven call sites now spread
+  one of two helpers. Also removed the last colour literal outside
+  `pdf-export.js` (`rgba(255,255,255,0.8)` in the Clear scope sub-label).
+- **Phase 24 — `BADGE_SIZE = {base, cell}`.** `TBadge` is the badge atom at
+  2px 8px / 11, but five surfaces re-implemented a badge at their own size
+  — including the request-type pill in the preview modal rendering at a
+  different size from the TBadge showing the SAME record in RequestsList.
+- **Phase 25 — popover fade.** Three popovers hard-mounted. `.mgt-fade-in`
+  was defined in `index.html` with zero consumers; giving it these three
+  closed an animation gap and a dead token together.
+- **Phase 26 — `Reveal` + `Toast` ported** with the consumers ROADMAP.md
+  named: the `Collapsible` body and the result banner. See the locked
+  decision in CLAUDE.md for the three load-bearing `Reveal` details and the
+  `{resultBanner ? … : null}` cache guard.
+- **Phase 27 — the hover-snap regression.** `transition` is a shorthand,
+  and `.mgt-hover-scale` / `.mgt-press` are equal-specificity single-class
+  selectors, so the later rule REPLACED the earlier. `.mgt-press` listed
+  only `filter` / `background-color`, so every element with both classes
+  lost its `transform` transition and its hover snapped. Measured before
+  the fix: an element with both computed
+  `transition: filter 0.16s, background-color 0.16s` — no transform — and
+  `.mgt-hover-scale:not(.mgt-press)` matched **zero** elements on the
+  Schedule tab. Pre-existing at 11 buttons; phase 22 made it universal.
+  One shared declaration now. Folded in: `outline-color`/`outline-offset`
+  so the focus ring fades, and `--shadow-keycap` replacing the `Kbd` atom's
+  hardcoded shadow (a 6%-black drop is invisible on a dark keycap).
+- **Phase 28 — layout jump.** Two real shifts, both found by measuring.
+  `S.card` needed `min-width: 0`: as a flex item its default
+  `min-width: auto` let the grid's 944px `minWidth` propagate up and beat
+  `width: 100%`, rendering the card 942px at `left: -5` on a 932px viewport
+  — the whole page scrolled sideways by 5px. And
+  `html { scrollbar-gutter: stable }`, because the four tabs' differing
+  heights toggled the vertical scrollbar and shifted the centred column.
+
+**Verification.** All in the live DEV page rather than by inspection:
+every button's computed padding enumerated (so the off-scale list is
+exhaustive, not asserted); "Fixed days: ON" and "Priority: ON" confirmed
+identical; split marker at 2px 8px / 11 and date pills at 4px 10px / 12;
+`Reveal` settling at a real px height with inner `overflow: visible` and a
+popover opened inside a revealed section having **no clipping ancestor**;
+the banner mid-exit carrying `mgt-toast-out` while still reading "Filled 0
+cells, 8 left empty…" (proving the cache); `transition` including
+`transform` again; horizontal overflow **false** on all four tabs with
+Schedule → Employees → Requests → Settings → Schedule returning to
+identical geometry. Re-checked at 375px: no horizontal overflow on any tab,
+full-sheet modal at exactly viewport width with the body scroll locked.
+
+One shift is left deliberately: `AppShell.jsx:360` sizes the card 1100 on
+Schedule vs 820 elsewhere, so its edges move ~19px on a tab switch. The
+grid needs the room; flagged in ROADMAP.md rather than decided here.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

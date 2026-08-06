@@ -43,21 +43,20 @@ A real fix is a revision-migration pass — deliberately out of scope for
 v16.0.0, which was already carrying three features.
 
 ### Bookings animation primitives not yet ported
-Four of Bookings' animation atoms have **no Scheduling consumer**, so they
-are deliberately absent from `src/components/atoms.jsx`. Port each one
+Two of Bookings' animation atoms still have **no Scheduling consumer**, so
+they are deliberately absent from `src/components/atoms.jsx`. Port each one
 *with* its first real call site — never speculatively, or its first
 execution in this app is also its first test.
 
-- **`Toast`** — a floating status message (Presence + the toast keyframes).
-  The result banner above the schedule grid is the obvious candidate; it
-  currently mounts and unmounts hard.
-- **`Reveal`** — expand/collapse via a CSS grid track easing `0fr ↔ 1fr`.
-  Note the three load-bearing subtleties in the Bookings source: the double
-  `requestAnimationFrame`, the cached last-children, and the delayed
-  `overflow: visible` flip that keeps `.mgt-hover-scale` children from
-  being clipped at rest.
+*(`Toast` and `Reveal` were ported in v16.0.0 phase 26 with the two
+consumers this entry named — the result banner and the `Collapsible` body.
+`Reveal`'s `horizontal` variant is still unported: no inline-axis
+consumer.)*
+
 - **`AutoHeight`** — eases its own height when content is *replaced* rather
-  than shown/hidden. Its `onTransitionEnd` needs an `e.target ===
+  than shown/hidden. `Reveal` does not cover this case: it animates between
+  "there" and "not there", while `AutoHeight` animates between two
+  different contents. Its `onTransitionEnd` needs an `e.target ===
   e.currentTarget` guard on arrival (transitionend bubbles) — the same bug
   the v16.0.0 review found in `SlideView`.
 - **`useFlip`** — list-reorder animation. No Scheduling surface re-sorts a
@@ -66,10 +65,29 @@ execution in this app is also its first test.
   `document.documentElement.dataset.motion` in JS — the CSS reduced-motion
   kill switches cannot reach the Web Animations API.
 
-All four live in `megustastu-bookings/src/components/atoms.jsx`. The three
-that ARE ported — `Presence`, `ModalPresence`/`usePresence`, `SlideView` —
-share `usePresenceLifecycle` with them, so the lifecycle half is already
-here.
+Both live in `megustastu-bookings/src/components/atoms.jsx`. Everything
+they depend on is already here — `usePresenceLifecycle` is shared with
+`Presence`, `ModalPresence`/`usePresence`, `SlideView`, `Toast` and
+`Reveal`.
+
+### Port the shared-transition fix back to MGT Bookings
+v16.0.0 phase 27 found that `.mgt-hover-scale` and `.mgt-press` each
+declared their own `transition`. Being equal-specificity single-class
+selectors, the later rule REPLACED the earlier one, so every element
+carrying both classes lost its `transform` transition and its hover
+snapped. Scheduling now declares the transition once for both selectors.
+
+**Check whether Bookings has the same bug** — the two classes came from
+there, and if its `.mgt-press` also sits below `.mgt-hover-scale` with its
+own `transition`, the same silent hover-snap applies.
+
+### Card width jumps on tab switch
+[AppShell.jsx:360](src/components/AppShell.jsx:360) sets
+`maxWidth: tab === "schedule" ? 1100 : 820`, so the card's edges move by
+~19px when the manager switches tabs. Deliberate — the schedule grid needs
+the room and the forms would look stretched at 1100 — but it is the one
+remaining layout shift after the v16.0.0 phase 28 sweep. Worth revisiting
+if a layout emerges that suits both.
 
 ---
 

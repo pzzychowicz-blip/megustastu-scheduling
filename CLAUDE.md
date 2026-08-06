@@ -1834,6 +1834,97 @@ separate Firebase project, same UI conventions).
     call `useRef`). `blockDirty` must normalize `{}` ↔ absent or the
     debounce re-writes the revision on every Firebase echo.
 
+- **Control / badge size scales (v16.0.0, phases 22–28):** the app had
+  THIRTEEN distinct control sizes across ~40 hand-rolled
+  `<button style={{ ...BTN.base, padding, fontSize }}>` sites, each tuned
+  by eye, so controls sitting side by side disagreed by a pixel or two.
+  Two scales in `constants.js` now carry SIZE, while `BTN` keeps carrying
+  COLOUR — compose them: `{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }`.
+  - **`BTN_SIZE = {lg, md, sm, xs}`.** Assign by ROLE, same discipline as
+    `R`. `lg` modal primary actions (= `BTN.base`'s own padding, so a bare
+    `mkBtn` is already `lg`); `md` anything aimed at directly (week nav,
+    segmented controls, form pills, scope pickers); `sm` controls nested
+    INSIDE another surface (list "Show", summary pills, Settings pills);
+    `xs` markers and dismissers riding on one line of text.
+  - **`BADGE_SIZE = {base, cell}`.** `base` is deliberately identical to
+    `BTN_SIZE.xs` — a standalone badge and the smallest button are the
+    same physical size, which is what lets a "split" marker sit on a
+    summary pill without looking mis-scaled. `TBadge` spreads it. `cell`
+    is the grid exception: a ~110px cell already carries a time range and
+    a name, and `base` metrics push the assignee onto a second line.
+  - **GLYPH EXCEPTION:** a button whose whole label is a glyph (`×`, `‹ ›`)
+    may raise `fontSize` while keeping its tier's padding — an 11px `×` is
+    an unhittable speck. Keep the padding so row heights still agree.
+  - **Three buttons stay off the scale**, documented at `BTN_SIZE`: the
+    ConnectionStatus dot and the fairness delta bar are geometry, not text
+    controls; the fairness NAME button keeps `4px 8px` because v1.13.0
+    round 5 tried exactly `sm` on it and Patryk rejected it. **Do not
+    re-align that one without asking.**
+  - **`pillTone(on)` / `segmentTone(on)`** return style FRAGMENTS to
+    spread (contrast `mkBtn` / `mkInp`, which return JSX). ON is solid
+    `--accent` in both; they differ in OFF. `pillTone` is a free-standing
+    pill whose OFF must stay visible (`--bg-pill` + border); `segmentTone`
+    sits in a `--bg-segment-strong` track that already draws the control,
+    so OFF is transparent and borderless. Three ON-states stay bespoke:
+    role pills (ON is the role's `ROLE_COLORS` identity), Active/Archived
+    (a record STATUS, keeping the green it shares with the grid highlight
+    axis), and the tab nav.
+
+- **One `transition` declaration for `.mgt-hover-scale` + `.mgt-press`
+  (v16.0.0 phase 27) — LOAD-BEARING:** `transition` is a shorthand, so two
+  equal-specificity rules do NOT merge; the later one replaces the earlier
+  outright. Both are single-class selectors, and `.mgt-press` sat ~100
+  lines below listing only `filter` / `background-color` — so every element
+  carrying both classes silently lost its `transform` transition and its
+  hover SNAPPED. Unnoticed while 11 buttons had both; phase 22 put
+  `.mgt-press` on all 48 and it became app-wide. `index.html` now declares
+  the transition ONCE for both selectors. **Never split it back into
+  per-class rules** — adding a property means adding it to that one list.
+  `outline-color` / `outline-offset` are in the list so the `:focus-visible`
+  ring fades rather than snapping.
+
+- **No-layout-jump rules (v16.0.0 phase 28):**
+  - **`S.card` carries `minWidth: 0`.** `S.appShell` is `display: flex`, so
+    the card is a flex item, and a flex item's default `min-width: auto`
+    refuses to shrink below its content's min-content width. The schedule
+    grid's explicit `minWidth` (944px for a 7-day week) inside its
+    `overflowX: auto` wrapper propagated up and beat `width: 100%` —
+    measured at 942px wide at `left: -5` on a 932px viewport, i.e. the
+    whole PAGE scrolled sideways. Removing `minWidth: 0` reintroduces it.
+  - **`html { scrollbar-gutter: stable }`.** The four tabs have very
+    different heights; without a reserved gutter the vertical scrollbar
+    appears and disappears and the centred column jumps sideways by its
+    width. Invisible with macOS overlay scrollbars, obvious everywhere
+    else.
+  - **Motion is transform/opacity or an eased grid track — never a hard
+    mount.** `.mgt-hover-scale` uses `transform` (no reflow); `SlideView`
+    clips `overflow` while animating so `translateX` can't spawn a
+    transient horizontal scrollbar; `Reveal` eases height via `0fr↔1fr`.
+    The toast keyframes are transform + opacity ONLY and cannot move
+    layout, which is why the result banner composes `Reveal` (height) with
+    `Toast` (slide + exit) rather than using either alone.
+  - **Known remaining shift:** `AppShell.jsx:360` sets the card's
+    `maxWidth` to 1100 on Schedule and 820 elsewhere, so its edges move
+    ~19px on a tab switch. Deliberate — the grid needs the room. Tracked
+    in ROADMAP.md.
+
+- **`Reveal` and `Toast` (v16.0.0 phase 26):** ported from Bookings WITH
+  their consumers, per the ROADMAP rule that an atom's first execution
+  must not be its first test. `Reveal` → the `Collapsible` body (Settings
+  sections used to rotate a chevron over 150ms while the body it points at
+  appeared instantly). `Toast` → the result banner. Three `Reveal` details
+  are load-bearing: the **double rAF** (mount and the `0fr→1fr` flip must
+  land in separate frames or React batches them and nothing transitions),
+  the **cached children** (callers drop content in the same render that
+  flips `show` false, so the collapse would animate an empty box), and the
+  **delayed `overflow: visible` flip** — non-negotiable here because the
+  per-weekday and open-days POPOVERS are absolutely positioned above their
+  pill row and a permanently-clipping ancestor cuts them off mid-air.
+  At the banner, `{resultBanner ? … : null}` inside `Toast` is likewise
+  load-bearing: `bannerCopy` derives from that state, so rendering the div
+  unconditionally animates out an EMPTY banner instead of letting
+  `Presence` fall back to its cached element.
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
