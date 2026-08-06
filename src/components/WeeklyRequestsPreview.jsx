@@ -113,7 +113,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
         padding: 12,
       }}
     >
-      <div style={{ ...S.h2, margin: 0, marginBottom: 8, fontSize: 14 }}>
+      <div style={{ ...S.panelTitle, marginBottom: 8 }}>
         Requests this week
       </div>
 

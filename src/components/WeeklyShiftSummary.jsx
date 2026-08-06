@@ -214,7 +214,7 @@ export default function WeeklyShiftSummary({
           flexWrap: "wrap",
         }}
       >
-        <div style={{ ...S.h2, margin: 0, fontSize: 14 }}>
+        <div style={{ ...S.panelTitle }}>
           Shifts assigned
         </div>
         <span style={{ ...S.muted, fontSize: 11 }}>{weekLabel}</span>

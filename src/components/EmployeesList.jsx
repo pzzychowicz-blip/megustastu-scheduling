@@ -162,9 +162,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
         >
           <div
             style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: "var(--text-primary)",
+              ...S.rowTitle,
               textDecoration: inactive ? "line-through" : "none",
             }}
           >

@@ -85,7 +85,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  R, S, BTN, BTN_SIZE, pillTone, SECTIONS,
+  R, S, BTN, BTN_SIZE, BADGE_SIZE, pillTone, SECTIONS,
   DEFAULT_SHIFT_TEMPLATE,
   OPERATING_HOURS,
   DEFAULT_OPENING_DAYS,
@@ -1709,34 +1709,30 @@ export default function Settings({
                     <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
                       {"Week of " + formatWeekRange(parseIsoDate(rev.effectiveFrom))}
                     </span>
-                    {rev.openingDays ? (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: "1px 8px",
-                          borderRadius: R.pill,
-                          background: "var(--accent-tint-soft)",
-                          color: "var(--accent-on-tint)",
-                          border: "1px solid var(--accent-tint-strong)",
-                        }}
-                      >
-                        Opening days
-                      </span>
-                    ) : null}
-                    {rev.shiftTemplate ? (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: "1px 8px",
-                          borderRadius: R.pill,
-                          background: "var(--accent-tint-soft)",
-                          color: "var(--accent-on-tint)",
-                          border: "1px solid var(--accent-tint-strong)",
-                        }}
-                      >
-                        Shift times
-                      </span>
-                    ) : null}
+                    {/* v16.0.0 (phase 33): these two axis badges were a
+                        byte-for-byte duplicated <span> at 1px 8px / 10 —
+                        a fourth hand-rolled badge, off the BADGE_SIZE
+                        scale and differing from every other badge in the
+                        app. One definition, rendered per present axis. */}
+                    {[
+                      rev.openingDays ? "Opening days" : null,
+                      rev.shiftTemplate ? "Shift times" : null,
+                    ].filter(Boolean).map(function (axisLabel) {
+                      return (
+                        <span
+                          key={axisLabel}
+                          style={{
+                            ...BADGE_SIZE.base,
+                            borderRadius: R.pill,
+                            background: "var(--accent-tint-soft)",
+                            color: "var(--accent-on-tint)",
+                            border: "1px solid var(--accent-tint-strong)",
+                          }}
+                        >
+                          {axisLabel}
+                        </span>
+                      );
+                    })}
                     {isPastRev ? (
                       <span style={{ ...S.muted, fontSize: 10 }}>(already in effect)</span>
                     ) : null}

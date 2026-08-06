@@ -262,7 +262,7 @@ export default function MonthlyFairnessPanel({
         padding: 12,
       }}
     >
-      <div style={{ ...S.h2, margin: 0, marginBottom: 8, fontSize: 14 }}>
+      <div style={{ ...S.panelTitle, marginBottom: 8 }}>
         Last 28 days · fairness
       </div>
 

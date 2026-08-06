@@ -135,9 +135,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
         >
           <div
             style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: "var(--text-primary)",
+              ...S.rowTitle,
               textDecoration: empArchived ? "line-through" : "none",
               opacity: empArchived ? 0.6 : 1,
             }}

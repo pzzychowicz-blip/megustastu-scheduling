@@ -339,6 +339,22 @@ export const S = Object.freeze({
   h2: { margin: "0 0 6px 0", fontSize: 17, fontWeight: 600, color: "var(--text-primary)" },
   body: { margin: "8px 0 0 0", fontSize: 14, lineHeight: 1.45, color: "var(--text-primary)" },
   muted: { margin: 0, fontSize: 12, color: "var(--text-muted)" },
+  // v16.0.0 (phase 33): the title line of a list row card — the employee
+  // name in EmployeesList, the employee name in RequestsList. Both were
+  // hand-written at `fontSize: 15`, which sits between `body` (14) and
+  // `h2` (17) and matched nothing else in the app. Body size at 600
+  // weight is the row-title convention already used elsewhere, so this
+  // puts them on the scale and keeps the two mirrored surfaces in
+  // lockstep. Callers add their own `textDecoration` / `opacity` for the
+  // archived state.
+  rowTitle: { fontSize: 14, fontWeight: 600, color: "var(--text-primary)" },
+  // v16.0.0 (phase 33): the heading of a panel stacked under the schedule
+  // grid — "Shifts assigned", "Requests this week", "Last 28 days ·
+  // fairness". All three wrote `{ ...S.h2, margin: 0, fontSize: 14 }`,
+  // i.e. each one reached for h2 and then immediately overrode its size.
+  // Three copies of the same override is a missing token, and it is how
+  // the headings would eventually drift apart.
+  panelTitle: { margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" },
 
   // Generic surfaces
   surfaceSoft: {
