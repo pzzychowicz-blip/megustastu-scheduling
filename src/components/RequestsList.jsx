@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from "react";
 import { R, S, BTN, BTN_SIZE, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
-import { mkBtn, TBadge, ModalPresence } from "./atoms.jsx";
+import { mkBtn, TBadge, ModalPresence, Reveal } from "./atoms.jsx";
 import { isoDate, parseIsoDate } from "../lib/schedule-logic.js";
 import RequestFormModal from "./RequestFormModal.jsx";
 
@@ -219,9 +219,13 @@ export default function RequestsList({ requests, employees, actions, isMobile })
     )
     : null;
 
-  const pastSection = (past.length > 0 && showPast)
-    ? <div>{past.map(renderRow)}</div>
-    : null;
+  // v16.0.0 (phase 31): mirrors the archived list in EmployeesList — the
+  // past-requests list eases open instead of appearing in one frame.
+  const pastSection = past.length > 0 ? (
+    <Reveal show={showPast}>
+      {showPast ? <div>{past.map(renderRow)}</div> : null}
+    </Reveal>
+  ) : null;
 
   const headerRow = total > 0
     ? (

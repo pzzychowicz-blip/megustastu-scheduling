@@ -675,12 +675,28 @@ export function Reveal({ show, children, style }) {
       const r1 = requestAnimationFrame(function () {
         r2 = requestAnimationFrame(function () { setOpen(true); });
       });
+      // SAFETY NET (v16.0.0 phase 31, an addition to Bookings' original).
+      // The closed state is `0fr` + `opacity: 0`, i.e. the content is
+      // INVISIBLE rather than merely un-animated. So if the double rAF
+      // above is delayed, what the user loses is not a nice transition —
+      // it is the content itself. rAF does not fire in a backgrounded or
+      // unpainted tab, and browsers throttle it under load; caught here
+      // when an automated run measured a revealed section still at
+      // `opacity: 0, height: 0` almost a second after opening, because
+      // nothing had forced a paint.
+      //
+      // `setOpen(true)` is idempotent, so whichever path fires first wins
+      // and the other is a no-op: the rAF path still gives the smooth
+      // open in the normal case, and this only decides the outcome when
+      // rAF has not run at all. 60ms is past ~3 frames at 60Hz.
+      const fallback = setTimeout(function () { setOpen(true); }, 60);
       // Slightly past the 280ms track transition, so the clip lifts only
       // once the section has actually settled.
       const tv = setTimeout(function () { setRevealed(true); }, 320);
       return function () {
         cancelAnimationFrame(r1);
         cancelAnimationFrame(r2);
+        clearTimeout(fallback);
         clearTimeout(tv);
       };
     }

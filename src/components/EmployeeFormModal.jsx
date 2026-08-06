@@ -32,7 +32,7 @@ import {
   ROLE_COLORS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
-import { Overlay, Fld, mkInp, mkBtn, TBadge, usePresence } from "./atoms.jsx";
+import { Overlay, Fld, mkInp, mkBtn, TBadge, usePresence, Reveal } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
 
@@ -275,8 +275,17 @@ export default function EmployeeFormModal({
     </div>
   );
 
-  const fixedDaysSection = form.fixedDays
-    ? (
+  // v16.0.0 (phase 31): the weekday row used to pop into existence the
+  // instant "Fixed days" flipped ON, shoving everything below it down by
+  // its full height in one frame. Reveal eases that height instead.
+  //
+  // `form.fixedDays &&` guards the map: on the way OUT the state is already
+  // null while Reveal is still collapsing, so the map would throw. Reveal
+  // re-renders its cached children through that window, which is what keeps
+  // the pills visible all the way down.
+  const fixedDaysSection = (
+    <Reveal show={Boolean(form.fixedDays)}>
+      {form.fixedDays ? (
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
         {WEEKDAYS.map(function (d) {
           const on = form.fixedDays[d.key];
@@ -299,8 +308,9 @@ export default function EmployeeFormModal({
           );
         })}
       </div>
-    )
-    : null;
+      ) : null}
+    </Reveal>
+  );
 
   const activeToggle = (
     <button

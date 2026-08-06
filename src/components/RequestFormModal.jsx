@@ -26,7 +26,7 @@
 
 import { useEffect, useState } from "react";
 import { R, S, BTN, BTN_SIZE, pillTone, segmentTone, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
-import { Overlay, Fld, mkInp, mkBtn, usePresence } from "./atoms.jsx";
+import { Overlay, Fld, mkInp, mkBtn, usePresence, Reveal } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
 
@@ -346,9 +346,15 @@ export default function RequestFormModal({
         {typeSegments}
       </Fld>
 
-      {dayPartSegments}
+      {/* v16.0.0 (phase 31): both of these appear only for the
+          `shift-preference` type, so picking that type used to shove the
+          date fields and everything below them down in one frame — and
+          picking a different type snapped them back. Reveal eases both.
+          Each const is already an element-or-null, so wrapping needs no
+          change to how they're built. */}
+      <Reveal show={Boolean(dayPartSegments)}>{dayPartSegments}</Reveal>
 
-      {recurringDaysPicker}
+      <Reveal show={Boolean(recurringDaysPicker)}>{recurringDaysPicker}</Reveal>
 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>

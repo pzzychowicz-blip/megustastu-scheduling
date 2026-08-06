@@ -369,6 +369,14 @@ export default function MonthlyFairnessPanel({
             border: isSelected ? "1px solid var(--border-active-on)" : "1px solid transparent",
             background: isSelected ? "var(--bg-active-on)" : "transparent",
             boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : "none",
+            // v16.0.0 (phase 31): these three flip together when the manager
+            // picks someone from the "Shifts assigned" pills above, and they
+            // used to snap. This row is a plain <div> — the hover-scale /
+            // press classes (which carry the app's shared transition) are on
+            // the name BUTTON inside it, not here — so it needs its own.
+            // Border WIDTH is 1px in both states on purpose: only the colour
+            // changes, so the highlight can never reflow the row.
+            transition: "background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease",
             boxSizing: "border-box",
             // Font defaults — restored from the first commit's
             // baseRowStyle. The name span doesn't set fontSize, so

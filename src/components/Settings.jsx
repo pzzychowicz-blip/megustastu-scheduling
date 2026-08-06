@@ -117,7 +117,7 @@ import {
   parseIsoDate,
   formatWeekRange,
 } from "../lib/schedule-logic.js";
-import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
+import { Collapsible, Toggle, Fld, mkInp, mkBtn, Reveal } from "./atoms.jsx";
 // v1.14.0: footer credit reads version directly from the single source
 // of truth so a version bump propagates here automatically.
 import { __APP_SIGNATURE__ } from "../App.jsx";
@@ -2224,6 +2224,10 @@ export default function Settings({
               : "Banner stays visible until you close it (×) or run the generator again."}
             className="mgt-hover-scale"
           />
+          {/* v16.0.0 (phase 31): the duration row appears and disappears
+              with the toggle above it, and used to shove the rest of the
+              section. Reveal eases it. */}
+          <Reveal show={bannerAutoDismiss}>
           {bannerAutoDismiss ? (
             // v1.9.4 (alignment fix): the previous <Fld> wrapper had no
             // horizontal padding, so the duration row sat 12px further
@@ -2264,6 +2268,7 @@ export default function Settings({
               })}
             </div>
           ) : null}
+          </Reveal>
         </Collapsible>
 
         <Collapsible

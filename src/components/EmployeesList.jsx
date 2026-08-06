@@ -14,7 +14,7 @@ import {
   R, S, BTN, BTN_SIZE, ROLE_COLORS, WEEKDAYS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
-import { mkBtn, TBadge, ModalPresence } from "./atoms.jsx";
+import { mkBtn, TBadge, ModalPresence, Reveal } from "./atoms.jsx";
 import { parseIsoDate } from "../lib/schedule-logic.js";
 import EmployeeFormModal from "./EmployeeFormModal.jsx";
 
@@ -262,9 +262,15 @@ export default function EmployeesList({ employees, actions, isMobile }) {
     )
     : null;
 
-  const archivedSection = (archived.length > 0 && showArchived)
-    ? <div>{archived.map(renderRow)}</div>
-    : null;
+  // v16.0.0 (phase 31): "Show" used to drop the whole archived list into
+  // the page in one frame. Reveal eases the height. The inner guard is on
+  // `showArchived` only — `archived.length` can't change while the reveal
+  // runs, and Reveal replays its cached children on the way out.
+  const archivedSection = archived.length > 0 ? (
+    <Reveal show={showArchived}>
+      {showArchived ? <div>{archived.map(renderRow)}</div> : null}
+    </Reveal>
+  ) : null;
 
   const headerRow = total > 0
     ? (

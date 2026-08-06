@@ -78,7 +78,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { R, S, BTN, BTN_SIZE, SECTIONS, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
-import { Overlay, Fld, Toggle, mkInp, mkBtn, usePresence } from "./atoms.jsx";
+import { Overlay, Fld, Toggle, mkInp, mkBtn, usePresence, Reveal } from "./atoms.jsx";
 import {
   formatDayHeader,
   parseIsoDate,
@@ -671,12 +671,23 @@ export default function ShiftFormModal({
         {readOnly ? null : requestToggle}
         {/* v16.0.0: the split banner leads the stack — it describes the
             single most consequential thing about this assignment (a
-            12-hour straight day), so it should be the first thing read. */}
-        {splitShiftBanner}
-        {conflictBanner}
-        {prefMismatchBanner}
-        {restWarningBanner}
-        {maxConsecutiveBanner}
+            12-hour straight day), so it should be the first thing read.
+
+            phase 31: each banner gets its OWN Reveal rather than one
+            around the stack. They appear and disappear independently as
+            the manager changes the assignee, and a single wrapper would
+            only ease the group as a whole — swapping one banner for
+            another inside it would still snap. Per-banner, every case is
+            smooth and the container height is just their sum.
+
+            Each of these consts is already an element-or-null, so
+            `show={Boolean(x)}` needs no change to how they're built, and
+            Reveal replays the cached element through the collapse. */}
+        <Reveal show={Boolean(splitShiftBanner)}>{splitShiftBanner}</Reveal>
+        <Reveal show={Boolean(conflictBanner)}>{conflictBanner}</Reveal>
+        <Reveal show={Boolean(prefMismatchBanner)}>{prefMismatchBanner}</Reveal>
+        <Reveal show={Boolean(restWarningBanner)}>{restWarningBanner}</Reveal>
+        <Reveal show={Boolean(maxConsecutiveBanner)}>{maxConsecutiveBanner}</Reveal>
       </Fld>
 
       {rolePicker}
