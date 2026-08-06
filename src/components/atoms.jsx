@@ -39,7 +39,7 @@
 // Vite's automatic JSX runtime: NO React import required.
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { R, S, BTN } from "../lib/constants.js";
+import { R, S, BTN, BADGE_SIZE } from "../lib/constants.js";
 
 // ── Overlay ──────────────────────────────────────────────────────────────
 // Props:
@@ -491,8 +491,10 @@ export function Kbd({ k }) {
 export function TBadge({ children, palette, style }) {
   const base = {
     display: "inline-block",
-    padding: "2px 8px",
-    fontSize: 11,
+    // v16.0.0 (phase 24): these were the literals 2px 8px / 11. Same
+    // numbers, but now stated as the token so the four surfaces that
+    // re-implement a badge outside this atom have something to match.
+    ...BADGE_SIZE.base,
     fontWeight: 600,
     borderRadius: R.pill,
     border: "1px solid transparent",

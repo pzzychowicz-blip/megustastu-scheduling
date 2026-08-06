@@ -45,7 +45,7 @@
 //   highlightedEmployeeId (string|null)         — v1.7.0; currently lit pill
 //   onHighlight           (fn(id|null))         — v1.7.0; click handler
 
-import { R, S, BTN, BTN_SIZE, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, BADGE_SIZE, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
 import {
   holidayDaysInWeekByEmployee,
   isLiveShiftForTemplate,
@@ -303,9 +303,12 @@ export default function WeeklyShiftSummary({
                 <span
                   style={{
                     marginLeft: 6,
-                    fontSize: 10,
+                    // v16.0.0 (phase 24): was 1px 5px / 10 — smaller than
+                    // every other badge in the app for no recorded reason.
+                    // It rides on a BTN_SIZE.sm pill, so it takes the
+                    // standalone badge metrics like any TBadge would.
+                    ...BADGE_SIZE.base,
                     fontWeight: 700,
-                    padding: "1px 5px",
                     borderRadius: R.pill,
                     background: "var(--bg-warning-tint)",
                     border: "1px solid var(--border-warning-tint)",

@@ -17,7 +17,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
-  R, S, BTN, BTN_SIZE,
+  R, S, BTN, BTN_SIZE, BADGE_SIZE,
   ROLE_COLORS,
   STATUS_COLORS,
   DEFAULT_SHIFT_TEMPLATE,
@@ -1012,13 +1012,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         <span
           style={{
             display: "inline-block",
-            fontSize: 10,
-            padding: "1px 6px",
             // v16.0.0: a pill, and SOLID like every other role label.
-            // Local padding / fontSize kept deliberately — this chip sits
-            // INSIDE a grid cell next to the assignee name, so Bookings'
-            // standalone-label metrics (5px 11px / 11.5px) would blow out
-            // the cell. The fill is what makes it read as a label.
+            // BADGE_SIZE.cell, not .base — this chip sits INSIDE a ~110px
+            // grid cell next to the assignee name, and standalone-label
+            // metrics push the name onto a second line. The fill is what
+            // makes it read as a label. (phase 24: the same two literals,
+            // now shared with the inert closed/not-today tag below.)
+            ...BADGE_SIZE.cell,
             borderRadius: R.pill,
             background: "rgb(" + roleRgb + ")",
             color: "var(--text-on-accent)",
@@ -1132,11 +1132,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             {showClosedFlag ? (
               <span
                 style={{
-                  fontSize: 9,
+                  // v16.0.0 (phase 24): was 1px 5px / 9 next to a role
+                  // chip at 1px 6px / 10 — two in-cell micro tags that
+                  // differed by a pixel each. Both are BADGE_SIZE.cell now.
+                  ...BADGE_SIZE.cell,
                   fontWeight: 700,
                   textTransform: "uppercase",
                   letterSpacing: "0.04em",
-                  padding: "1px 5px",
                   borderRadius: R.pill,
                   background: "var(--bg-warning-tint)",
                   color: "var(--text-warning)",
@@ -1356,8 +1358,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             <div
               key={"day-" + dayIso}
               style={{
-                padding: "6px 8px",
-                fontSize: 12,
+                // v16.0.0 (phase 24): was 6px 8px / 12, which matched
+                // nothing. It is a chip in a row directly under the week
+                // nav, so it takes BTN_SIZE.sm — same font size it already
+                // had, now on the scale. Stays a <div>: it is a column
+                // HEADER with no action, so it must not be focusable.
+                ...BTN_SIZE.sm,
                 fontWeight: 600,
                 borderRadius: R.pill,
                 textAlign: "center",

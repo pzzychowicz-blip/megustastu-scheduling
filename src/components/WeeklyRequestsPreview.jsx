@@ -30,7 +30,7 @@
 //   isMobile   (bool)
 
 import { useState } from "react";
-import { R, S, REQUEST_TYPES } from "../lib/constants.js";
+import { R, S, BADGE_SIZE, REQUEST_TYPES } from "../lib/constants.js";
 import { addDays, isoDate, parseIsoDate } from "../lib/schedule-logic.js";
 import { ModalPresence } from "./atoms.jsx";
 import RequestPreviewModal from "./RequestPreviewModal.jsx";
@@ -160,9 +160,11 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                 onClick={function () { setPreviewRequest(r.record); }}
                 title="Preview request"
                 style={{
-                  padding: "1px 8px",
+                  // v16.0.0 (phase 24): badge metrics. This one cannot be
+                  // a TBadge — it is a <button> that opens the preview
+                  // modal — so it spreads the token the atom spreads.
+                  ...BADGE_SIZE.base,
                   borderRadius: R.pill,
-                  fontSize: 11,
                   fontWeight: 500,
                   background: r.palette ? r.palette.bg : "var(--bg-pill)",
                   color: r.palette ? r.palette.text : "var(--text-secondary)",

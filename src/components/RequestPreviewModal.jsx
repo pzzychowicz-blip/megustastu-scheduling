@@ -28,7 +28,7 @@
 // Visual: mirrors RequestFormModal's vertical Fld stack so the preview
 // feels like the "read mode" of the edit form rather than a separate UI.
 
-import { R, S, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { R, S, BADGE_SIZE, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkBtn } from "./atoms.jsx";
 import { parseIsoDate } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -142,9 +142,11 @@ export default function RequestPreviewModal({ open, request, employees, isMobile
         <div style={{ paddingTop: 4 }}>
           <span
             style={{
-              padding: "3px 10px",
+              // v16.0.0 (phase 24): was 3px 10px / 12. The SAME request
+              // type renders through TBadge in RequestsList, so a preview
+              // of that record should not be a different size.
+              ...BADGE_SIZE.base,
               borderRadius: R.pill,
-              fontSize: 12,
               fontWeight: 500,
               background: meta.solidPalette ? meta.solidPalette.bg : "var(--bg-pill)",
               color: meta.solidPalette ? meta.solidPalette.text : "var(--text-secondary)",

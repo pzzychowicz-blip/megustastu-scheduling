@@ -464,6 +464,29 @@ export const BTN_SIZE = Object.freeze({
   xs: { padding: "2px 8px", fontSize: 11 },
 });
 
+// ── Badge size scale (BADGE_SIZE) ────────────────────────────────────────
+// v16.0.0 (phase 24). The label counterpart to BTN_SIZE. A badge is a
+// non-interactive pill: a role chip, a request-type label, a status marker.
+//
+// `base` is deliberately the same metrics as BTN_SIZE.xs — a standalone
+// badge and the app's smallest button are the same physical size, which is
+// what lets a "split" marker sit beside a summary pill without either
+// looking mis-scaled. The `TBadge` atom spreads it, so anything rendered
+// through TBadge is already correct; these tokens exist for the surfaces
+// that can't use the atom (a badge that is also a <button>, or one whose
+// palette is composed inline).
+//
+// `cell` is the SCHEDULE-GRID exception, and it is a real one rather than
+// drift. A cell is ~110px wide and already carries a time range and a name;
+// `base` metrics on the role chip pushed the assignee name onto a second
+// line. Two surfaces need it — the role chip and the inert "closed" /
+// "not today" tag — and before this they were 1px 6px/10 and 1px 5px/9,
+// near-identical for no reason anyone recorded.
+export const BADGE_SIZE = Object.freeze({
+  base: { padding: "2px 8px", fontSize: 11 },
+  cell: { padding: "1px 6px", fontSize: 10 },
+});
+
 // ── Selectable-pill tones ────────────────────────────────────────────────
 // v16.0.0 (phase 23). Returns a STYLE FRAGMENT — spread it, don't render
 // it. (Contrast `mkBtn` / `mkInp` in atoms.jsx, which return JSX.)
