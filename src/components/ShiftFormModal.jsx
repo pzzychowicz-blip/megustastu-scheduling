@@ -76,7 +76,7 @@
 //     Both SOFT toggles only render when they actually have something to
 //     reveal (or are already on because the current assignee needs them).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { R, S, BTN, SECTIONS, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
 import { Overlay, Fld, Toggle, mkInp, mkBtn, usePresence } from "./atoms.jsx";
 import {
@@ -153,23 +153,36 @@ export default function ShiftFormModal({
   //
   // v16.0.0: the identical problem exists for the new same-day toggle. If
   // this cell is already half of a split shift, its assignee has another
-  // shift that date and would be filtered out of the dropdown — leaving the
-  // select with a value not present in its options. Auto-flip the toggle ON
-  // in that case, same as for requests.
+  // shift that date and would be filtered out of the dropdown, so the toggle
+  // is auto-flipped ON here too. (The dropdown ALSO never filters out the
+  // currently-selected employee — see the eligible memo below — so this is
+  // now about showing the toggle in the honest state, not about correctness.)
+  //
+  // `requests` and `weekShifts` are read through a ref rather than listed as
+  // dependencies, and that is load-bearing. This effect calls
+  // `setForm(initialForm(...))`, so re-running it DISCARDS whatever the
+  // manager has typed. `weekShifts` gets a fresh identity on every write to
+  // /shifts — an undo, a second device, the manager's own Firebase echo — so
+  // depending on it would silently revert an in-progress edit mid-typing.
+  // Both values are only ever needed for the one-shot read at open.
+  const latestData = useRef({ requests: requests, weekShifts: weekShifts });
+  latestData.current = { requests: requests, weekShifts: weekShifts };
   useEffect(function () {
     if (open && slotDef) {
+      const snap = latestData.current;
       setForm(initialForm(slotDef, shift));
       const existingConflict = shift && shift.employeeId
-        ? findRequestConflict(requests, shift.employeeId, dateIso)
+        ? findRequestConflict(snap.requests, shift.employeeId, dateIso)
         : null;
       setShowRequestBlocked(!!existingConflict);
       const existingSameDay = shift && shift.employeeId
-        ? findSameDayShift(weekShifts, shift.employeeId, dateIso, shift.id)
+        ? findSameDayShift(snap.weekShifts, shift.employeeId, dateIso, shift.id)
         : null;
       setShowSameDayStaff(!!existingSameDay);
       setSaveError("");
     }
-  }, [open, slotDef, shift, requests, dateIso, weekShifts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- requests / weekShifts are read via latestData on purpose; see above
+  }, [open, slotDef, shift, dateIso]);
 
   // ── Eligible employees for this slot ───────────────────────────────────
   // v0.8.0: a single derived list applies three stacked filters in one
@@ -180,8 +193,18 @@ export default function ShiftFormModal({
   // The same-day filter excludes the shift currently being edited (by id),
   // so the assignment doesn't conflict with itself.
   const currentShiftId = shift && shift.id ? shift.id : null;
+  // v16.0.0: whoever is selected RIGHT NOW is never filtered out. Both soft
+  // filters below are toggle-reversible, and a manager who reveals hidden
+  // staff, picks one, then flips the toggle back would otherwise leave the
+  // <select> holding a value with no matching <option> — it renders blank,
+  // reading as "Unassigned", while `form.employeeId` still carries the id, so
+  // Save writes an assignment the UI said wasn't there. Pinning the selection
+  // keeps "the select's value is always in its options" true by construction,
+  // for both toggles, in every order of operations. The auto-flip in the open
+  // effect above handles the initial state; this handles everything after.
+  const selectedEmployeeId = form.employeeId || null;
   const eligible = useMemo(function () {
-    if (!slotDef) return { list: [], requestHiddenCount: 0 };
+    if (!slotDef) return { list: [], requestHiddenCount: 0, sameDayHiddenCount: 0 };
     const all = Object.values(employees || {});
     // v1.1.0: day slots may declare `requiredRoles` — when present, the
     // employee must hold AT LEAST ONE of them (stricter than the
@@ -219,7 +242,9 @@ export default function ShiftFormModal({
       const clash = findSameDayShift(weekShifts, e.id, dateIso, currentShiftId);
       if (clash && !showSameDayStaff) {
         sameDayHiddenCount++;
-        return false;
+        // Counted as hidden (the toggle's helper text should still say so)
+        // but kept in the list when they're the current selection.
+        return e.id === selectedEmployeeId;
       }
       return true;
     });
@@ -230,7 +255,7 @@ export default function ShiftFormModal({
       const conflict = findRequestConflict(requests, e.id, dateIso);
       if (conflict && !showRequestBlocked) {
         requestHiddenCount++;
-        return false;
+        return e.id === selectedEmployeeId;
       }
       return true;
     });
@@ -256,7 +281,7 @@ export default function ShiftFormModal({
       requestHiddenCount: requestHiddenCount,
       sameDayHiddenCount: sameDayHiddenCount,
     };
-  }, [slotDef, employees, requests, weekShifts, dateIso, currentShiftId, showRequestBlocked, showSameDayStaff]);
+  }, [slotDef, employees, requests, weekShifts, dateIso, currentShiftId, showRequestBlocked, showSameDayStaff, selectedEmployeeId]);
 
   const eligibleEmployees = eligible.list;
 

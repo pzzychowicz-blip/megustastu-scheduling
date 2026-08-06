@@ -1760,8 +1760,16 @@ separate Firebase project, same UI conventions).
     (mirroring the day-off / holiday toggle); revealing and picking one
     raises a yellow banner naming the existing shift and its times. The
     save proceeds. The toggle auto-flips ON when the edited cell is already
-    half of a split, or the `<select>` would hold a value absent from its
-    own options.
+    half of a split, so it opens in the honest state.
+    **The invariant "the `<select>`'s value is always in its options" is
+    NOT maintained by that flip** — the flip only fires at open, and both
+    soft filters are reversible at any time afterwards. It is maintained by
+    the `eligible` memo, which never filters out the currently-selected
+    employee (`return e.id === selectedEmployeeId` in filters (b) and (c)).
+    They still count toward the hidden totals, so the toggle helper text
+    stays truthful. Without the pin, revealing hidden staff → picking one →
+    flipping the toggle back leaves the select blank while `form.employeeId`
+    still holds the id, and Save writes an assignment the UI denied showing.
   - **Swap / Move — SOFT, but CONFIRMED.** `<SplitConfirmModal>` opens
     first. Swap commits on the second cell click with no Save step, so an
     inline warning has nothing to attach to; without the dialog two
