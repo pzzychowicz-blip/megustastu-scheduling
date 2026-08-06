@@ -950,24 +950,36 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // the restaurant IS open; it's this row that doesn't run today.
   function renderUnscheduledSlotCell(date, slot) {
     const s = findShiftForSlot(weekShifts, isoDate(date), slot);
-    if (s && s.employeeId) return renderCell(date, slot, true);
+    // "not today", NOT "closed" — the restaurant IS open on this date; it's
+    // this row that a per-weekday override drops. Saying "closed" here told
+    // the manager they were shut on a day they were trading.
+    if (s && s.employeeId) return renderCell(date, slot, "not today");
     return renderClosedCell(date, slot, "—");
   }
 
   function renderClosedSlotCell(date, slot) {
     const closedShift = findShiftForSlot(weekShifts, isoDate(date), slot);
-    if (closedShift && closedShift.employeeId) return renderCell(date, slot, true);
+    if (closedShift && closedShift.employeeId) return renderCell(date, slot, "closed");
     return renderClosedCell(date, slot);
   }
 
   // ── Cell renderer (shared between layouts) ───────────────────────────
-  // v15.3.0: `closedOverride` — true when this slot's day-part is closed on
-  // `date` but a real shift still lives here (a past week, or an orphan
-  // assignment left after the manager closed the slot). The cell renders
-  // normally (assignee + times stay visible) but gains a dashed amber
-  // border + a small "closed" tag so it's clear the slot is no longer open.
-  // Principle: never hide a real shift behind the "Closed" placeholder.
-  function renderCell(date, slot, closedOverride) {
+  // v15.3.0: `inertTag` — set when this cell would otherwise have been an
+  // inert placeholder but a real shift still lives here (a past week, or an
+  // assignment left behind by a config change). The cell renders normally
+  // (assignee + times stay visible) but gains a dashed amber border and a
+  // small tag naming WHY it's flagged.
+  // Principle: never hide a real shift behind a placeholder.
+  //
+  // v16.0.0: two distinct reasons, so the tag takes its text from the
+  // caller rather than being hard-coded:
+  //   "closed"    — the restaurant isn't open for this day-part that date.
+  //   "not today" — it IS open; a per-weekday override means this ROW
+  //                 doesn't run that weekday.
+  // Conflating them told the manager the restaurant was shut on a day it
+  // was trading. Matches the empty-cell split ("Closed" vs "—") that
+  // renderClosedCell and pdf-export.js already make.
+  function renderCell(date, slot, inertTag) {
     const dIso = isoDate(date);
     // v15.1.0: effectivize the slot for THIS date — solo times apply on
     // weekdays where the slot's day-part is the only open one. The
@@ -1062,10 +1074,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         ? "var(--border-active-on)"
         : palette.border;
     const baseBorderWidth = (isSwapSource || isAnyHighlight) ? 2 : 1;
-    // v15.3.0: closed-but-occupied cells get a dashed amber border. Swap /
+    // v15.3.0: inert-but-occupied cells get a dashed amber border. Swap /
     // highlight states win (they own the border), so the flag only paints
     // when the cell is at rest.
-    const showClosedFlag = Boolean(closedOverride) && !isSwapSource && !isAnyHighlight;
+    const showClosedFlag = Boolean(inertTag) && !isSwapSource && !isAnyHighlight;
     const effBorderColor = showClosedFlag ? "var(--border-warning-tint)" : baseBorder;
     const borderDash = showClosedFlag ? "dashed" : "solid";
     const ringShadow = isSwapSource
@@ -1131,7 +1143,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
                   border: "1px solid var(--border-warning-tint)",
                 }}
               >
-                closed
+                {inertTag}
               </span>
             ) : null}
           </span>
