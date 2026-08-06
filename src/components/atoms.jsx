@@ -49,6 +49,12 @@ import { R, S, BTN } from "../lib/constants.js";
 // The only backdropFilter blur in the app lives here. Other surfaces
 // must NOT add blur — see CLAUDE.md "Performance gotcha".
 //
+// Module-level because the lock is a property of the DOCUMENT, not of any
+// one Overlay instance — see the refcount note in the effect below.
+let bodyScrollLocks = 0;
+let bodyScrollPrevOverflow = "";
+
+//
 // v16.0.0 — enter/exit animation. Overlay reads `{leaving}` from
 // PresenceContext and swaps its scrim + sheet to the *-out keyframes before
 // unmounting. That context is provided by <ModalPresence> at the mount
@@ -63,11 +69,29 @@ export function Overlay({ open, onClose, title, isMobile, children, footer }) {
   // it — the scrim covers a centred card and the page beneath is inert.
   // Hooks must run unconditionally, so the guard lives inside the effect
   // rather than around it.
+  //
+  // REFCOUNTED, not save-and-restore. Modals are one-at-a-time by design,
+  // but ModalPresence keeps a closing one mounted for its 200 ms exit, so
+  // two Overlays genuinely overlap if the manager opens B while A is still
+  // animating out. With per-instance save/restore that interleaves wrongly:
+  // B saves prev="hidden" (A's lock), A's cleanup then restores "" and
+  // unlocks the page under a full-screen B, and B's cleanup finally writes
+  // back "hidden" — leaving <body> unscrollable with no modal open, until a
+  // reload. Counting locks and only touching the style on the 0↔1 edges is
+  // order-independent.
   useEffect(function () {
     if (!open || !isMobile) return undefined;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return function () { document.body.style.overflow = prev; };
+    if (bodyScrollLocks === 0) {
+      bodyScrollPrevOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    bodyScrollLocks += 1;
+    return function () {
+      bodyScrollLocks -= 1;
+      if (bodyScrollLocks === 0) {
+        document.body.style.overflow = bodyScrollPrevOverflow;
+      }
+    };
   }, [open, isMobile]);
 
   if (!open) return null;
@@ -735,12 +759,22 @@ export function AutoHeight({ children, style, linear }) {
 // `overflow: hidden` applies ONLY while the slide runs, so the 28px
 // translateX can't spawn a transient horizontal scrollbar — then it goes
 // back to visible so hover lifts aren't clipped at rest.
+//
+// The target check is load-bearing: animationend BUBBLES, and ScheduleGrid
+// renders `mgt-jump-pulse` (1.6s, one-shot) and `mgt-swap-pulse` on cells
+// INSIDE this wrapper. Without it, a cell animation finishing mid-slide
+// clears `animating`, which strips the direction class and snaps the
+// half-slid view into place — while also dropping the overflow guard this
+// comment is about.
 export function SlideView({ dir, children, style }) {
   const [animating, setAnimating] = useState(true);
   return (
     <div
       className={animating ? dir : undefined}
-      onAnimationEnd={function () { setAnimating(false); }}
+      onAnimationEnd={function (e) {
+        if (e.target !== e.currentTarget) return;
+        setAnimating(false);
+      }}
       style={{ overflow: animating ? "hidden" : "visible", ...(style || {}) }}
     >
       {children}
