@@ -313,6 +313,20 @@ export const S = Object.freeze({
   card: {
     width: "100%",
     maxWidth: 720,
+    // v16.0.0 (phase 28): the flexbox min-width trap. `appShell` is
+    // `display: flex`, so this card is a flex item, and a flex item's
+    // default `min-width: auto` refuses to shrink below its CONTENT's
+    // min-content width. The schedule grid sets an explicit `minWidth`
+    // (944px for a 7-day week) on the element inside its `overflowX: auto`
+    // wrapper — that min-content width propagated all the way up and won
+    // against `width: 100%`.
+    //
+    // Measured on a 932px viewport: the card rendered 942px wide at
+    // left: -5, so the PAGE itself scrolled horizontally by 5px and every
+    // fixed reference point shifted with it. `min-width: 0` restores the
+    // intended behaviour — the card is 900px, and the grid scrolls inside
+    // its own wrapper, which is what that wrapper was for.
+    minWidth: 0,
     background: "var(--bg-card)",
     border: "1px solid var(--border-card)",
     borderRadius: R.card,

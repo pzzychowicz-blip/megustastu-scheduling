@@ -378,6 +378,20 @@
       }
 
       html, body, #root { height: 100%; margin: 0; }
+
+      /* v16.0.0 (phase 28): reserve the vertical scrollbar's gutter at all
+         times. The app is a centred column, and the four tabs have very
+         different heights — a tall Schedule scrolls, a short Requests list
+         does not. Without this, switching between them adds and removes the
+         scrollbar, and the centred content JUMPS sideways by the
+         scrollbar's width (~15px on Windows/Linux, and on macOS whenever
+         the user has set "Show scroll bars: Always").
+
+         `stable` keeps the gutter reserved even when there is nothing to
+         scroll, so the column never moves. Ignored by engines that don't
+         support it, where the behaviour is simply what it is today. */
+      html { scrollbar-gutter: stable; }
+
       body {
         font-family: var(--font-app);
         background: linear-gradient(180deg, var(--bg-app-from) 0%, var(--bg-app-to) 100%);
