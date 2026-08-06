@@ -392,7 +392,15 @@ export default function RequestFormModal({
           onChange={function (e) { setField("notes", e.target.value); }}
           rows={2}
           placeholder="e.g. medical appointment, family event"
-          style={{ ...S.inputBase, resize: "vertical", fontFamily: "inherit" }}
+          // v16.0.0: S.inputBase is R.pill (999px), which is right for a
+          // single-line control — CSS clamps it to half the box, giving a
+          // true pill at any input height. A MULTI-LINE box is the case
+          // that breaks: at rows=2 (~62px) it clamps to ~31px per corner
+          // and the field reads as a lozenge with the first and last lines
+          // crowded against the curve, and `resize: vertical` makes it
+          // worse as the box grows. Same reasoning as the schedule grid's
+          // canvas exception — a textarea is a surface, not a control.
+          style={{ ...S.inputBase, borderRadius: R.card, resize: "vertical", fontFamily: "inherit" }}
         />
       </Fld>
 

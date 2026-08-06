@@ -255,11 +255,15 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   // ── Tab nav ────────────────────────────────────────────────────────────
   // v16.0.0: aligned with MGT Bookings' pill-track styling — the track and
   // the lifted active pill both use R.pill rather than the card/tight
-  // radii. `scrollbarWidth: none` hides the horizontal scrollbar that
-  // appears on narrow viewports; the track already scrolls rather than
-  // widening the layout, and the visible bar was pure noise.
+  // radii. The track scrolls rather than widening the layout on narrow
+  // viewports, and `.mgt-no-scrollbar` hides the bar that would otherwise
+  // paint under the pills. That has to be a CLASS: WebKit only responds to
+  // `::-webkit-scrollbar`, which an inline style cannot express, so the
+  // inline `scrollbarWidth` this started as worked in Firefox and nowhere
+  // the app is actually used.
   const tabNav = (
     <div
+      className="mgt-no-scrollbar"
       style={{
         display: "flex",
         gap: 4,
@@ -268,8 +272,6 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         background: "var(--bg-segment)",
         borderRadius: R.pill,
         overflowX: "auto",
-        scrollbarWidth: "none",
-        msOverflowStyle: "none",
       }}
     >
       {TABS.map(function (t) {

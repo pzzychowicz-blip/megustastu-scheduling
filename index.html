@@ -522,6 +522,16 @@
       .mgt-press { transition: filter 160ms ease-out, background-color 160ms ease-out; }
       .mgt-press:active:not(:disabled) { filter: brightness(0.86); }
 
+      /* ── v16.0.0: hide a scroll container's scrollbar ──────────────────
+         `scrollbarWidth: none` as an inline style only reaches Firefox, and
+         `msOverflowStyle` only legacy Edge — WebKit needs a pseudo-element,
+         which inline styles cannot express. So AppShell's tab track was
+         still painting a scrollbar in Safari and Chrome, iOS Safari
+         included, despite the inline properties. All three engines here,
+         once. The container still scrolls; only the bar is hidden. */
+      .mgt-no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+      .mgt-no-scrollbar::-webkit-scrollbar { width: 0; height: 0; }
+
       /* ── v16.0.0: focus-visible ring ───────────────────────────────────
          NEITHER app had any focus affordance before this — the clearest
          accessibility gap in both. A keyboard user tabbing through the app
