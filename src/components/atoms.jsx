@@ -573,6 +573,33 @@ export function mkBtn(props) {
 // On show→false the node stays mounted, `leaving` flips true (so the caller
 // can swap to an *-out class), and `render` drops after outMs. Shared by
 // Presence and ModalPresence so the timing logic exists once.
+// ── useRetainedChildren ──────────────────────────────────────────────────
+// Keeps the last non-null `children` so an exit animation has something to
+// render after the caller has already dropped the content. Returns a ref.
+//
+// The cache is written in an EFFECT, not in the render body. All three
+// consumers used to do `if (children) last.current = children;` inline,
+// which mutates a ref during render — React disallows that, and this app
+// mounts under StrictMode. React is free to render a component and throw
+// the result away without committing (StrictMode's dev double-render, and
+// concurrent rendering or a Suspense retry in general); a render-phase
+// write would then cache children from a tree that never reached the
+// screen, and the exit would replay content the user never saw.
+//
+// Writing after commit is also sufficient: by the time `children` goes
+// null, the previous render HAS committed, so its effect has already run
+// and the ref holds exactly what was last displayed.
+//
+// Ported from MGT Bookings, where the same three atoms carry the same
+// render-phase write — see that repo's ROADMAP.
+function useRetainedChildren(children) {
+  const last = useRef(null);
+  useEffect(function () {
+    if (children) last.current = children;
+  }, [children]);
+  return last;
+}
+
 function usePresenceLifecycle(show, outMs) {
   const [render, setRender] = useState(show === true);
   const [leaving, setLeaving] = useState(false);
@@ -601,8 +628,7 @@ function usePresenceLifecycle(show, outMs) {
 //
 //   <Presence show={x} inClass="mgt-slide-in" outClass="mgt-slide-out">…</Presence>
 export function Presence({ show, inClass, outClass, outMs = 200, children, style, tag = "div" }) {
-  const last = useRef(null);
-  if (children) last.current = children;
+  const last = useRetainedChildren(children);
   const [render, leaving] = usePresenceLifecycle(show, outMs);
   if (!render) return null;
   const Tag = tag;
@@ -619,9 +645,11 @@ export function Presence({ show, inClass, outClass, outMs = 200, children, style
 // ScheduleGrid's generate / regenerate / clear / undo result banner, which
 // mounted and unmounted hard. `mgt-toast-in` / `-out` were already defined
 // in index.html with no caller — the other dead token this pass retired.
-export function Toast({ show, children, style }) {
+// `outMs` is overridable because a Toast nested inside a Reveal has to
+// outlive the Reveal's collapse — see REVEAL_OUT_MS below.
+export function Toast({ show, children, style, outMs = 210 }) {
   return (
-    <Presence show={show} inClass="mgt-toast-in" outClass="mgt-toast-out" outMs={210} style={style}>
+    <Presence show={show} inClass="mgt-toast-in" outClass="mgt-toast-out" outMs={outMs} style={style}>
       {children}
     </Presence>
   );
@@ -661,9 +689,20 @@ export function Toast({ show, children, style }) {
 // reveals along the inline axis, and the same "dead tokens are worse than
 // no tokens" rule that kept out its extra BTN variants applies to a branch
 // that would never execute.
+
+// How long a Reveal stays mounted after `show` goes false, i.e. how long
+// the collapse takes. EXPORTED because anything nested inside a Reveal has
+// to outlive it: the result banner in ScheduleGrid puts a Toast inside a
+// Reveal, and with Toast's own 210ms default the content unmounted 90ms
+// before the height finished easing, leaving the last stretch of the
+// collapse animating an empty box. The two constants were picked
+// independently and nothing tied them together, so either one moving
+// silently reopened the gap. Now the nesting site passes this value
+// through and the relationship is explicit.
+export const REVEAL_OUT_MS = 300;
+
 export function Reveal({ show, children, style }) {
-  const last = useRef(null);
-  if (children) last.current = children;
+  const last = useRetainedChildren(children);
   const [mounted, setMounted] = useState(show === true);
   const [open, setOpen] = useState(show === true);
   const [revealed, setRevealed] = useState(show === true);
@@ -702,7 +741,7 @@ export function Reveal({ show, children, style }) {
     }
     setOpen(false);
     setRevealed(false);  // clip immediately so the collapse hides cleanly
-    const t = setTimeout(function () { setMounted(false); }, 300);
+    const t = setTimeout(function () { setMounted(false); }, REVEAL_OUT_MS);
     return function () { clearTimeout(t); };
   }, [show]);
 
@@ -756,8 +795,7 @@ export const PresenceContext = createContext({ leaving: false });
 export function usePresence() { return useContext(PresenceContext); }
 
 export function ModalPresence({ show, children, outMs = 200 }) {
-  const last = useRef(null);
-  if (children) last.current = children;
+  const last = useRetainedChildren(children);
   const [render, leaving] = usePresenceLifecycle(show, outMs);
   if (!render) return null;
   return (

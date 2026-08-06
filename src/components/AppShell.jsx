@@ -321,6 +321,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         settings={data.settings}
         configRevisions={data.configRevisions}
         actions={actions}
+        writeWarning={writeWarning}
         isMobile={isMobile}
       />
     );

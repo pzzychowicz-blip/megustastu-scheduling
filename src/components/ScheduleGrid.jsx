@@ -63,7 +63,7 @@ import {
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
 import { isTypingTarget, isAnyOverlayOpen } from "../lib/keyboard.js";
-import { ModalPresence, SlideView, Reveal, Toast } from "./atoms.jsx";
+import { ModalPresence, SlideView, Reveal, Toast, REVEAL_OUT_MS } from "./atoms.jsx";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import SplitConfirmModal from "./SplitConfirmModal.jsx";
 import ExportButton from "./ExportButton.jsx";
@@ -82,7 +82,7 @@ function isSectionBoundary(prevSlot, slot) {
   return prevSlot.section !== slot.section || prevSlot.dayPart !== slot.dayPart;
 }
 
-export default function ScheduleGrid({ shifts, employees, requests, shiftTemplate, settings, configRevisions, actions, isMobile }) {
+export default function ScheduleGrid({ shifts, employees, requests, shiftTemplate, settings, configRevisions, actions, writeWarning, isMobile }) {
   // v0.9.0: role-pill visibility on schedule cells. Default ON when
   // /settings hasn't been written yet, OR when the field is missing
   // from an older saved object — only an explicit `false` hides them.
@@ -572,8 +572,28 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // Apply flow: handleUndo() pops the latest op, re-upserts restoreShifts
   // (Firebase RTDB accepts writes to any key, even one we just deleted),
   // then deletes removeIds. A banner reports the result.
-  const { stack: undoStack, push: pushUndo, pop: popUndo } = useUndoStack();
+  const { stack: undoStack, push: pushUndo, pop: popUndo, clear: clearUndo } = useUndoStack();
   function recordUndoableOp(op) { pushUndo(op); }
+
+  // v16.0.0: drop the whole undo stack the moment ANY write is rejected.
+  //
+  // `actions.upsertShift` returns its new record's id synchronously, while
+  // the Firebase `set()` is still in flight — so a capture site records
+  // that id into `removeIds` before anyone knows whether the write landed.
+  // If it is then refused (the PERMISSION_DENIED this project hit on
+  // /settings), the stack holds ids for records that never existed, and
+  // Undo would report "Undid: Regenerate" while deleting nothing.
+  //
+  // Threading a promise back through every mutation call site would be the
+  // thorough fix; this is the honest one. A rejected write means some part
+  // of the last operation did not happen, so the stack no longer describes
+  // a state we can return to — whichever record failed. Clearing it greys
+  // the Undo button out, and the write-failure banner (rendered by
+  // AppShell, and the same signal this effect keys on) is already on
+  // screen saying why.
+  useEffect(function () {
+    if (writeWarning) clearUndo();
+  }, [writeWarning, clearUndo]);
   function handleUndo() {
     const op = popUndo();
     if (!op) return;
@@ -1624,7 +1644,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   const bannerVisible = Boolean(resultBanner);
   const generateBanner = (
     <Reveal show={bannerVisible}>
-      <Toast show={bannerVisible}>
+      {/* outMs must match the Reveal's collapse, or the content unmounts
+          before the height finishes easing and the last stretch animates
+          an empty box. */}
+      <Toast show={bannerVisible} outMs={REVEAL_OUT_MS}>
       {resultBanner ? (
       <div
         style={{
@@ -1785,7 +1808,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           dismissable only by navigating to a non-past week. Uses the
           warning palette to match the SwapButton-active visual language
           without screaming "error". */}
-      {isReadOnly ? (
+      {/* All three banners in this stack are Reveal-wrapped. The read-only
+          one flips on ordinary week navigation — the single most frequent
+          action in the app — so a hard mount jumped the whole grid down and
+          back up on every Prev/Next across the today boundary. */}
+      <Reveal show={isReadOnly}>
+        {isReadOnly ? (
         <div
           style={{
             marginBottom: 12,
@@ -1807,8 +1835,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
             current or a future week to make edits.
           </span>
         </div>
-      ) : null}
-      {swapBannerView}
+        ) : null}
+      </Reveal>
+      <Reveal show={Boolean(swapBannerView)}>{swapBannerView}</Reveal>
       {generateBanner}
       {allClosedNotice}
       {dates.length > 0 ? (
