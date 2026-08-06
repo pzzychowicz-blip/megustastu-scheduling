@@ -76,47 +76,31 @@ function rawQuotaFor(emp) {
   return Math.round(v);
 }
 
-// Count unique dates this employee is on in the week. Two shifts on the
-// same date collapse to one — matching the `countAssignedDates` semantic
-// in generator.js, and deliberately so: `workingDaysPerWeek` is a count of
-// DAYS, so a split shift consumes one day of quota, not two.
+// One pass over the week's shifts producing BOTH per-employee tallies.
 //
-// v16.0.0: that collapse used to be described as defensive, because the
-// same-day-strict rule meant two shifts on one date couldn't happen. Split
-// shifts are now a supported manual action, so it is load-bearing rather
-// than defensive. `buildSplitDayCountByEmployee` below reports the surplus
-// separately so the pill can still show it.
+//   counts[empId]  — unique DATES worked. Two shifts on one date collapse to
+//                    one, matching `countAssignedDates` in generator.js and
+//                    deliberately so: `workingDaysPerWeek` is a count of
+//                    DAYS, so a split shift consumes one day of quota, not
+//                    two. (v16.0.0: that collapse used to be described as
+//                    defensive, because same-day-strict meant it couldn't
+//                    happen. Split shifts made it load-bearing.)
+//   splits[empId]  — the surplus records the collapse above swallows, so the
+//                    pill can still surface a 12-hour double. A date with
+//                    two shifts contributes 1, a (pathological) three
+//                    contributes 2. Absent when zero.
+//
+// Computed together rather than in two functions: they walk the same records
+// and apply the same orphan skip, so one pass halves the work AND makes the
+// two numbers consistent by construction instead of by keeping two copies of
+// the skip rule in sync.
 //
 // v15.4.0: `template` is the focus-week resolved shift template. When given,
 // orphan shifts — a slot index that no longer exists at its (section, dayPart)
 // in the resolved template (the manager dropped the slot count) — are skipped
-// so they don't inflate the pill count. They already don't render on the grid.
-function buildCountByEmployee(weekShifts, template) {
-  const seen = {};
-  const all = Object.values(weekShifts || {});
-  for (let i = 0; i < all.length; i++) {
-    const s = all[i];
-    if (!s || !s.employeeId || !s.date) continue;
-    if (!isLiveShiftForTemplate(s, template)) continue;
-    if (!seen[s.employeeId]) seen[s.employeeId] = {};
-    seen[s.employeeId][s.date] = true;
-  }
-  const out = {};
-  for (const id in seen) {
-    out[id] = Object.keys(seen[id]).length;
-  }
-  return out;
-}
-
-// v16.0.0: how many dates this employee works MORE THAN ONCE in the week —
-// i.e. how many split-shift days they have. Counts records per (employee,
-// date) and adds up the surplus, so a day with two shifts contributes 1 and
-// a (pathological) day with three contributes 2.
-//
-// Shares the orphan-shift skip with buildCountByEmployee above: a shift at
-// a slot index the resolved template no longer has doesn't render on the
-// grid, so it must not be reported as half of a split either.
-function buildSplitDayCountByEmployee(weekShifts, template) {
+// so they don't inflate either tally. They already don't render on the grid,
+// and a shift that doesn't render must not be reported as half of a split.
+function buildWeekTallies(weekShifts, template) {
   const perDate = {};
   const all = Object.values(weekShifts || {});
   for (let i = 0; i < all.length; i++) {
@@ -126,15 +110,20 @@ function buildSplitDayCountByEmployee(weekShifts, template) {
     if (!perDate[s.employeeId]) perDate[s.employeeId] = {};
     perDate[s.employeeId][s.date] = (perDate[s.employeeId][s.date] || 0) + 1;
   }
-  const out = {};
+  const counts = {};
+  const splits = {};
   for (const id in perDate) {
+    const dates = perDate[id];
+    let days = 0;
     let extra = 0;
-    for (const d in perDate[id]) {
-      if (perDate[id][d] > 1) extra += perDate[id][d] - 1;
+    for (const d in dates) {
+      days += 1;
+      if (dates[d] > 1) extra += dates[d] - 1;
     }
-    if (extra > 0) out[id] = extra;
+    counts[id] = days;
+    if (extra > 0) splits[id] = extra;
   }
-  return out;
+  return { counts: counts, splits: splits };
 }
 
 export default function WeeklyShiftSummary({
@@ -143,16 +132,18 @@ export default function WeeklyShiftSummary({
   // v15.4.0: focus-week resolved template, drives the orphan-shift skip.
   template,
 }) {
-  const counts = buildCountByEmployee(weekShifts, template);
   // v16.0.0: split shifts. `counts` deliberately counts DISTINCT DATES, so
   // an employee working day + evening on one Tuesday still reads as one
   // day against their weekly quota — `workingDaysPerWeek` is literally a
   // count of days, and the generator's quota gate and every fairness
   // target agree with that reading. But the pill would then be silent
   // about a 12-hour double, which is exactly the thing a manager scanning
-  // this panel wants to notice. So we count the surplus records separately
-  // and surface it as a suffix, without touching any of the quota maths.
-  const splitDays = buildSplitDayCountByEmployee(weekShifts, template);
+  // this panel wants to notice. So the same pass reports the swallowed
+  // surplus separately and it renders as a suffix, without touching any of
+  // the quota maths.
+  const tallies = buildWeekTallies(weekShifts, template);
+  const counts = tallies.counts;
+  const splitDays = tallies.splits;
   // v1.6.0: per-employee count of visible-week dates blocked by a
   // request. v1.9.0: narrowed to `holiday` only — `dayoff` no longer
   // decrements the effective cap (it still HARD-blocks the date via

@@ -432,6 +432,103 @@ stripped the leading time from each cell but not the role pill, so
 `"Carlos"` and `"ChefCarlos"` compared unequal. Re-run matching against the
 known employee names.)*
 
+### Phases 17–21 — The rest of the pre-push review
+
+Patryk asked for all three remaining buckets, so every finding is closed on
+this branch rather than deferred.
+
+**17 — the cell editor stopped discarding work.** Two ShiftFormModal defects
+from Part B. The re-init effect had gained `weekShifts` as a dependency (the
+new same-day auto-flip reads it) while still calling `setForm(initialForm)`,
+so any write to `/shifts` — an undo, a second device, a Firebase echo —
+silently reverted whatever the manager had typed into the open modal.
+`weekShifts` and `requests` now come through a ref; both were only ever
+needed for the one-shot read at open. Separately, `showSameDayStaff` was
+auto-flipped ON only at open, so turning it back off with a same-day
+employee selected filtered them out of the option list while
+`form.employeeId` still held their id — the select rendered blank, reading
+as "Unassigned", and Save wrote the assignment anyway. Fixed at the
+invariant rather than the symptom: the `eligible` memo never filters out the
+current selection, so "the select's value is always in its options" holds
+for BOTH toggles in every order of operations. They still count toward the
+hidden totals, so the helper text stays truthful. CLAUDE.md claimed the
+auto-flip maintained that invariant; corrected to describe what does.
+
+**18 — "closed" stopped meaning two things.** `renderUnscheduledSlotCell`
+passed `true` as `renderCell`'s `closedOverride`, which paints a hard-coded
+"closed" tag — so a cell whose row a per-weekday override drops, but which
+still holds a real shift, told the manager the restaurant was shut on a day
+it was trading. Every other surface already split the two cases
+(`renderClosedCell`'s `label`, pdf-export's `"Closed"` vs `"—"`); only the
+occupied path conflated them, because `renderCell` had two states where it
+needed three. `closedOverride` → `inertTag`, a caller-supplied string:
+`"closed"` (day-part not open) or `"not today"` (open, row doesn't run).
+
+**19 — two atoms bugs.** Overlay's mobile body-scroll lock used per-instance
+save-and-restore of `document.body.style.overflow`. Modals are
+one-at-a-time by design, but ModalPresence keeps a closing one mounted for
+200 ms, so opening B while A animates out interleaves the pairs: B saves
+`prev="hidden"` (A's lock), A's cleanup restores `""` and unlocks the page
+under a full-screen B, and B's cleanup writes back `"hidden"` — leaving
+`<body>` unscrollable with no modal open until a reload. The lock is a
+property of the document, so it is refcounted at module level and the style
+is touched only on the 0↔1 edges. And `SlideView`'s `onAnimationEnd` wasn't
+target-guarded: animationend bubbles, and ScheduleGrid renders
+`mgt-jump-pulse` (1.6 s) on cells *inside* the wrapper, so a cell animation
+finishing mid-slide stripped the direction class and snapped the half-slid
+view into place.
+
+**20 — two visual fixes.** `S.inputBase` is `R.pill`, correct for a
+single-line control (CSS clamps to half the box → a true pill at any
+height). Multi-line is the case that breaks it, and `S.inputBase` is also
+spread onto the Notes textarea: at `rows={2}` (~62 px) it clamps to ~31 px
+per corner and reads as a lozenge, worse as `resize: vertical` grows it.
+Overridden to `R.card` there, on the same reasoning as the grid's canvas
+exception. And AppShell's tab track hid its scrollbar with inline
+`scrollbarWidth` / `msOverflowStyle` — Firefox and legacy Edge only. WebKit
+needs `::-webkit-scrollbar`, which no inline style can express, so the bar
+still painted in Safari and Chrome including iOS. Replaced with a global
+`.mgt-no-scrollbar` utility.
+
+**21 — cleanup.** `saveError` and its banner: the v0.8.0 same-day refusal
+was their only trigger and this version deleted it, leaving a state slot
+initialised to `""`, reset to `""` on open, never assigned anything else,
+and ~20 lines of unreachable markup. Removed. `--status-assigned-solid`:
+declared in both theme blocks with zero readers — removed, and the
+explanatory comment now says to add one *with* its consumer.
+`Toast` / `Reveal` / `AutoHeight`: ported with no call sites, ~120 lines
+never executed, including AutoHeight's ResizeObserver lifecycle and
+Reveal's double-rAF + delayed overflow flip. Removed and tracked in
+ROADMAP.md beside `useFlip`, which this version had already deferred on
+exactly that reasoning — port each WITH its first consumer, so its first
+execution isn't its first test. The radii doc block in `constants.js` and
+`index.html` still listed ScheduleGrid's section band and closed tag as
+numeric exceptions when this same version converted both; the list is now
+accurate and marked exhaustive, so `grep -rn "borderRadius: [0-9]" src/`
+is a real audit again (it returns exactly the five documented sites).
+
+Two efficiency findings, both from re-reading changed code rather than
+profiling. `avgShiftHours` builds the full seven-weekday ladder, and is
+called once per employee per week from `blendedAvgShiftHours` — a
+10-employee, 4-week window rebuilt one identical list 40 times, twice over
+for the calendar-month aggregate, on every re-run of either memo. Now
+memoised in a `WeakMap` keyed on the template object (the config resolver
+caches those per Monday, so identities are stable) with an identity check
+on `dayRequiredRoles`; safe to share because `avgShiftHours` only reads.
+And `WeeklyShiftSummary` walked the week's shifts twice with the same
+orphan skip; one pass now yields both tallies, which also makes them
+consistent by construction instead of by keeping two copies of the rule in
+sync.
+
+**Verification.** `npm run build` green after every commit. `avgShiftHours`
+re-checked against v15.4.0's recorded 6.143 baseline: **6.142857**,
+unchanged, with the cache hit returning the identical value and a different
+`dayRequiredRoles` under the same template correctly missing the entry.
+`grep` confirms no `saveError`, no `R.tight`, no `--status-assigned-solid`,
+and no `Toast`/`Reveal`/`AutoHeight` references remain. Bundle 186.03 kB gz
+(from 185.93 — the ladder cache and the merged tally slightly outweigh the
+removals).
+
 ### Phase 16 — Pre-push code-review fix: one ladder definition
 
 `/code-review` on the branch diff found a **data-loss** path introduced by

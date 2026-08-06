@@ -1285,13 +1285,36 @@ function hoursBetween(startStr, endStr) {
 // mean. A fully-closed day-part gives its slots weight 0 → they drop
 // out of the average ("when they are off"). If every eligible slot
 // has weight 0 → returns 0.
+// Private ladder cache for avgShiftHours. The full seven-weekday ladder
+// depends ONLY on (shiftTemplate, dayRequiredRoles), but avgShiftHours is
+// called once per employee per week from blendedAvgShiftHours — so a
+// 10-employee, 4-week window rebuilt one identical list 40 times, and did it
+// again for the calendar-month aggregate, on every re-run of either memo.
+//
+// WeakMap keyed on the template object: the config resolver caches its
+// per-Monday results, so those identities are stable across the walk, and
+// entries drop on their own when a revision is superseded. The second-level
+// identity check on dayRequiredRoles covers the settings object changing
+// under a template that didn't.
+//
+// Safe to share the array because avgShiftHours only READS the slots. Do not
+// hand these out to a caller that might mutate them.
+const avgSlotsCache = new WeakMap();
+function fullWeekSlotsFor(shiftTemplate, dayRequiredRoles) {
+  const hit = avgSlotsCache.get(shiftTemplate);
+  if (hit && hit.roles === dayRequiredRoles) return hit.slots;
+  const slots = slotsForWeek(shiftTemplate, dayRequiredRoles, WEEKDAY_KEYS);
+  avgSlotsCache.set(shiftTemplate, { roles: dayRequiredRoles, slots: slots });
+  return slots;
+}
+
 export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles, openingDays) {
   if (!shiftTemplate || !emp) return 0;
   // v16.0.0: the FULL seven-weekday ladder, so every per-weekday override
   // is visible here. (slotsForDay would give the base ladder with the
   // weekday axes stripped, silently ignoring the overrides.) With no
   // overrides this is the same list slotsForDay returns.
-  const slots = slotsForWeek(shiftTemplate, dayRequiredRoles, WEEKDAY_KEYS);
+  const slots = fullWeekSlotsFor(shiftTemplate, dayRequiredRoles);
   if (slots.length === 0) return 0;
   const pref = emp.preference;
   const wantDay = pref === "day" || pref === "either" || !pref;

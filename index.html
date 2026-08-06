@@ -58,8 +58,10 @@
            Micro-radii that stay numeric at their call sites, as geometry
            rather than style: the Kbd keycap (6), the MonthlyFairnessPanel
            delta-bar trio (5/5/1/4), the EmployeeFairnessModal sparkline
-           pair (6), ScheduleGrid's section band / closed tag, the mobile
-           Overlay sheet's full-bleed 0, and every `50%` circle. */
+           pair (6), the mobile Overlay sheet's full-bleed 0, and every
+           `50%` circle. That list is exhaustive — `grep -rn
+           "borderRadius: [0-9]" src/` (excluding pdf-export.js) should
+           return those and nothing else. */
         --r-pill: 999px;
         --r-auth: 40px;
         --r-sheet: 20px;
@@ -120,11 +122,12 @@
            strength, for status LABELS — which now render solid so a label
            carries the same visual weight as the action button beside it,
            instead of reading lighter on some screens than others.
-           Scheduling's analogue of MGT Bookings' BLOCK_BG.
+           Scheduling's analogue of MGT Bookings' BLOCK_BG. Only the three
+           REQUEST_TYPES actually use these; a fourth (-assigned-) was
+           defined with no reader and removed — add one WITH its consumer.
            Status PICKERS keep chosen = solid, rest = tinted, so both
            families are needed. */
         --status-open-solid: #8e8e93;
-        --status-assigned-solid: #007AFF;
         --status-confirmed-solid: #34c759;
         --status-cancelled-solid: #ff3b30;
 
@@ -276,7 +279,6 @@
 
         /* v16.0.0: solid status fills — Apple's dark system variants. */
         --status-open-solid: #98989d;
-        --status-assigned-solid: #0A84FF;
         --status-confirmed-solid: #32d74b;
         --status-cancelled-solid: #ff453a;
 

@@ -280,8 +280,11 @@ export const ROLE_COLOR_FALLBACK = "var(--role-fallback-rgb)";
 // Documented exceptions that stay NUMERIC at their call sites, because
 // they are geometry rather than a surface role: `borderRadius: "50%"`
 // circles, the Kbd keycap (6), the MonthlyFairnessPanel delta-bar trio
-// (5/5/1/4), the EmployeeFairnessModal sparkline pair (6), ScheduleGrid's
-// section band and closed tag, and the mobile Overlay sheet's full-bleed 0.
+// (5/5/1/4), the EmployeeFairnessModal sparkline pair (6), and the mobile
+// Overlay sheet's full-bleed 0. The list is exhaustive: `grep -rn
+// "borderRadius: [0-9]" src/` should return exactly these. (ScheduleGrid's
+// section band and closed tag were listed here through the sweep but were
+// in fact converted — to R.card and R.pill — so they are not exceptions.)
 // src/lib/pdf-export.js is out of scope entirely — it never reads CSS vars
 // (the printed palette is locked light, v0.11.0).
 //

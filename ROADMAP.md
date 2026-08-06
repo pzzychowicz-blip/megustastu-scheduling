@@ -42,15 +42,34 @@ read helper tolerant of malformed input (they fall back rather than throw).
 A real fix is a revision-migration pass — deliberately out of scope for
 v16.0.0, which was already carrying three features.
 
-### `useFlip` list-reorder animation
-The one Bookings animation primitive **not** ported in v16.0.0, because no
-Scheduling surface currently re-sorts a list in place. If one appears (a
-sortable roster, a re-ranking fairness panel), port it from
-`megustastu-bookings/src/components/atoms.jsx`.
+### Bookings animation primitives not yet ported
+Four of Bookings' animation atoms have **no Scheduling consumer**, so they
+are deliberately absent from `src/components/atoms.jsx`. Port each one
+*with* its first real call site — never speculatively, or its first
+execution in this app is also its first test.
 
-It uses WAAPI, so it must check `document.documentElement.dataset.motion`
-in JS — the CSS reduced-motion kill switches cannot reach the Web Animations
-API.
+- **`Toast`** — a floating status message (Presence + the toast keyframes).
+  The result banner above the schedule grid is the obvious candidate; it
+  currently mounts and unmounts hard.
+- **`Reveal`** — expand/collapse via a CSS grid track easing `0fr ↔ 1fr`.
+  Note the three load-bearing subtleties in the Bookings source: the double
+  `requestAnimationFrame`, the cached last-children, and the delayed
+  `overflow: visible` flip that keeps `.mgt-hover-scale` children from
+  being clipped at rest.
+- **`AutoHeight`** — eases its own height when content is *replaced* rather
+  than shown/hidden. Its `onTransitionEnd` needs an `e.target ===
+  e.currentTarget` guard on arrival (transitionend bubbles) — the same bug
+  the v16.0.0 review found in `SlideView`.
+- **`useFlip`** — list-reorder animation. No Scheduling surface re-sorts a
+  list in place yet; a sortable roster or a re-ranking fairness panel would
+  want it. It uses WAAPI, so it must check
+  `document.documentElement.dataset.motion` in JS — the CSS reduced-motion
+  kill switches cannot reach the Web Animations API.
+
+All four live in `megustastu-bookings/src/components/atoms.jsx`. The three
+that ARE ported — `Presence`, `ModalPresence`/`usePresence`, `SlideView` —
+share `usePresenceLifecycle` with them, so the lifecycle half is already
+here.
 
 ---
 

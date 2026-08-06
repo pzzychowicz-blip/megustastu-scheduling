@@ -1692,9 +1692,14 @@ separate Firebase project, same UI conventions).
     `mgt-view-in-left|right`, `mgt-fade-in`, and `.mgt-press`. Press uses
     `filter: brightness()` NOT a transform, specifically so it never fights
     `.mgt-hover-scale`'s hover transform.
-  - **Animation atoms in `atoms.jsx`:** `Presence`, `Toast`,
-    `ModalPresence` + `PresenceContext` / `usePresence`, `Reveal`,
-    `AutoHeight`, `SlideView`, sharing one `usePresenceLifecycle`.
+  - **Animation atoms in `atoms.jsx`:** `Presence`,
+    `ModalPresence` + `PresenceContext` / `usePresence`, and `SlideView`,
+    sharing one `usePresenceLifecycle`. Bookings' `Toast`, `Reveal`,
+    `AutoHeight` and `useFlip` are NOT here — no Scheduling surface calls
+    them, and the same "dead tokens are worse than no tokens" rule that
+    kept out the extra `BTN` variants applies to ~120 lines of
+    never-executed atom. ROADMAP.md tracks all four; port each WITH its
+    first consumer so its first execution isn't its first test.
   - **Reduced motion:** two independent kill switches — the OS
     `prefers-reduced-motion` query and a per-device Settings → Display
     toggle writing `localStorage["mgt-reduce-motion"]`, stamped onto
@@ -1715,7 +1720,8 @@ separate Firebase project, same UI conventions).
     `S.fldRow` their own `R.card`, so the divergence is closed.
   - **NOT ported:** Bookings' ten domain-named `BTN` variants (Scheduling's
     five semantic ones cover every call site; dead tokens are worse than no
-    tokens), its devices-presence list (Scheduling is single-manager), and
+    tokens), the four consumer-less animation atoms above, its
+    devices-presence list (Scheduling is single-manager), and
     its two-row header chrome (booking-domain-specific; Scheduling's week
     nav belongs inside ScheduleGrid).
 
@@ -2604,12 +2610,14 @@ megustastu-scheduling/
         ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
         │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn.
         │                           v16.0.0: + the animation primitives ported
-        │                           from MGT Bookings — Presence, Toast,
+        │                           from MGT Bookings — Presence,
         │                           ModalPresence + PresenceContext /
-        │                           usePresence, Reveal, AutoHeight, SlideView,
-        │                           all sharing one usePresenceLifecycle. These
-        │                           pair with the @keyframes in index.html;
-        │                           neither half is useful alone.
+        │                           usePresence, SlideView, all sharing one
+        │                           usePresenceLifecycle. These pair with the
+        │                           @keyframes in index.html; neither half is
+        │                           useful alone. Toast / Reveal / AutoHeight /
+        │                           useFlip deliberately NOT ported — no
+        │                           consumer; see ROADMAP.md.
         │                           Overlay reworked: reads {leaving} from
         │                           PresenceContext for its exit animation,
         │                           gained an optional `footer` slot (bounded

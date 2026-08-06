@@ -136,12 +136,13 @@ export default function ShiftFormModal({
   // are legal now, but they should take two deliberate steps — reveal, then
   // pick — rather than being one mis-click away in a long dropdown.
   const [showSameDayStaff, setShowSameDayStaff] = useState(false);
-  // v0.8.0: terminal banner for a refused save. The same-day guard that
-  // used to be its only trigger is gone as of v16.0.0 (splits are allowed),
-  // so this now only ever carries future validation failures. Kept because
-  // the render path is cheap and a save-time refusal surface is worth
-  // having.
-  const [saveError, setSaveError] = useState("");
+  // v16.0.0: the `saveError` state and its red banner are GONE. Their only
+  // ever trigger was the v0.8.0 same-day save refusal, which this version
+  // deleted when split shifts became legal — leaving a state slot that was
+  // initialised to "", reset to "" on open, and never assigned anything
+  // else, plus ~20 lines of unreachable banner markup. If a save-time
+  // refusal is ever needed again it should be added with its trigger, not
+  // kept warm without one.
 
   // Re-init when the modal opens (or the target cell changes).
   //
@@ -179,7 +180,6 @@ export default function ShiftFormModal({
         ? findSameDayShift(snap.weekShifts, shift.employeeId, dateIso, shift.id)
         : null;
       setShowSameDayStaff(!!existingSameDay);
-      setSaveError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- requests / weekShifts are read via latestData on purpose; see above
   }, [open, slotDef, shift, dateIso]);
@@ -308,9 +308,6 @@ export default function ShiftFormModal({
   // ── Field setters ────────────────────────────────────────────────────
   function setField(key, value) {
     setForm(function (prev) { return { ...prev, [key]: value }; });
-    // v0.8.0: clear the same-day save guard banner as soon as the user
-    // changes any field — keeps the error from lingering after the fix.
-    if (saveError) setSaveError("");
   }
 
   function resetToDefaults() {
@@ -447,25 +444,6 @@ export default function ShiftFormModal({
           }
           className="mgt-hover-scale"
         />
-      </div>
-    )
-    : null;
-
-  // v0.8.0: red banner when the save guard refused the picked combo.
-  const saveErrorBanner = saveError
-    ? (
-      <div
-        style={{
-          marginTop: 6,
-          padding: "8px 10px",
-          background: "var(--bg-danger-tint)",
-          border: "1px solid var(--border-danger-tint)",
-          color: "var(--text-danger)",
-          borderRadius: R.card,
-          fontSize: 12,
-        }}
-      >
-        {saveError}
       </div>
     )
     : null;
@@ -700,7 +678,6 @@ export default function ShiftFormModal({
         {prefMismatchBanner}
         {restWarningBanner}
         {maxConsecutiveBanner}
-        {saveErrorBanner}
       </Fld>
 
       {rolePicker}

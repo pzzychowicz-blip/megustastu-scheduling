@@ -22,17 +22,23 @@
 // index.html; neither half is useful without the other.
 //   - Presence     — generic enter/exit primitive (delayed unmount so the
 //                    exit animation can actually run).
-//   - Toast        — thin alias: Presence + the toast keyframes.
 //   - ModalPresence— the same lifecycle, but renders NO wrapper element;
 //                    publishes `{leaving}` on PresenceContext for Overlay.
 //   - usePresence  — read that context.
-//   - Reveal       — height (or width) expand/collapse via grid 0fr↔1fr.
-//   - AutoHeight   — eases its own height when its content is replaced.
 //   - SlideView    — directional slide-in wrapper for view/tab switches.
+//
+// Bookings also has `Toast`, `Reveal`, `AutoHeight` and `useFlip`. They are
+// NOT ported: no Scheduling surface calls them today, and shipping ~120
+// lines of never-executed code — including AutoHeight's ResizeObserver
+// lifecycle and Reveal's double-rAF + delayed overflow flip — just banks
+// the risk without the benefit. Same reasoning this version applied to
+// Bookings' ten BTN variants ("dead tokens are worse than no tokens").
+// ROADMAP.md tracks them; port each one WITH its first real consumer, so
+// its first execution isn't its first test.
 //
 // Vite's automatic JSX runtime: NO React import required.
 
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { R, S, BTN } from "../lib/constants.js";
 
 // ── Overlay ──────────────────────────────────────────────────────────────
@@ -49,18 +55,18 @@ import { R, S, BTN } from "../lib/constants.js";
 // The only backdropFilter blur in the app lives here. Other surfaces
 // must NOT add blur — see CLAUDE.md "Performance gotcha".
 //
-// Module-level because the lock is a property of the DOCUMENT, not of any
-// one Overlay instance — see the refcount note in the effect below.
-let bodyScrollLocks = 0;
-let bodyScrollPrevOverflow = "";
-
-//
 // v16.0.0 — enter/exit animation. Overlay reads `{leaving}` from
 // PresenceContext and swaps its scrim + sheet to the *-out keyframes before
 // unmounting. That context is provided by <ModalPresence> at the mount
 // site; with no provider the default `{leaving: false}` applies, so an
 // un-wrapped modal still works exactly as before (enter animation only,
 // then a hard unmount).
+
+// Module-level, because the body-scroll lock is a property of the DOCUMENT
+// and not of any one Overlay instance — see the refcount note in the effect.
+let bodyScrollLocks = 0;
+let bodyScrollPrevOverflow = "";
+
 export function Overlay({ open, onClose, title, isMobile, children, footer }) {
   const { leaving } = usePresence();
 
@@ -590,19 +596,6 @@ export function Presence({ show, inClass, outClass, outMs = 200, children, style
   return <Tag className={leaving ? outClass : inClass} style={style}>{children || last.current}</Tag>;
 }
 
-// ── Toast ────────────────────────────────────────────────────────────────
-// Thin alias: a floating status message = Presence + the toast keyframes.
-// `style` lets a one-slot toast layer pass `gridArea` so a leaving and an
-// entering toast overlap in the same cell and crossfade in place rather
-// than stacking and reflowing the layout.
-export function Toast({ show, children, style }) {
-  return (
-    <Presence show={show} inClass="mgt-toast-in" outClass="mgt-toast-out" outMs={210} style={style}>
-      {children}
-    </Presence>
-  );
-}
-
 // ── ModalPresence + PresenceContext ──────────────────────────────────────
 // Exit animations for Overlay-based modals.
 //
@@ -640,114 +633,6 @@ export function ModalPresence({ show, children, outMs = 200 }) {
     <PresenceContext.Provider value={{ leaving: leaving }}>
       {children || last.current}
     </PresenceContext.Provider>
-  );
-}
-
-// ── Reveal ───────────────────────────────────────────────────────────────
-// Expand/collapse without knowing the content height, via a CSS grid track
-// easing between 0fr and 1fr. Set `horizontal` to ease the WIDTH instead.
-//
-// Three subtleties, all load-bearing:
-//   1. Double requestAnimationFrame — the 0fr→1fr change must land in a
-//      different frame from the mount, or React batches them and the
-//      transition never fires.
-//   2. `last.current` caches children so a collapse still has content to
-//      animate when the source expression goes null.
-//   3. `revealed` flips the inner track to overflow:visible 320ms after
-//      opening, so a `.mgt-hover-scale` child isn't clipped at rest. It
-//      goes back to hidden immediately on close so the collapse still
-//      clips cleanly. Timeout-driven rather than transitionend, which is
-//      unreliable on grid-template-rows across browsers.
-export function Reveal({ show, children, style, horizontal = false }) {
-  const last = useRef(null);
-  if (children) last.current = children;
-  const [mounted, setMounted] = useState(show === true);
-  const [open, setOpen] = useState(show === true);
-  const [revealed, setRevealed] = useState(show === true);
-  useEffect(function () {
-    if (show) {
-      setMounted(true);
-      let r2 = 0;
-      const r1 = requestAnimationFrame(function () {
-        r2 = requestAnimationFrame(function () { setOpen(true); });
-      });
-      const tv = setTimeout(function () { setRevealed(true); }, 320);
-      return function () {
-        cancelAnimationFrame(r1);
-        cancelAnimationFrame(r2);
-        clearTimeout(tv);
-      };
-    }
-    setOpen(false);
-    setRevealed(false);
-    const t = setTimeout(function () { setMounted(false); }, 300);
-    return function () { clearTimeout(t); };
-  }, [show]);
-  if (!mounted) return null;
-  const track = horizontal
-    ? {
-        display: "inline-grid",
-        gridTemplateColumns: open ? "1fr" : "0fr",
-        transition: "grid-template-columns 280ms cubic-bezier(.4,0,.2,1), opacity 220ms ease",
-      }
-    : {
-        display: "grid",
-        gridTemplateRows: open ? "1fr" : "0fr",
-        transition: "grid-template-rows 280ms cubic-bezier(.4,0,.2,1), opacity 220ms ease",
-      };
-  const innerStyle = horizontal
-    ? { overflow: revealed ? "visible" : "hidden", minWidth: 0, minHeight: 0, display: "flex", alignItems: "center" }
-    : { overflow: revealed ? "visible" : "hidden", minHeight: 0 };
-  return (
-    <div style={{ ...track, opacity: open ? 1 : 0, ...(style || {}) }}>
-      <div style={innerStyle}>{children || last.current}</div>
-    </div>
-  );
-}
-
-// ── AutoHeight ───────────────────────────────────────────────────────────
-// For content-REPLACE cases where there is no clean show/hide to drive a
-// Reveal (a tab swap, a form section switching shape). A ResizeObserver
-// measures the inner content and the wrapper eases `height` to match.
-//
-// `overflow` is visible AT REST and hidden ONLY while the height transition
-// runs: clipping at rest would cut off any `.mgt-hover-scale` lift inside,
-// but not clipping during the transition would let the new content pop out
-// at full size on the first frame.
-export function AutoHeight({ children, style, linear }) {
-  const inner = useRef(null);
-  const hRef = useRef(null);
-  const [h, setH] = useState(null);          // null = auto until first measure
-  const [animating, setAnimating] = useState(false);
-  useLayoutEffect(function () {
-    const el = inner.current;
-    if (!el || typeof ResizeObserver === "undefined") return undefined;
-    function measure() {
-      const next = el.offsetHeight;
-      const prev = hRef.current;
-      // Only a CHANGE from a known prior height animates. The first
-      // (null → number) measure must not clip the rest state.
-      if (prev != null && next !== prev) setAnimating(true);
-      hRef.current = next;
-      setH(next);
-    }
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return function () { ro.disconnect(); };
-  }, []);
-  return (
-    <div
-      onTransitionEnd={function (e) { if (e.propertyName === "height") setAnimating(false); }}
-      style={{
-        height: h == null ? "auto" : h,
-        overflow: animating ? "hidden" : "visible",
-        transition: "height 280ms " + (linear ? "linear" : "ease"),
-        ...(style || {}),
-      }}
-    >
-      <div ref={inner}>{children}</div>
-    </div>
   );
 }
 
