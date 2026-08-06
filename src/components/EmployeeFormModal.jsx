@@ -28,7 +28,7 @@ import {
   ROLES,
   WEEKDAYS,
   S,
-  BTN, BTN_SIZE,
+  BTN, BTN_SIZE, pillTone, segmentTone,
   ROLE_COLORS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
@@ -230,9 +230,7 @@ export default function EmployeeFormModal({
               ...BTN.base,
               ...BTN_SIZE.md,
               borderRadius: R.pill,
-              background: on ? "var(--accent)" : "transparent",
-              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-              border: "1px solid transparent",
+              ...segmentTone(on),
             }}
           >
             {opt.label}
@@ -267,9 +265,7 @@ export default function EmployeeFormModal({
               ...BTN_SIZE.md,
               minWidth: 36,
               borderRadius: R.pill,
-              background: on ? "var(--accent)" : "transparent",
-              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-              border: "1px solid transparent",
+              ...segmentTone(on),
             }}
           >
             {n}
@@ -295,9 +291,7 @@ export default function EmployeeFormModal({
                 ...BTN_SIZE.sm,
                 borderRadius: R.pill,
                 minWidth: 44,
-                background: on ? "var(--accent)" : "var(--bg-pill)",
-                color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                ...pillTone(on),
               }}
             >
               {d.label}
@@ -333,9 +327,7 @@ export default function EmployeeFormModal({
       style={{
         ...BTN.base,
         ...BTN_SIZE.md,
-        background: form.fixedDays ? "var(--accent-tint-mid)" : "var(--bg-pill)",
-        color: form.fixedDays ? "var(--accent-on-tint)" : "var(--text-primary)",
-        border: "1px solid " + (form.fixedDays ? "var(--accent-tint-strong)" : "var(--btn-ghost-border)"),
+        ...pillTone(Boolean(form.fixedDays)),
       }}
     >
       {form.fixedDays ? "Fixed days: ON" : "Fixed days: OFF"}
@@ -353,9 +345,7 @@ export default function EmployeeFormModal({
       style={{
         ...BTN.base,
         ...BTN_SIZE.md,
-        background: form.schedulingPriority ? "var(--accent)" : "var(--bg-pill)",
-        color: form.schedulingPriority ? "var(--text-on-accent)" : "var(--text-primary)",
-        border: "1px solid " + (form.schedulingPriority ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+        ...pillTone(form.schedulingPriority === true),
       }}
     >
       {form.schedulingPriority ? "Priority: ON" : "Priority: OFF"}

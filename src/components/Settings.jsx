@@ -85,7 +85,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  R, S, BTN, BTN_SIZE, SECTIONS,
+  R, S, BTN, BTN_SIZE, pillTone, SECTIONS,
   DEFAULT_SHIFT_TEMPLATE,
   OPERATING_HOURS,
   DEFAULT_OPENING_DAYS,
@@ -1924,9 +1924,7 @@ export default function Settings({
                                 ...BTN_SIZE.md,
                                 borderRadius: R.pill,
                                 textAlign: "left",
-                                background: opt.on ? "var(--accent)" : "var(--bg-pill)",
-                                color: opt.on ? "var(--text-on-accent)" : "var(--text-primary)",
-                                border: "1px solid " + (opt.on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                                ...pillTone(opt.on),
                                 display: "flex",
                                 justifyContent: "space-between",
                                 alignItems: "center",
@@ -2061,9 +2059,7 @@ export default function Settings({
                       ...BTN_SIZE.md,
                       borderRadius: R.pill,
                       minWidth: 40,
-                      background: on ? "var(--accent)" : "var(--bg-pill)",
-                      color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                      border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                      ...pillTone(on),
                     }}
                   >
                     {n}
@@ -2168,9 +2164,7 @@ export default function Settings({
                             ...BTN.base,
                             ...BTN_SIZE.md,
                             borderRadius: R.pill,
-                            background: on ? "var(--accent)" : "var(--bg-pill)",
-                            color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                            border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                            ...pillTone(on),
                           }}
                         >
                           {role}

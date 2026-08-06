@@ -31,7 +31,7 @@
 //                                          slotIndex, label }
 
 import { useState, useEffect } from "react";
-import { R, S, BTN, BTN_SIZE } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, pillTone } from "../lib/constants.js";
 import { Overlay, mkBtn } from "./atoms.jsx";
 import { isoDate, formatDayHeader } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -104,9 +104,7 @@ export default function ClearConfirmModal({
           ...BTN_SIZE.md,
           borderRadius: R.pill,
           flex: "0 0 auto",
-          background: isSelected ? "var(--accent)" : "var(--bg-pill)",
-          color: isSelected ? "var(--text-on-accent)" : "var(--text-primary)",
-          border: "1px solid " + (isSelected ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+          ...pillTone(isSelected),
           cursor: busy ? "not-allowed" : "pointer",
           opacity: busy ? 0.6 : 1,
         }}
@@ -120,7 +118,14 @@ export default function ClearConfirmModal({
             // so spreading it after would clobber the gap (it did:
             // "Mon 1 Jun5 shifts" with no space). Order matters.
             marginLeft: 8,
-            color: isSelected ? "rgba(255,255,255,0.8)" : "var(--text-muted)",
+            // v16.0.0 (phase 23): was a literal rgba(255,255,255,0.8),
+            // the last hard-coded colour outside pdf-export.js. Literals
+            // break the v0.11.0 theming model — every colour resolves
+            // through a CSS var so a theme flip retunes it. On a selected
+            // pill the background is now solid --accent, so the readable
+            // muted tone is --text-on-accent held back with opacity.
+            color: isSelected ? "var(--text-on-accent)" : "var(--text-muted)",
+            opacity: isSelected ? 0.8 : 1,
             fontSize: 11,
           }}
         >

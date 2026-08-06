@@ -25,7 +25,7 @@
 //   AND dateTo >= dateFrom (lexicographic compare on "YYYY-MM-DD" works).
 
 import { useEffect, useState } from "react";
-import { R, S, BTN, BTN_SIZE, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, pillTone, segmentTone, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn, usePresence } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -218,9 +218,7 @@ export default function RequestFormModal({
               ...BTN.base,
               ...BTN_SIZE.md,
               borderRadius: R.pill,
-              background: on ? "var(--accent)" : "transparent",
-              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-              border: "1px solid transparent",
+              ...segmentTone(on),
             }}
           >
             {t.label}
@@ -261,9 +259,7 @@ export default function RequestFormModal({
                   ...BTN.base,
                   ...BTN_SIZE.md,
                   borderRadius: R.pill,
-                  background: on ? "var(--accent)" : "transparent",
-                  color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                  border: "1px solid transparent",
+                  ...segmentTone(on),
                 }}
               >
                 {opt.label}
@@ -299,9 +295,7 @@ export default function RequestFormModal({
                   ...BTN.base,
                   ...BTN_SIZE.sm,
                   borderRadius: R.pill,
-                  background: on ? "var(--accent)" : "var(--bg-segment-strong)",
-                  color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                  border: "1px solid transparent",
+                  ...pillTone(on),
                 }}
               >
                 {w.label}

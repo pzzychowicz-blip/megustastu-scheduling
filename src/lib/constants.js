@@ -464,6 +464,57 @@ export const BTN_SIZE = Object.freeze({
   xs: { padding: "2px 8px", fontSize: 11 },
 });
 
+// ── Selectable-pill tones ────────────────────────────────────────────────
+// v16.0.0 (phase 23). Returns a STYLE FRAGMENT — spread it, don't render
+// it. (Contrast `mkBtn` / `mkInp` in atoms.jsx, which return JSX.)
+//
+// The app has two distinct shapes of "pick one / pick several", and before
+// phase 23 both were re-typed at every call site with drift:
+//
+//   pillTone     A free-standing pill on the page background. OFF must be
+//                VISIBLE — it is the only thing showing there is a control
+//                there at all — so OFF gets `--bg-pill` plus a border.
+//                Used by: Clear scope picker, fixed-days weekdays, the
+//                recurring-weekday picker, Settings open-day parts,
+//                min-consecutive-days-off, day-required roles, and the
+//                Fixed days / Priority booleans.
+//
+//   segmentTone  A segment inside a `--bg-segment-strong` track. The track
+//                already draws the control, so OFF is TRANSPARENT and
+//                borderless — an OFF segment with its own fill would read
+//                as a second selected state. Used by: shift preference,
+//                working-days-per-week, request type, preferred day part.
+//
+// ON is solid `--accent` in BOTH. That is the whole point: before this,
+// "Fixed days: ON" painted `--accent-tint-mid` while "Priority: ON" beside
+// it painted solid `--accent`, so two booleans on one form disagreed about
+// what ON looks like.
+//
+// DELIBERATELY NOT ROUTED THROUGH THESE — each carries meaning that a
+// generic accent would destroy:
+//   • Role pills (EmployeeFormModal, ShiftFormModal) — ON is the ROLE's own
+//     colour from ROLE_COLORS. That is the app's role-identity language.
+//   • Active / Archived (EmployeeFormModal) — a record STATUS, not a
+//     setting. Keeps the `--bg-active-on` green it shares with the grid's
+//     pill-highlight axis.
+//   • Tab nav (AppShell) — a lifted `--bg-tab-active` pill with a shadow,
+//     matching MGT Bookings' tab track.
+export function pillTone(on) {
+  return {
+    background: on ? "var(--accent)" : "var(--bg-pill)",
+    color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+    border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+  };
+}
+
+export function segmentTone(on) {
+  return {
+    background: on ? "var(--accent)" : "transparent",
+    color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+    border: "1px solid transparent",
+  };
+}
+
 // ── Request types ────────────────────────────────────────────────────────
 // v0.11.0: palettes reference the status-* CSS vars so they retune for
 // dark mode along with the rest of the status palette.
