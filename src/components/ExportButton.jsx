@@ -22,7 +22,7 @@
 //   isMobile             (bool)             — forwarded to the warning modal's Overlay.
 
 import { useState, forwardRef, useImperativeHandle } from "react";
-import { BTN } from "../lib/constants.js";
+import { BTN, BTN_SIZE } from "../lib/constants.js";
 import { isWeekComplete, countEmptyCells } from "../lib/schedule-logic.js";
 import { ModalPresence } from "./atoms.jsx";
 import ExportWarningModal from "./ExportWarningModal.jsx";
@@ -88,8 +88,7 @@ function ExportButton({
   const style = {
     ...BTN.base,
     ...(canClick ? BTN.primary : BTN.ghost),
-    padding: "6px 12px",
-    fontSize: 13,
+    ...BTN_SIZE.md,
     opacity: canClick ? 1 : 0.5,
     cursor: canClick ? "pointer" : "not-allowed",
   };

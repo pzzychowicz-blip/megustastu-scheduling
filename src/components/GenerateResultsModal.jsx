@@ -39,7 +39,7 @@
 // embed labels here so adding a new code only touches one file.
 
 import { Overlay, Section, TBadge } from "./atoms.jsx";
-import { S, BTN, GENERATOR_REASONS } from "../lib/constants.js";
+import { S, BTN, BTN_SIZE, GENERATOR_REASONS } from "../lib/constants.js";
 import { parseIsoDate, formatDayHeader } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
 
@@ -177,7 +177,7 @@ function ReasonGroup({ label, items, paletteVariant, renderItem, onItemClick }) 
             <li key={key}>
               <button
                 type="button"
-                className="mgt-hover-scale"
+                className="mgt-hover-scale mgt-press"
                 onClick={function () { onItemClick(item); }}
                 style={{
                   display: "flex",
@@ -262,7 +262,7 @@ export default function GenerateResultsModal({
           type="button"
           className="mgt-hover-scale mgt-press"
           onClick={onClose}
-          style={{ ...BTN.base, ...BTN.secondary, padding: "8px 14px", fontSize: 13 }}
+          style={{ ...BTN.base, ...BTN.secondary, ...BTN_SIZE.md }}
         >
           Close
         </button>

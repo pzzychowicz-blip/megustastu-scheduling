@@ -156,7 +156,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                   primary interactive surface in the app). */}
               <button
                 type="button"
-                className="mgt-hover-scale"
+                className="mgt-hover-scale mgt-press"
                 onClick={function () { setPreviewRequest(r.record); }}
                 title="Preview request"
                 style={{

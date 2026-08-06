@@ -11,7 +11,7 @@
 
 import { useState } from "react";
 import {
-  R, S, BTN, ROLE_COLORS, WEEKDAYS,
+  R, S, BTN, BTN_SIZE, ROLE_COLORS, WEEKDAYS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
 import { mkBtn, TBadge, ModalPresence } from "./atoms.jsx";
@@ -135,7 +135,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
       <button
         key={emp.id}
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={function () { openEdit(emp); }}
         style={{
           display: "block",
@@ -252,9 +252,9 @@ export default function EmployeesList({ employees, actions, isMobile }) {
         </span>
         <button
           type="button"
-          className="mgt-hover-scale"
+          className="mgt-hover-scale mgt-press"
           onClick={function () { setShowArchived(function (v) { return !v; }); }}
-          style={{ ...BTN.base, ...BTN.ghost, padding: "4px 10px", fontSize: 12 }}
+          style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }}
         >
           {showArchived ? "Hide" : "Show"}
         </button>

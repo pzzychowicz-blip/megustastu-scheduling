@@ -15,7 +15,7 @@
 //   appVersion— __APP_SIGNATURE__.version string (for the header label)
 
 import { useEffect, useRef, useState } from "react";
-import { R, S, BTN } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE } from "../lib/constants.js";
 import { usePersistence } from "../hooks/usePersistence.js";
 import { useThemeMode } from "../hooks/useThemeMode.js";
 import { useFirebaseConnection } from "../hooks/useFirebaseConnection.js";
@@ -208,8 +208,9 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
       >
         <span>{writeWarning}</span>
         <button
+          className="mgt-hover-scale mgt-press"
           onClick={clearWriteWarning}
-          style={{ ...BTN.base, ...BTN.ghost, padding: "4px 10px", fontSize: 12 }}
+          style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }}
         >
           Dismiss
         </button>
@@ -243,7 +244,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         />
         <button
           className="mgt-hover-scale mgt-press"
-          style={{ ...BTN.base, ...BTN.ghost }}
+          style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.md }}
           onClick={signOut}
         >
           Sign out
@@ -284,10 +285,9 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
             onClick={function () { setTab(t.key); }}
             style={{
               ...BTN.base,
+              ...BTN_SIZE.md,
               flex: 1,
               minWidth: 90,
-              padding: "8px 12px",
-              fontSize: 13,
               borderRadius: R.pill,
               background: on ? "var(--bg-tab-active)" : "transparent",
               color: on ? "var(--accent)" : "var(--text-secondary)",

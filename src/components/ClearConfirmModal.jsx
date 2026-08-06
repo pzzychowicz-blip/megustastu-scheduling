@@ -31,7 +31,7 @@
 //                                          slotIndex, label }
 
 import { useState, useEffect } from "react";
-import { R, S, BTN } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE } from "../lib/constants.js";
 import { Overlay, mkBtn } from "./atoms.jsx";
 import { isoDate, formatDayHeader } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -96,13 +96,12 @@ export default function ClearConfirmModal({
     return (
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={onClick}
         disabled={busy}
         style={{
           ...BTN.base,
-          padding: "8px 12px",
-          fontSize: 13,
+          ...BTN_SIZE.md,
           borderRadius: R.pill,
           flex: "0 0 auto",
           background: isSelected ? "var(--accent)" : "var(--bg-pill)",

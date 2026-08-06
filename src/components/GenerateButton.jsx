@@ -43,7 +43,7 @@
 // employees.
 
 import { useState, forwardRef, useImperativeHandle } from "react";
-import { BTN } from "../lib/constants.js";
+import { BTN, BTN_SIZE } from "../lib/constants.js";
 import { formatWeekRange } from "../lib/schedule-logic.js";
 import { generateWeek } from "../lib/generator.js";
 import { ModalPresence } from "./atoms.jsx";
@@ -221,8 +221,7 @@ function GenerateButton({
   const style = {
     ...BTN.base,
     ...BTN.primary,
-    padding: "6px 12px",
-    fontSize: 13,
+    ...BTN_SIZE.md,
     opacity: disabled ? 0.5 : 1,
     cursor: disabled ? "not-allowed" : "pointer",
   };

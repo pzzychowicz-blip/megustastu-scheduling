@@ -21,7 +21,7 @@
 //                                   in ScheduleGrid passes this.
 //   onToggle   (fn)               — fires when the button is clicked
 
-import { BTN } from "../lib/constants.js";
+import { BTN, BTN_SIZE } from "../lib/constants.js";
 
 export default function SwapButton({ active, onToggle, disabled }) {
   // v1.7.0: when active, the button paints in the yellow warning
@@ -32,8 +32,7 @@ export default function SwapButton({ active, onToggle, disabled }) {
   const baseStyle = active
     ? {
         ...BTN.base,
-        padding: "6px 12px",
-        fontSize: 13,
+        ...BTN_SIZE.md,
         background: "var(--bg-warning-tint)",
         color: "var(--text-warning)",
         border: "1px solid var(--border-warning-tint)",
@@ -42,8 +41,7 @@ export default function SwapButton({ active, onToggle, disabled }) {
     : {
         ...BTN.base,
         ...BTN.secondary,
-        padding: "6px 12px",
-        fontSize: 13,
+        ...BTN_SIZE.md,
       };
   const style = disabled
     ? { ...baseStyle, opacity: 0.5, cursor: "not-allowed" }

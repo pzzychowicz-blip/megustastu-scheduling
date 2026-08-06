@@ -17,7 +17,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
-  R, S, BTN,
+  R, S, BTN, BTN_SIZE,
   ROLE_COLORS,
   STATUS_COLORS,
   DEFAULT_SHIFT_TEMPLATE,
@@ -1098,7 +1098,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       <button
         key={slot.key + "-" + dIso}
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={function () { cellClick(dIso, effSlot, existing); }}
         style={{
           width: "100%",
@@ -1215,9 +1215,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       }}
     >
       <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={goPrev}  className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>‹ Prev</button>
-        <button onClick={goToday} className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.secondary, padding: "6px 12px", fontSize: 13 }}>Today</button>
-        <button onClick={goNext}  className="mgt-hover-scale" style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 13 }}>Next ›</button>
+        <button onClick={goPrev}  className="mgt-hover-scale mgt-press" style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.md }}>‹ Prev</button>
+        <button onClick={goToday} className="mgt-hover-scale mgt-press" style={{ ...BTN.base, ...BTN.secondary, ...BTN_SIZE.md }}>Today</button>
+        <button onClick={goNext}  className="mgt-hover-scale mgt-press" style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.md }}>Next ›</button>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
@@ -1614,13 +1614,12 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           {bannerHasDetails ? (
             <button
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-press"
               onClick={function () { setShowResultsModal(true); }}
               style={{
                 ...BTN.base,
                 ...BTN.ghost,
-                padding: "2px 10px",
-                fontSize: 12,
+                ...BTN_SIZE.xs,
                 lineHeight: 1.4,
                 boxShadow: "none",
               }}
@@ -1630,13 +1629,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           ) : null}
           <button
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={dismissResultBanner}
             aria-label="Dismiss"
             style={{
               ...BTN.base,
               ...BTN.ghost,
-              padding: "2px 8px",
+              ...BTN_SIZE.xs,
+              // GLYPH EXCEPTION (see BTN_SIZE): xs padding keeps the banner
+              // row height, but an 11px "×" is an unhittable speck.
               fontSize: 14,
               lineHeight: 1,
               boxShadow: "none",
@@ -1693,15 +1694,17 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         {swapMode || swapBanner.tone !== "info" ? (
           <button
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={swapMode ? exitSwapMode : function () { setSwapBanner(null); }}
             aria-label={swapMode ? "Cancel" : "Dismiss"}
             style={{
               ...BTN.base,
+              ...BTN_SIZE.xs,
               background: "var(--btn-danger-bg)",
               color: "var(--text-on-accent)",
               border: "1px solid var(--btn-danger-border)",
-              padding: "3px 9px",
+              // GLYPH EXCEPTION (see BTN_SIZE): the label is "×" or the one
+              // word "Cancel"; keep the glyph legible at xs padding.
               fontSize: 14,
               lineHeight: 1,
               boxShadow: "none",

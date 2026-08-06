@@ -416,6 +416,54 @@ export const BTN = Object.freeze({
   },
 });
 
+// ── Button size scale (BTN_SIZE) ─────────────────────────────────────────
+// v16.0.0 (phase 22). BTN carries a control's COLOUR; this carries its
+// SIZE. Compose them: `{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }`.
+//
+// Why this exists: before phase 22 the app had THIRTEEN distinct control
+// sizes across ~40 hand-rolled `<button style={{ ...BTN.base, padding,
+// fontSize }}>` sites — 10/14, 8/14, 8/12, 6/14, 6/12·13, 6/12·12, 6/10·13,
+// 6/10·12, 4/10·12, 4/10·11, 3/9, 2/10, 2/8. Every one had been tuned by
+// eye at its own call site, so controls that sit side by side (Prev / Today
+// / Next; Roles / Priority / Fixed days) disagreed by a pixel or two in
+// ways that read as sloppiness rather than intent.
+//
+// Four tiers, assigned by ROLE — same discipline as the R radii scale:
+//
+//   lg   Modal primary actions (Save / Cancel / Delete). This is BTN.base's
+//        own padding, so `mkBtn` with no size override is already `lg`.
+//   md   The default for anything the manager aims at directly: week nav,
+//        segmented controls, form pills, scope pickers, modal secondaries.
+//   sm   Inline controls that sit INSIDE another surface and must not
+//        dominate it: list "Show" buttons, summary pills, Settings pills.
+//   xs   Markers and dismissers riding on one line of text, where any more
+//        vertical padding would grow the row: banner ×, split marker.
+//
+// GLYPH EXCEPTION: a button whose whole label is a glyph (× or ‹ ›) may
+// override `fontSize` upward while keeping its tier's padding — an 11px ×
+// is an unhittable speck. Keep the padding so the row height still agrees.
+// Two such buttons exist, both in ScheduleGrid's banners; each says so.
+//
+// The three buttons that are deliberately OFF this scale — verified by
+// reading every button's computed padding in the browser, so this list is
+// exhaustive:
+//
+//   ConnectionStatus dot (padding: 6px)  — a 50%-radius circle. Its padding
+//     is the circle's geometry, not a text control's breathing room.
+//   MonthlyFairnessPanel delta bar (0)   — a wrapper around a fixed 160×10
+//     bar; any padding would misalign the bars between rows.
+//   MonthlyFairnessPanel name button (4px 8px) — LOCKED. v1.13.0 spent
+//     seven review rounds on this row; round 5 tried exactly this scale's
+//     `sm` (4px 10px) "to match the WeeklyShiftSummary pill rhythm" and it
+//     was rejected — the row read too short and the hover card lost its
+//     snug fit. Do not re-align it without asking first.
+export const BTN_SIZE = Object.freeze({
+  lg: { padding: "10px 14px", fontSize: 14 },
+  md: { padding: "7px 12px", fontSize: 13 },
+  sm: { padding: "4px 10px", fontSize: 12 },
+  xs: { padding: "2px 8px", fontSize: 11 },
+});
+
 // ── Request types ────────────────────────────────────────────────────────
 // v0.11.0: palettes reference the status-* CSS vars so they retune for
 // dark mode along with the rest of the status palette.

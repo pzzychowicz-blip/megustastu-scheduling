@@ -77,7 +77,7 @@
 //     reveal (or are already on because the current assignee needs them).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { R, S, BTN, SECTIONS, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, SECTIONS, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
 import { Overlay, Fld, Toggle, mkInp, mkBtn, usePresence } from "./atoms.jsx";
 import {
   formatDayHeader,
@@ -610,13 +610,12 @@ export default function ShiftFormModal({
               <button
                 key={r}
                 type="button"
-                className={readOnly ? undefined : "mgt-hover-scale"}
+                className={readOnly ? undefined : "mgt-hover-scale mgt-press"}
                 disabled={readOnly}
                 onClick={readOnly ? undefined : function () { setField("role", on ? "" : r); }}
                 style={{
                   ...BTN.base,
-                  padding: "6px 12px",
-                  fontSize: 13,
+                  ...BTN_SIZE.md,
                   borderRadius: R.pill,
                   background: on ? "rgb(" + rgb + ")" : "var(--bg-pill)",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
@@ -721,9 +720,9 @@ export default function ShiftFormModal({
         <div style={{ marginTop: 4 }}>
           <button
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={resetToDefaults}
-            style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 12 }}
+            style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }}
           >
             Reset times & role to template defaults
           </button>

@@ -321,7 +321,7 @@ export default function MonthlyFairnessPanel({
           const nameNode = interactiveHighlight ? (
             <button
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-press"
               onClick={function () { onHighlight(isSelected ? null : r.id); }}
               aria-pressed={isSelected ? "true" : "false"}
               title={r.name + " — click to highlight"}
@@ -336,7 +336,7 @@ export default function MonthlyFairnessPanel({
           const barBlock = canDrillDown ? (
             <button
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-press"
               onClick={function () { setDetailEmployeeId(r.id); }}
               style={{
                 background: "transparent",

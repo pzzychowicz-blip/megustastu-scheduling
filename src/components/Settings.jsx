@@ -85,7 +85,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  R, S, BTN, SECTIONS,
+  R, S, BTN, BTN_SIZE, SECTIONS,
   DEFAULT_SHIFT_TEMPLATE,
   OPERATING_HOURS,
   DEFAULT_OPENING_DAYS,
@@ -1465,14 +1465,14 @@ export default function Settings({
                 <div key={d.key} style={{ position: "relative" }}>
                   <button
                     type="button"
-                    className="mgt-hover-scale"
+                    className="mgt-hover-scale mgt-press"
                     onClick={function () {
                       setTplDayPopover(function (cur) { return cur === popKey ? null : popKey; });
                     }}
                     aria-haspopup="dialog"
                     aria-expanded={popped ? "true" : "false"}
                     style={{
-                      ...BTN.base, padding: "6px 10px", fontSize: 12, borderRadius: R.pill,
+                      ...BTN.base, ...BTN_SIZE.sm, borderRadius: R.pill,
                       minWidth: 56, background: bg, color: fg, border: "1px solid " + border,
                       display: "flex", flexDirection: "column", alignItems: "center",
                       gap: 2, lineHeight: 1.1,
@@ -1735,13 +1735,12 @@ export default function Settings({
                     ) : null}
                     <button
                       type="button"
-                      className="mgt-hover-scale"
+                      className="mgt-hover-scale mgt-press"
                       onClick={function () { handleRemoveRevision(rev.id); }}
                       style={{
                         ...BTN.base,
+                        ...BTN_SIZE.sm,
                         marginLeft: "auto",
-                        padding: "4px 10px",
-                        fontSize: 11,
                         borderRadius: R.pill,
                         background: "var(--bg-pill)",
                         color: "var(--text-danger)",
@@ -1835,7 +1834,7 @@ export default function Settings({
                   <div key={d.key} style={{ position: "relative" }}>
                     <button
                       type="button"
-                      className="mgt-hover-scale"
+                      className="mgt-hover-scale mgt-press"
                       onClick={function () {
                         setOpenDayPopover(function (cur) {
                           return cur === d.key ? null : d.key;
@@ -1845,8 +1844,7 @@ export default function Settings({
                       aria-expanded={popped ? "true" : "false"}
                       style={{
                         ...BTN.base,
-                        padding: "6px 10px",
-                        fontSize: 12,
+                        ...BTN_SIZE.sm,
                         borderRadius: R.pill,
                         minWidth: 56,
                         background: bg,
@@ -1917,14 +1915,13 @@ export default function Settings({
                             <button
                               key={opt.key}
                               type="button"
-                              className="mgt-hover-scale"
+                              className="mgt-hover-scale mgt-press"
                               onClick={function () {
                                 setOpeningDayPart(d.key, opt.key, !opt.on);
                               }}
                               style={{
                                 ...BTN.base,
-                                padding: "8px 12px",
-                                fontSize: 13,
+                                ...BTN_SIZE.md,
                                 borderRadius: R.pill,
                                 textAlign: "left",
                                 background: opt.on ? "var(--accent)" : "var(--bg-pill)",
@@ -2057,12 +2054,11 @@ export default function Settings({
                   <button
                     key={n}
                     type="button"
-                    className="mgt-hover-scale"
+                    className="mgt-hover-scale mgt-press"
                     onClick={function () { onMinConsecutiveDaysOffChange(n); }}
                     style={{
                       ...BTN.base,
-                      padding: "6px 14px",
-                      fontSize: 13,
+                      ...BTN_SIZE.md,
                       borderRadius: R.pill,
                       minWidth: 40,
                       background: on ? "var(--accent)" : "var(--bg-pill)",
@@ -2166,12 +2162,11 @@ export default function Settings({
                         <button
                           key={role}
                           type="button"
-                          className="mgt-hover-scale"
+                          className="mgt-hover-scale mgt-press"
                           onClick={function () { onDayRequiredRoleToggle(sectionKey, role); }}
                           style={{
                             ...BTN.base,
-                            padding: "6px 12px",
-                            fontSize: 12,
+                            ...BTN_SIZE.md,
                             borderRadius: R.pill,
                             background: on ? "var(--accent)" : "var(--bg-pill)",
                             color: on ? "var(--text-on-accent)" : "var(--text-primary)",

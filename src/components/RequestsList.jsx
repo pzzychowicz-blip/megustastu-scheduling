@@ -13,7 +13,7 @@
 //   isMobile   (bool)
 
 import { useMemo, useState } from "react";
-import { R, S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { mkBtn, TBadge, ModalPresence } from "./atoms.jsx";
 import { isoDate, parseIsoDate } from "../lib/schedule-logic.js";
 import RequestFormModal from "./RequestFormModal.jsx";
@@ -108,7 +108,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
       <button
         key={req.id}
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={function () { openEdit(req); }}
         style={{
           display: "block",
@@ -209,9 +209,9 @@ export default function RequestsList({ requests, employees, actions, isMobile })
         </span>
         <button
           type="button"
-          className="mgt-hover-scale"
+          className="mgt-hover-scale mgt-press"
           onClick={function () { setShowPast(function (v) { return !v; }); }}
-          style={{ ...BTN.base, ...BTN.ghost, padding: "4px 10px", fontSize: 12 }}
+          style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }}
         >
           {showPast ? "Hide" : "Show"}
         </button>

@@ -25,7 +25,7 @@
 //   AND dateTo >= dateFrom (lexicographic compare on "YYYY-MM-DD" works).
 
 import { useEffect, useState } from "react";
-import { R, S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkInp, mkBtn, usePresence } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -212,12 +212,11 @@ export default function RequestFormModal({
           <button
             key={t.key}
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={function () { setField("type", t.key); }}
             style={{
               ...BTN.base,
-              padding: "6px 14px",
-              fontSize: 13,
+              ...BTN_SIZE.md,
               borderRadius: R.pill,
               background: on ? "var(--accent)" : "transparent",
               color: on ? "var(--text-on-accent)" : "var(--text-primary)",
@@ -256,12 +255,11 @@ export default function RequestFormModal({
               <button
                 key={opt.key}
                 type="button"
-                className="mgt-hover-scale"
+                className="mgt-hover-scale mgt-press"
                 onClick={function () { setField("preferredDayPart", opt.key); }}
                 style={{
                   ...BTN.base,
-                  padding: "6px 14px",
-                  fontSize: 13,
+                  ...BTN_SIZE.md,
                   borderRadius: R.pill,
                   background: on ? "var(--accent)" : "transparent",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
@@ -295,12 +293,11 @@ export default function RequestFormModal({
               <button
                 key={w.key}
                 type="button"
-                className="mgt-hover-scale"
+                className="mgt-hover-scale mgt-press"
                 onClick={function () { toggleRecurringDay(w.key); }}
                 style={{
                   ...BTN.base,
-                  padding: "6px 12px",
-                  fontSize: 13,
+                  ...BTN_SIZE.sm,
                   borderRadius: R.pill,
                   background: on ? "var(--accent)" : "var(--bg-segment-strong)",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",

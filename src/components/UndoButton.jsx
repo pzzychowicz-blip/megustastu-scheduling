@@ -17,7 +17,7 @@
 // The label shows the user what they're about to undo before they click,
 // matching the explicit-target style of the rest of the schedule nav bar.
 
-import { BTN } from "../lib/constants.js";
+import { BTN, BTN_SIZE } from "../lib/constants.js";
 
 export default function UndoButton({ stack, onUndo, isMobile, disabled: disabledByParent }) {
   // We intentionally accept isMobile so the prop surface stays parallel
@@ -37,8 +37,7 @@ export default function UndoButton({ stack, onUndo, isMobile, disabled: disabled
   const style = {
     ...BTN.base,
     ...BTN.secondary,
-    padding: "6px 12px",
-    fontSize: 13,
+    ...BTN_SIZE.md,
     opacity: disabled ? 0.5 : 1,
     cursor: disabled ? "not-allowed" : "pointer",
   };

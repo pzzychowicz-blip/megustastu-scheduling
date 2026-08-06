@@ -45,7 +45,7 @@
 //   highlightedEmployeeId (string|null)         — v1.7.0; currently lit pill
 //   onHighlight           (fn(id|null))         — v1.7.0; click handler
 
-import { R, S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
 import {
   holidayDaysInWeekByEmployee,
   isLiveShiftForTemplate,
@@ -261,14 +261,13 @@ export default function WeeklyShiftSummary({
             <button
               key={r.id}
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-press"
               onClick={interactive
                 ? function () { onHighlight(isSelected ? null : r.id); }
                 : undefined}
               style={{
                 ...BTN.base,
-                padding: "4px 10px",
-                fontSize: 12,
+                ...BTN_SIZE.sm,
                 cursor: interactive ? "pointer" : "default",
                 border: "1px solid " + borderColor,
                 opacity: r.archived ? 0.55 : 1,

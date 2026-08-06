@@ -180,7 +180,7 @@ function WeekBar({ row, onClick }) {
     return (
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={onClick}
         title={rowTitle}
         aria-label={"Open " + rangeStr + " in the schedule"}
