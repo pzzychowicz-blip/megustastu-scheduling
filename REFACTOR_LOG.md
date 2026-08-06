@@ -825,6 +825,71 @@ One shift is left deliberately: `AppShell.jsx:360` sizes the card 1100 on
 Schedule vs 820 elsewhere, so its edges move ~19px on a tab switch. The
 grid needs the room; flagged in ROADMAP.md rather than decided here.
 
+### Phases 30–33 — Write failures, remaining motion, ROADMAP split
+
+**Phase 30 — "toggles revert after a second".** Reported as a Settings
+bug; diagnosed in the live DEV page as a Firebase RULES problem. The
+"Reduce animations" toggle (localStorage) flips fine, while Dark mode /
+Show role pills / Allow incomplete export (all `/settings`) never stick,
+every attempt logging `set at /settings failed: permission_denied` — while
+signed in, with reads working. The one-second delay is RTDB's optimistic
+write: `set()` updates the local cache and fires `onValue` (toggle flips),
+the server refuses, Firebase rolls back and fires again (toggle snaps
+back). Cause: DEV is `megustastu-bookings-dev`, **shared with the Bookings
+app**, whose rules cover its paths and not Scheduling's `/settings`.
+
+The app bug that hid it, and what shipped: all three async `.catch()`
+handlers in `usePersistence` only `console.warn`ed. The pre-write guards
+have always reported refusals through the `writeWarning` banner; the
+server's refusal now goes through the same channel via a shared
+`reportWriteError`, with a distinct PERMISSION_DENIED message that says
+the change was rolled back and points at the Rules rather than at what the
+manager typed. `isSilent` honoured as before, so the eager migration still
+can't raise a banner. **The rules themselves remain to be fixed in the
+Firebase Console — outside the repo.**
+
+**Phase 31 — the surfaces that still popped.** Two reported (the fairness
+row snapping when picking someone from the "Shifts assigned" pills — it is
+a plain `<div>`, and the motion classes carrying the shared transition sit
+on the name *button* inside it; and the fixed-days weekday pills appearing
+in one frame). Swept for the same failure: the archived / past "Show"
+lists, ShiftFormModal's five warning banners, RequestFormModal's
+shift-preference fields, and Settings' banner-duration row. The banners get
+one Reveal EACH rather than one around the stack — they toggle
+independently, and a single wrapper would still snap when one replaced
+another inside it.
+
+Also hardened `Reveal` beyond Bookings' original. Its closed state is
+`0fr` + `opacity: 0`, so the content is *invisible*, not merely
+un-animated — if the double rAF is delayed, what the user loses is the
+content. Caught when an automated run measured a revealed section still at
+`opacity: 0, height: 0` a second after opening because nothing had forced
+a paint. A 60ms `setTimeout` now races the rAF; `setOpen(true)` is
+idempotent, so the smooth path still wins normally.
+
+**Phase 32 — ROADMAP split.** The file was collecting entries that were
+really Bookings work, written in the one repo that cannot act on them.
+Moved to `megustastu-bookings/ROADMAP.md` (branch
+`chore/roadmap-scheduling-ports`), rewritten in that file's bullet house
+style and **re-verified against that repo's own source** rather than
+copied: 28 call sites there carry both motion classes, it has zero
+`focus-visible` rules, and the `outline: "none"` removal that was a
+prerequisite here does not apply there — stated explicitly rather than
+repeated as if universal.
+
+**Phase 33 — three more surfaces onto the scale.** `S.rowTitle` (list row
+titles were `fontSize: 15`, between `body` and `h2`, matching nothing),
+`S.panelTitle` (all three grid panels wrote `{...S.h2, margin:0,
+fontSize:14}` — three copies of one override), and the Scheduled-changes
+axis badges (a byte-for-byte duplicated span at 1px 8px / 10, a fourth
+hand-rolled badge).
+
+**Closing verification** — by enumerating COMPUTED styles of every visible
+element, not by reading source: every rendered font size is on the scale
+{11,12,13,14,17,22} bar one documented 10px outlier (the in-grid role
+chip, `BADGE_SIZE.cell`), and every border-radius resolves to an `R` token
+or a documented geometry exception.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

@@ -1908,6 +1908,53 @@ separate Firebase project, same UI conventions).
     ~19px on a tab switch. Deliberate — the grid needs the room. Tracked
     in ROADMAP.md.
 
+- **A rejected Firebase write must reach the UI (v16.0.0 phase 30):**
+  `usePersistence`'s three async `.catch()` handlers report through the
+  same `writeWarning` banner the pre-write guards use, via the shared
+  `reportWriteError`. This is not cosmetic. RTDB applies `set()` to its
+  local cache and fires `onValue` BEFORE the server answers, so a refused
+  write shows up as the UI changing and then silently reverting about a
+  second later — which is exactly how a Database Rules problem was
+  reported as "a bug where Settings toggles come back on their own."
+  `isSilent` is honoured, so auto-effects (the eager shiftTemplate
+  migration) still cannot raise a banner.
+  **Diagnostic note for next time:** DEV is `megustastu-bookings-dev`,
+  SHARED with the Bookings app. Its rules were written for Bookings'
+  paths (`/bookings`, `/tableBlocks`, `/tableBlocksRev`), so Scheduling
+  paths can read but not necessarily write. If writes fail on DEV, check
+  the Rules before suspecting the code.
+
+- **Where a hard mount is acceptable (v16.0.0 phase 31):** anything whose
+  appearance is triggered by a click and changes HEIGHT gets a `Reveal` —
+  form fields that depend on another field, warning banners, "Show more"
+  lists. A stack of independently-toggling banners gets one `Reveal`
+  EACH, never one around the group: they toggle separately, and a single
+  wrapper still snaps when one banner replaces another inside it. A
+  surface that merely changes COLOUR needs a `transition` instead, and if
+  it is a plain `<div>` it will not inherit one — the shared declaration
+  is on `.mgt-hover-scale` / `.mgt-press`, which are often on a child
+  rather than the element that actually changes (this is what made the
+  fairness row snap).
+
+- **`Reveal`'s 60ms fallback is a safety net, not a nicety
+  (v16.0.0 phase 31):** its closed state is `0fr` + `opacity: 0`, so the
+  content is INVISIBLE rather than merely un-animated. If the double rAF
+  that opens it never runs — an unpainted tab, a throttled frame budget —
+  the user loses the content itself, not just the transition. The
+  `setTimeout` races the rAF and `setOpen(true)` is idempotent, so the
+  smooth path still wins in the normal case. **Scheduling diverges from
+  Bookings here**; port it back if `Reveal` gains real consumers there.
+
+- **ROADMAP.md is Scheduling-only (v16.0.0 phase 32):** the two apps share
+  a design and motion vocabulary, so fixes here routinely need porting to
+  Bookings — but those notes belong in
+  `megustastu-bookings/ROADMAP.md`, because a session working in Bookings
+  reads Bookings' ROADMAP and will never see anything filed here. When
+  writing a cross-repo entry, RE-VERIFY it against the target repo's own
+  source; this repo's experience does not automatically transfer (the
+  `outline: "none"` prerequisite that blocked the focus ring here has no
+  equivalent there).
+
 - **`Reveal` and `Toast` (v16.0.0 phase 26):** ported from Bookings WITH
   their consumers, per the ROADMAP rule that an atom's first execution
   must not be its first test. `Reveal` → the `Collapsible` body (Settings
