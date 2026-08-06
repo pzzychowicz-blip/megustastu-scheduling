@@ -236,12 +236,13 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
       {/* v15.2.0: version + user email line removed from here. The user
           email now lives in the ConnectionStatus popover; the version
           stays on the Settings footer. */}
+      {/* v16.0.0 (phase 35): the connection dot sits AFTER Sign out, so it
+          is the last thing in the header. Its popover anchors itself by
+          measuring at open time rather than assuming a side (v16.0.0
+          ConnectionStatus), so moving it to the viewport edge needs no
+          change there — the measurement now simply resolves to
+          right-aligned where it used to resolve to left. */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-        <ConnectionStatus
-          connected={connected}
-          hasConnected={hasConnected}
-          userEmail={user.email}
-        />
         <button
           className="mgt-hover-scale mgt-press"
           style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.md }}
@@ -249,6 +250,11 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         >
           Sign out
         </button>
+        <ConnectionStatus
+          connected={connected}
+          hasConnected={hasConnected}
+          userEmail={user.email}
+        />
       </div>
     </div>
   );
