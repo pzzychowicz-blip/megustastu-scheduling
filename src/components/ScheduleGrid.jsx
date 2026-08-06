@@ -63,7 +63,7 @@ import {
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
 import { isTypingTarget, isAnyOverlayOpen } from "../lib/keyboard.js";
-import { ModalPresence, SlideView } from "./atoms.jsx";
+import { ModalPresence, SlideView, Reveal, Toast } from "./atoms.jsx";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import SplitConfirmModal from "./SplitConfirmModal.jsx";
 import ExportButton from "./ExportButton.jsx";
@@ -1597,8 +1597,35 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // unfilledCells / clearedReasons / mode field — they're a different
   // shape entirely ({cleared, kind}), with no detail metadata to show.
   const bannerHasDetails = Boolean(resultBanner && resultBanner.mode);
-  const generateBanner = resultBanner
-    ? (
+  // v16.0.0 (phase 26): the banner used to mount and unmount hard, which
+  // did two ugly things at once — the message popped into existence, and
+  // the whole grid beneath it JUMPED by the banner's height both ways.
+  //
+  // Reveal and Toast are composed here because they solve different halves
+  // and neither is sufficient alone:
+  //   Reveal  eases the HEIGHT (0fr↔1fr), so the grid slides rather than
+  //           jumping. The toast keyframes are transform + opacity only —
+  //           they cannot move layout, so Toast by itself would still jump.
+  //   Toast   gives the CONTENT its slide-up entrance and, more
+  //           importantly, an exit: it holds the banner mounted for 210ms
+  //           after `resultBanner` goes null so there is something to
+  //           animate out. Reveal caches children for the same reason, so
+  //           the copy stays readable the whole way down.
+  // One boolean drives both. Nothing about the v1.9.4 auto-dismiss timing
+  // or the Details-modal hold changes — those still own when the state
+  // flips; this only governs how the flip looks.
+  //
+  // The `resultBanner ? … : null` inside Toast is load-bearing, not
+  // leftover. `bannerCopy` is derived from `resultBanner`, so the moment
+  // that state clears the copy is "" — rendering the div unconditionally
+  // would animate out an EMPTY banner. Passing null instead is what lets
+  // Presence fall back to its cached element, whose props still hold the
+  // old text. Same reason ModalPresence caches, same trap.
+  const bannerVisible = Boolean(resultBanner);
+  const generateBanner = (
+    <Reveal show={bannerVisible}>
+      <Toast show={bannerVisible}>
+      {resultBanner ? (
       <div
         style={{
           marginBottom: 12,
@@ -1653,8 +1680,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           </button>
         </div>
       </div>
-    )
-    : null;
+      ) : null}
+      </Toast>
+    </Reveal>
+  );
 
   // v1.7.0: swap-mode banner. Three tones:
   //   info    — yellow guidance during in-progress source/target selection

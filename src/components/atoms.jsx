@@ -347,7 +347,18 @@ export function Collapsible({ title, open, onToggle, dirty, className, headerCla
         {dirty ? <span style={dotStyle} aria-label="Unsaved changes" /> : null}
         <span style={chevronStyle} aria-hidden="true">▸</span>
       </div>
-      {open ? <div style={bodyStyle}>{children}</div> : null}
+      {/* v16.0.0 (phase 26): was `{open ? <div…> : null}` — the chevron
+          rotated over 150ms while the body it points at appeared instantly,
+          which is the jarring half of an animation. Reveal eases the height
+          via a 0fr↔1fr grid track.
+
+          bodyStyle stays on the INNER element, inside Reveal's clip. Its
+          padding and borderTop have to be part of what collapses; hoisting
+          them onto the track would leave a 12px stub and a stray hairline
+          behind after the section closed. */}
+      <Reveal show={open === true}>
+        <div style={bodyStyle}>{children}</div>
+      </Reveal>
     </div>
   );
 }
@@ -596,6 +607,108 @@ export function Presence({ show, inClass, outClass, outMs = 200, children, style
   if (!render) return null;
   const Tag = tag;
   return <Tag className={leaving ? outClass : inClass} style={style}>{children || last.current}</Tag>;
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────
+// v16.0.0 (phase 26). A floating status message that animates in and out.
+// A thin alias over Presence with the toast keyframes — the whole atom is
+// the binding, which is why it is five lines here and five lines in
+// Bookings rather than a shared package.
+//
+// Ported now because it finally has the consumer ROADMAP.md named for it:
+// ScheduleGrid's generate / regenerate / clear / undo result banner, which
+// mounted and unmounted hard. `mgt-toast-in` / `-out` were already defined
+// in index.html with no caller — the other dead token this pass retired.
+export function Toast({ show, children, style }) {
+  return (
+    <Presence show={show} inClass="mgt-toast-in" outClass="mgt-toast-out" outMs={210} style={style}>
+      {children}
+    </Presence>
+  );
+}
+
+// ── Reveal ───────────────────────────────────────────────────────────────
+// v16.0.0 (phase 26). Expand / collapse that EASES rather than cutting.
+//
+// The mechanism is a CSS grid track animating `0fr ↔ 1fr`. That is the one
+// technique that eases to a content-derived height without JavaScript
+// measuring anything — `height: auto` is not animatable, and a measured
+// pixel height goes stale the moment the content reflows (a Settings
+// section grows a row when the manager adds a shift slot). No
+// ResizeObserver, no layout thrash, and nothing to go wrong on resize.
+//
+// Three details are load-bearing; all three are why this was ported whole
+// rather than reimplemented:
+//
+//   1. DOUBLE requestAnimationFrame. The mount and the 0fr→1fr flip must
+//      land in different frames or React batches them into one and the
+//      browser sees no change to transition — the section would snap open,
+//      which is the bug this atom exists to fix.
+//   2. CACHED last children. On close the caller usually drops the content
+//      in the same render that flips `show` false, so the collapse would
+//      animate an empty box. Re-rendering the cached children keeps the
+//      section looking normal all the way down.
+//   3. DELAYED overflow flip. The inner track clips while the ease runs, or
+//      the content spills past the closing edge. But it must go back to
+//      `visible` once settled, or it clips two things Scheduling depends
+//      on: `.mgt-hover-scale` rows lifting at rest, and — more seriously —
+//      the per-weekday and open-days POPOVERS, which are absolutely
+//      positioned above their pill row and would be cut off mid-air.
+//      Timeout-driven rather than transitionend: `grid-template-rows`
+//      transitionend is unreliable across browsers.
+//
+// Bookings' `horizontal` variant is NOT ported — no Scheduling surface
+// reveals along the inline axis, and the same "dead tokens are worse than
+// no tokens" rule that kept out its extra BTN variants applies to a branch
+// that would never execute.
+export function Reveal({ show, children, style }) {
+  const last = useRef(null);
+  if (children) last.current = children;
+  const [mounted, setMounted] = useState(show === true);
+  const [open, setOpen] = useState(show === true);
+  const [revealed, setRevealed] = useState(show === true);
+
+  useEffect(function () {
+    if (show) {
+      setMounted(true);
+      let r2 = 0;
+      const r1 = requestAnimationFrame(function () {
+        r2 = requestAnimationFrame(function () { setOpen(true); });
+      });
+      // Slightly past the 280ms track transition, so the clip lifts only
+      // once the section has actually settled.
+      const tv = setTimeout(function () { setRevealed(true); }, 320);
+      return function () {
+        cancelAnimationFrame(r1);
+        cancelAnimationFrame(r2);
+        clearTimeout(tv);
+      };
+    }
+    setOpen(false);
+    setRevealed(false);  // clip immediately so the collapse hides cleanly
+    const t = setTimeout(function () { setMounted(false); }, 300);
+    return function () { clearTimeout(t); };
+  }, [show]);
+
+  if (!mounted) return null;
+
+  const trackStyle = {
+    display: "grid",
+    gridTemplateRows: open ? "1fr" : "0fr",
+    transition: "grid-template-rows 280ms cubic-bezier(.4,0,.2,1), opacity 220ms ease",
+    opacity: open ? 1 : 0,
+    ...(style || {}),
+  };
+  // minHeight: 0 is required — a grid item's default `min-height: auto`
+  // refuses to shrink below its content, which pins the track at full
+  // height and kills the animation entirely.
+  const innerStyle = { overflow: revealed ? "visible" : "hidden", minHeight: 0 };
+
+  return (
+    <div style={trackStyle}>
+      <div style={innerStyle}>{children || last.current}</div>
+    </div>
+  );
 }
 
 // ── ModalPresence + PresenceContext ──────────────────────────────────────
