@@ -133,6 +133,7 @@ export default function ConnectionStatus({ connected, hasConnected, userEmail })
 
       {open ? (
         <div
+          className="mgt-fade-in"
           style={{
             position: "absolute",
             top: "calc(100% + 8px)",

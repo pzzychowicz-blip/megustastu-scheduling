@@ -1485,6 +1485,13 @@ export default function Settings({
                     <div
                       role="dialog"
                       aria-label={d.label + " — " + label}
+                      // v16.0.0 (phase 25): popovers used to appear with a
+                      // hard cut. `.mgt-fade-in` was defined in index.html
+                      // by the parity pass and had ZERO consumers — a dead
+                      // token, which CLAUDE.md rates worse than no token.
+                      // Enter-only is right here: the popover dismisses on
+                      // outside-click and should get out of the way at once.
+                      className="mgt-fade-in"
                       style={{
                         // Anchored ABOVE the pill: the pill row sits at the
                         // bottom of each block, so a below-anchored popover
@@ -1870,6 +1877,7 @@ export default function Settings({
                       <div
                         role="dialog"
                         aria-label={d.label + " open hours"}
+                        className="mgt-fade-in"
                         style={{
                           position: "absolute",
                           bottom: "calc(100% + 6px)",
