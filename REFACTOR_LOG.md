@@ -890,6 +890,63 @@ element, not by reading source: every rendered font size is on the scale
 chip, `BADGE_SIZE.cell`), and every border-radius resolves to an `R` token
 or a documented geometry exception.
 
+### Phases 37–40 — Removing the agentic register
+
+**Files:** `ScheduleGrid.jsx`, `SwapButton.jsx`, `GenerateConfirmModal.jsx`,
+`GenerateButton.jsx`, `EmployeeFairnessModal.jsx`, `ShiftFormModal.jsx`,
+`SplitConfirmModal.jsx`, `EmployeeFormModal.jsx`, `MonthlyFairnessPanel.jsx`,
+`Settings.jsx`, `atoms.jsx`, `constants.js`, `index.html`.
+**Deleted:** `GenerateResultsModal.jsx`.
+
+**Behavioural change:** Yes, and deliberately subtractive. Prompted by a
+screenshot of swap mode: a full-width yellow banner reading "Pick a filled
+cell as the source." beside a nav button relabelled "Swap: cancel" and a
+red Cancel pill. The app had grown a register in which it narrated its own
+state, announced its own results, hedged about its own strictness, and
+offered to explain its own reasoning — to a single manager who is also its
+sole developer. The test applied throughout: *does the artifact already
+show this?*
+
+- **Phase 37 — swap.** Phase banners, the success banner and the
+  self-relabelling button gone; guidance moves to per-cell cursors (`grab`
+  / `not-allowed`). Selection restyled from a pulsing yellow warning tint
+  to solid `--accent` with no animation. Solid rather than tinted is
+  load-bearing — an assigned cell already sits at 22% accent, so the first
+  attempt at `--accent-tint-soft` (18%) was *fainter* than the cell it
+  highlighted and read as no change; caught by reading computed styles,
+  not by looking. Refusals became a `statusChip` plus a one-shot shake on
+  the offending cell. **Drag-and-drop added** as a second path into the
+  same `attemptSwap`, sharing validation, the split-shift confirm and the
+  undo op.
+- **Phase 38 — results.** The generate/regenerate/clear/undo banner
+  deleted; only a no-change run still speaks, distinguishing "Nothing to
+  fill" from "No eligible staff". With it went `GenerateResultsModal`,
+  `GENERATOR_REASONS`, `jumpToCell` + `mgt-jump-pulse`, and the two
+  banner-timing `/settings` fields with their Settings rows.
+  `GenerateConfirmModal` lost an intro paragraph, a five-bullet rules
+  list, a preference-mode card and four adaptive explainer variants.
+- **Phase 39 — fairness.** `EmployeeFairnessModal`'s Reasoning ↔ Show-data
+  toggle and its worked-formula view removed, with the `Num` / `FormulaRow`
+  helpers that existed only to typeset them.
+- **Phase 40 — voice.** UI strings became noun phrases: no trailing
+  period, no em dash, no second-person framing, no warning glyphs. Five
+  `ShiftFormModal` warnings lost "You can still save; this is just a
+  warning."; the past-week banner became a chip; the grid's six-line
+  footer manual, the Settings intro, `SplitConfirmModal`'s reassurance and
+  the sparkline legend were deleted. The now-consumerless `Toast` atom,
+  its keyframes and `REVEAL_OUT_MS`'s export were removed under the repo's
+  own "dead tokens are worse than no tokens" rule.
+
+**Known cost, accepted on request:** the generator's per-cell reasons are
+no longer surfaced anywhere in the UI. The codes remain in `generator.js`.
+
+**Verification** — in DEV against the live grid, not from source: armed
+state and both cursors; source selection; a refused swap (chip + shake +
+clean expiry); a completed drag-move; undo restoring the grid
+byte-for-byte; the compact confirm modal; a no-change run showing the
+correct one of the two phrases; the fairness modal's three sections and
+sparkline; all four tabs rendering after a cache-cleared server restart.
+
 ---
 
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)

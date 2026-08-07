@@ -304,7 +304,10 @@ separate Firebase project, same UI conventions).
   `workingDaysPerWeek` and floors at 0. Quota=0 employees collapse
   to ratio=1 for the under-utilization sort so they don't dominate
   the leftmost slots.
-- **Move / Swap mechanic (v1.7.0):** manual cell edits now have a
+- **Move / Swap mechanic (v1.7.0; RESTYLED + extended v16.0.0 phase 37 —
+  the yellow palette, the phase banners and the pulsing source are gone,
+  and drag-and-drop was added; see "Swap selection is solid `--accent`"):**
+  manual cell edits now have a
   one-flow path for relocating an assignment. Two entry points feed the
   same mechanic:
   - **In-modal "Move / Swap…"** — opens for any filled cell. Closes
@@ -713,7 +716,10 @@ separate Firebase project, same UI conventions).
     when nothing is open — only partial closure benefits from the
     new visibility. Brings desktop/mobile/PDF (v1.9.0) to a single
     visual model for closed cells.
-- **Generator result details (v1.4.0, jump-to-cell v1.9.3, always-on v1.9.4):** the
+- **Generator result details (v1.4.0, jump-to-cell v1.9.3, always-on v1.9.4;
+  REMOVED v16.0.0 phase 38 — the banner, the Details button, the results
+  modal and the jump-to-cell highlight are all gone; see "No agentic
+  narration"):** the
   result banner gains a "Details" button. Originally hidden when both
   `unfilledCells` and `clearedReasons` were empty (v1.4.0 minimalism);
   **v1.9.4 makes the button always visible on Generate/Regenerate
@@ -784,7 +790,9 @@ separate Firebase project, same UI conventions).
   wrapper). Summary line + Close button stay outside the scroller,
   anchored at the modal bottom.
 
-- **Generator-results banner config (v1.9.4):** the auto-dismiss
+- **Generator-results banner config (v1.9.4; REMOVED v16.0.0 phase 38 —
+  both /settings fields and their Settings rows are gone with the banner):**
+  the auto-dismiss
   banner that appears above the schedule grid after a Generate /
   Regenerate / Clear run is now configurable in
   Settings → Auto-generator. Two new fields on `/settings`:
@@ -1188,7 +1196,8 @@ separate Firebase project, same UI conventions).
   handling identical: only `type === "holiday"` requests subtract
   from the target (v1.9.0 rule).
 
-- **Reasoning toggle on `<EmployeeFairnessModal>` (v1.14.0):** the
+- **Reasoning toggle on `<EmployeeFairnessModal>` (v1.14.0; REMOVED v16.0.0
+  phase 39 — see "No agentic narration"):** the
   drill-down modal gained a left-aligned "Reasoning" button in its
   footer (sibling to the right-aligned Close). Clicking it flips a
   local `view` state from `"data"` (the original three stat
@@ -1245,7 +1254,8 @@ separate Firebase project, same UI conventions).
   HARD-block the date at assignment time but the employee remains
   available for the full quota across remaining open dates.
 
-- **Result-banner buttons hover-scale (v1.14.0):** the Generate /
+- **Result-banner buttons hover-scale (v1.14.0; MOOT since v16.0.0 phase 38 —
+  the banner and both buttons are gone):** the Generate /
   Regenerate / Clear result banner above the schedule grid renders a
   "Details" button (when the banner has a `mode`) and a dismiss `×`
   button. Both now carry `className="mgt-hover-scale"` matching every
@@ -1955,11 +1965,16 @@ separate Firebase project, same UI conventions).
   `outline: "none"` prerequisite that blocked the focus ring here has no
   equivalent there).
 
-- **`Reveal` and `Toast` (v16.0.0 phase 26):** ported from Bookings WITH
-  their consumers, per the ROADMAP rule that an atom's first execution
-  must not be its first test. `Reveal` → the `Collapsible` body (Settings
-  sections used to rotate a chevron over 150ms while the body it points at
-  appeared instantly). `Toast` → the result banner. Three `Reveal` details
+- **`Reveal` (v16.0.0 phase 26; `Toast` removed phase 40):** ported from
+  Bookings WITH their consumers, per the ROADMAP rule that an atom's first
+  execution must not be its first test. `Reveal` → the `Collapsible` body
+  (Settings sections used to rotate a chevron over 150ms while the body it
+  points at appeared instantly). `Toast` → the result banner, and when
+  phase 40 removed that banner the atom, its two keyframe pairs in
+  index.html, and `REVEAL_OUT_MS`'s export went with it — same
+  "dead tokens are worse than no tokens" rule that kept Bookings' extra
+  BTN variants out. `REVEAL_OUT_MS` survives as a module constant that
+  `Reveal` still reads. Three `Reveal` details
   are load-bearing: the **double rAF** (mount and the `0fr→1fr` flip must
   land in separate frames or React batches them and nothing transitions),
   the **cached children** (callers drop content in the same render that
@@ -1967,10 +1982,81 @@ separate Firebase project, same UI conventions).
   **delayed `overflow: visible` flip** — non-negotiable here because the
   per-weekday and open-days POPOVERS are absolutely positioned above their
   pill row and a permanently-clipping ancestor cuts them off mid-air.
-  At the banner, `{resultBanner ? … : null}` inside `Toast` is likewise
-  load-bearing: `bannerCopy` derives from that state, so rendering the div
-  unconditionally animates out an EMPTY banner instead of letting
-  `Presence` fall back to its cached element.
+
+- **No agentic narration (v16.0.0 phases 37-40).** A design rule, and it
+  supersedes several earlier decisions rather than extending them. The app
+  had grown a register in which it described its own state in prose,
+  announced its own results, hedged about its own strictness, and offered
+  to explain its own reasoning — to a single manager who is also its sole
+  developer and the author of every rule being explained. The test applied
+  throughout: **does the artifact already show this?** If the grid shows
+  it, the app does not say it.
+
+  What that removed, and what each was replaced by:
+
+  - *Swap mode's phase banners* (phase 37). "Pick a filled cell as the
+    source." / "Pick the target cell to move or swap. Click the source
+    again to cancel.", plus a nav button relabelling itself "Swap: cancel"
+    and a Cancel pill inside the banner. Replaced by the armed button's
+    state and per-cell CURSORS (`grab` on a filled cell, `not-allowed` on
+    an empty one during source-select) — guidance at the point of contact,
+    before the click, rather than a sentence after it.
+  - *Swap's success banner* (phase 37) and *the generate / clear / undo
+    result banner* (phase 38). Both described what had just visibly
+    happened. Deleted. The ONLY survivor is a run that changed NOTHING,
+    where the screen is identical and silence reads as a dead button.
+  - *`GenerateResultsModal`* — the "Why didn't X fill?" list — and
+    *`EmployeeFairnessModal`'s Reasoning view*, which restated each figure
+    as a worked formula with values substituted in (phases 38-39). Both
+    are a system showing its working. **Deliberately removed on request,
+    accepting that the generator's per-cell reasons are no longer
+    surfaced anywhere;** the codes still exist in generator.js if a future
+    surface wants them.
+  - *Instructional and reassuring copy* (phase 40): the grid's six-line
+    footer manual, the Settings tab intro, `SplitConfirmModal`'s closing
+    reassurance, the fairness sparkline legend, and the five
+    `ShiftFormModal` warnings that each ended "You can still save; this is
+    just a warning."
+
+  **Copy rule going forward:** UI strings are noun phrases. No trailing
+  period, no em dash, no second-person framing, no warning glyphs, no
+  restating a rule at the moment of applying it. An enabled button is
+  already the statement that the action is allowed.
+
+  **Feedback that survives is a `statusChip`,** not a banner: auto-width,
+  `R.pill`, `BADGE_SIZE.base`, neutral or danger tone, no dismiss control,
+  self-expiring. One helper in `ScheduleGrid` serves both remaining cases
+  (a refused swap, a no-change run). A refusal also shakes the offending
+  cell (`@keyframes mgt-cell-reject`), so which and why arrive together.
+
+- **Swap selection is solid `--accent`, and drag-and-drop is a second path
+  (v16.0.0 phase 37).** Two related reversals of v1.7.0.
+
+  *Colour.* Swap mode painted the yellow WARNING tint — the button, the
+  banner, and an infinitely pulsing source-cell outline — on the reasoning
+  that it needed an identity "distinct from accent-blue / green". Wrong in
+  context: yellow already means a conflict, a breached rest rule, or a
+  shift on a closed day-part, so an armed tool wearing it read as a
+  problem. Selection is now solid `--accent` (phase 23's ON language),
+  shared by the armed `SwapButton` and the picked cell, with NO animation.
+  **Solid, not tinted, is load-bearing:** an assigned cell's resting
+  background is already the accent at 22%, so a selection in
+  `--accent-tint-soft` (18%) is FAINTER than the cell it highlights. The
+  first attempt shipped exactly that and was invisible — caught by reading
+  computed styles in the browser, not by looking. Any future restyling of
+  this state must clear the 22% floor.
+
+  *Drag-and-drop.* Added alongside the two-click flow, not replacing it.
+  A filled cell is `draggable`; dropping calls `attemptSwap` with the same
+  source/target pair the two-click path builds, so validation, the
+  split-shift confirm and the undo op are shared and cannot drift. Both
+  stay because they answer different questions: dragging is faster when
+  both cells are on screen, while two-click survives a scroll between
+  them, is reachable from the `S` shortcut and `ShiftFormModal`'s
+  "Move / Swap", and is the only one that works without a pointer. The
+  drop handlers attach UNCONDITIONALLY and guard on `dragSource` inside —
+  gating the props themselves left cells with no handler in any frame
+  where the state had been cleared.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel

@@ -134,7 +134,7 @@ function WeekBar({ row, onClick }) {
   const rangeStr = fmtRangeShort(row.weekStartIso, row.weekEndIso);
   const baseTitle = row.shiftsCount + " / " + row.shiftsTarget + " shifts (" + rangeStr + ")";
   const interactive = typeof onClick === "function";
-  const rowTitle = interactive ? baseTitle + " — click to open this week" : baseTitle;
+  const rowTitle = interactive ? "Open " + baseTitle : baseTitle;
 
   const inner = (
     <>

@@ -439,7 +439,7 @@ export default function ShiftFormModal({
           label="Show staff already working this date"
           helper={
             !showSameDayStaff && eligible.sameDayHiddenCount > 0
-              ? eligible.sameDayHiddenCount + " hidden — picking one creates a split shift"
+              ? eligible.sameDayHiddenCount + " hidden, would be split shifts"
               : null
           }
           className="mgt-hover-scale"

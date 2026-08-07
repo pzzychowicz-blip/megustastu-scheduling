@@ -181,7 +181,7 @@ export default function MonthlyFairnessPanel({
             border: "1px solid var(--hairline-strong)",
             boxSizing: "border-box",
           }}
-          title="No target — nothing to deviate from"
+          title="No target"
         />
       );
     }
@@ -204,7 +204,7 @@ export default function MonthlyFairnessPanel({
           border: "1px solid var(--hairline-strong)",
           boxSizing: "border-box",
         }}
-        title={(delta >= 0 ? "+" : "") + fmtHours(delta) + " vs target — click for details"}
+        title={(delta >= 0 ? "+" : "") + fmtHours(delta) + " vs target"}
       >
         {/* Centre notch — short vertical mark, doesn't dominate */}
         <div
@@ -324,7 +324,7 @@ export default function MonthlyFairnessPanel({
               className="mgt-hover-scale mgt-press"
               onClick={function () { onHighlight(isSelected ? null : r.id); }}
               aria-pressed={isSelected ? "true" : "false"}
-              title={r.name + " — click to highlight"}
+              title={"Highlight " + r.name}
               style={nameBtnStyle}
             >
               {nameContent}
@@ -349,7 +349,7 @@ export default function MonthlyFairnessPanel({
                 lineHeight: 0,
                 flexShrink: 0,
               }}
-              title={"Click for monthly stats — " + r.name}
+              title={"Monthly stats for " + r.name}
               aria-label={"Open monthly stats for " + r.name}
             >
               {deltaBar(r)}
