@@ -4547,35 +4547,38 @@ returned. Do **not** repeat. Build this pattern in from the first commit.
 Both configs are hardcoded in `firebase.js`. Firebase web API keys are
 NOT secrets — Database Rules are the actual security layer.
 
-**⚠️ DEV currently points at `megustastu-bookings-dev` — the BOOKINGS DEV
-database — and this is a bug, not a choice.** Both apps' data sits in one
-database: `/bookings`, `/tableBlocks`, `/recurring`, `/conversations`,
-`/messages`, `/templates` (Bookings) alongside `/shifts`, `/employees`,
-`/requests`, `/configRevisions` (Scheduling). Worse, **`/settings` is a
-single node holding both apps' keys** — Bookings' `layout`, `optimizer`,
+**DEV is `megustastu-scheduling-dev` (v16.0.0 phase 43). It used to be
+`megustastu-bookings-dev` — the BOOKINGS DEV database — and that was a bug,
+not a choice.** The config was copied wholesale when this repo was
+scaffolded from its sister app, so both apps' data sat in one database:
+`/bookings`, `/tableBlocks`, `/recurring`, `/conversations`, `/messages`,
+`/templates` (Bookings) alongside `/shifts`, `/employees`, `/requests`,
+`/configRevisions` (Scheduling). Worse, **`/settings` was a single node
+holding both apps' keys** — Bookings' `layout`, `optimizer`,
 `bookingDefaults`, `general`, `dayShifts`, `operatingHours`, `whatsapp`,
 `users/{uid}/prefs` interleaved with Scheduling's `openingDays`,
-`darkMode`, `operatingStart`/`End`, and the rest.
+`darkMode`, `operatingStart`/`End`.
 
-That is why **every Scheduling settings save fails in DEV with
-PERMISSION_DENIED** while shifts and employees write fine. `usePersistence`
-reads the whole `/settings` node, so `Settings.jsx`'s
-`saveSettings({...settings, …})` spreads Bookings' children back into its
-own write. Bookings' rules guard each of those with a rev-CAS pair
-requiring `stored + 1`; rewriting them at their existing values fails that
-check and the whole write is rejected. **The rules are working correctly —
-Scheduling is the thing at fault.** Do NOT "fix" this by relaxing the
-Bookings rules; that would let this app rewrite another app's config nodes
-on every settings change.
+That is why **every Scheduling settings save failed with PERMISSION_DENIED**
+while shifts and employees wrote fine. `usePersistence` reads the whole
+`/settings` node, so `Settings.jsx`'s `saveSettings({...settings, …})`
+spread Bookings' children back into its own write. Bookings' rules guard
+each of those with a rev-CAS pair requiring `stored + 1`; rewriting them at
+their existing values failed that check and the whole write was rejected.
+**The rules were working correctly — this app was the thing at fault.** If a
+symptom like this ever returns, do NOT reach for relaxing the other app's
+rules: that would let this app rewrite Bookings' config on every settings
+save. Check which database it is talking to first.
 
-The fix is the dedicated project that has existed all along:
-`megustastu-scheduling-dev` →
-`megustastu-scheduling-dev-default-rtdb.europe-west1.firebasedatabase.app`.
-Swapping `devConfig` needs `apiKey` / `messagingSenderId` / `appId` from
-Firebase Console → Project settings → Your apps → Web app; the other four
-fields follow from the project name. Until that swap lands, DEV settings
-saves stay broken and the memory note "DEV is the safe sandbox" is only
-true for the four keyed collections.
+Diagnostic worth keeping: the tell was that ONLY `/settings` failed. The
+keyed collections have no rules under them, so they wrote fine and hid the
+collision for weeks.
+
+**The DEV project has its own Auth user pool and its own Database Rules —
+neither is inherited from Bookings DEV.** Before a visual session works
+there, Email/Password sign-in must be enabled and the manager user created
+under Authentication → Users, and `database.rules.json` must be published
+(a fresh RTDB defaults to locked, which blocks reads as well as writes).
 
 ### Single central save path
 - Any code path that modifies shifts should pass through a single helper

@@ -992,11 +992,30 @@ which cannot be derived.
   staff share a tablet and a laptop; this app has one manager, so the banner
   plus the SDK's rollback is the honest answer.
 
+- **`firebase.js` devConfig swapped** to `megustastu-scheduling-dev` (second
+  commit, once the web config was available — `apiKey` / `messagingSenderId`
+  / `appId` cannot be derived from a project name). The two apps can no
+  longer reach each other's data at all.
+
 **Verification** — build clean; rules JSON parses; the app boots with the two
 extra subscriptions against a database where neither rev node exists (`ready`
-still flips, no hang). The success path could NOT be verified end-to-end: DEV
-still points at the Bookings database, where this write is denied for the
-reason above. It stays denied cleanly — banner renders, no JS errors.
+still flips, no hang); after the swap the console banner reads
+`[firebase] DEV — megustastu-scheduling-dev` with a clean console, and the
+old session correctly does not carry over (different Auth pool).
+
+**Not verified, and why:** the rev-CAS SUCCESS path. Before the swap the only
+reachable database was Bookings', which denies this write for the reason
+above (it stayed denied cleanly — banner, no JS errors). After the swap the
+new project needs its Auth user and its rules published before anything can
+sign in, and that is console work. First run there is the real test: flip a
+Settings toggle and watch `settingsRev` appear at 1 and count up.
+
+**One transient worth not misreading:** a `TypeError: Cannot set properties
+of undefined (setting 'current')` at `usePersistence.js:182` appeared in the
+console during this work. It came from the HMR module version saved between
+changing `subscribeSingleton`'s signature and updating its two call sites —
+`revRef` was genuinely undefined in that intermediate build. Current source
+passes the ref at both sites; line 182 is now a `console.warn`.
 
 ---
 
