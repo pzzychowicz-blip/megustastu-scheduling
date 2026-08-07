@@ -480,8 +480,8 @@ export default function EmployeeFormModal({
           }}
         >
           {tenureRangeInvalid
-            ? "End date must be on or after the start date."
-            : "Leave blank for no limit. The employee won't be scheduled or counted outside these dates."}
+            ? "End date must be on or after the start date"
+            : "Blank for no limit"}
         </div>
       </Fld>
       </div>

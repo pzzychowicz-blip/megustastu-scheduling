@@ -59,7 +59,7 @@ import {
 } from "../lib/schedule-logic.js";
 import { useUndoStack } from "../hooks/useUndoStack.js";
 import { isTypingTarget, isAnyOverlayOpen } from "../lib/keyboard.js";
-import { ModalPresence, SlideView, Reveal, Toast, REVEAL_OUT_MS } from "./atoms.jsx";
+import { ModalPresence, SlideView, Reveal } from "./atoms.jsx";
 import ShiftFormModal from "./ShiftFormModal.jsx";
 import SplitConfirmModal from "./SplitConfirmModal.jsx";
 import ExportButton from "./ExportButton.jsx";
@@ -1688,34 +1688,20 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           dismissable only by navigating to a non-past week. Uses the
           warning palette to match the SwapButton-active visual language
           without screaming "error". */}
-      {/* All three banners in this stack are Reveal-wrapped. The read-only
-          one flips on ordinary week navigation — the single most frequent
-          action in the app — so a hard mount jumped the whole grid down and
-          back up on every Prev/Next across the today boundary. */}
+      {/* v16.0.0 (phase 40): the past-week notice was a full-width tinted
+          banner with a padlock reading "This week is in the past. Cells are
+          read-only — switch to the current or a future week to make edits."
+          Every nav-bar action is already visibly disabled and every cell
+          already refuses to open an editor; the sentence restated that, and
+          then instructed the manager to press the Next button they can see.
+          It is now the same status chip the rest of this surface uses,
+          naming the state and nothing else.
+
+          Reveal-wrapped because this flips on ordinary week navigation —
+          the most frequent action in the app — and a hard mount jumped the
+          whole grid down and back up on every Prev/Next across the boundary. */}
       <Reveal show={isReadOnly}>
-        {isReadOnly ? (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: "8px 12px",
-            background: "var(--bg-warning-tint)",
-            border: "1px solid var(--border-warning-tint)",
-            color: "var(--text-warning)",
-            borderRadius: R.card,
-            fontSize: 13,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            boxShadow: "var(--shadow-soft)",
-          }}
-        >
-          <span aria-hidden="true">🔒</span>
-          <span>
-            This week is in the past. Cells are read-only — switch to the
-            current or a future week to make edits.
-          </span>
-        </div>
-        ) : null}
+        {isReadOnly ? statusChip("Past week, read-only", "neutral") : null}
       </Reveal>
       <Reveal show={Boolean(swapRejectView)}>{swapRejectView}</Reveal>
       <Reveal show={Boolean(noOpView)}>{noOpView}</Reveal>
@@ -1726,15 +1712,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         </SlideView>
       ) : null}
 
-      <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>
-        Click any cell to assign someone or edit the time / role. Cells marked
-        with “*” have times that differ from the template defaults. The
-        assignee dropdown hides staff with a day-off or holiday request on
-        that date, and staff already working that date — a toggle in the
-        modal restores either. Picking someone who already works that date
-        creates a split shift, which is allowed manually but never produced
-        by the auto-generator.
-      </p>
+      {/* v16.0.0 (phase 40): a paragraph used to sit here explaining that
+          clicking a cell edits it, what the "*" marker means, which staff
+          the assignee dropdown hides and why, and what a split shift is.
+          Six lines of manual, under the grid, on every visit. The click
+          target is a button that looks like a button; the picker explains
+          its own hidden-staff toggle in place, at the moment it is
+          relevant; and the "*" is answered by opening the cell. */}
 
       <WeeklyShiftSummary
         employees={employees}

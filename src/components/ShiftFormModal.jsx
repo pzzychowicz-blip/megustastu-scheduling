@@ -398,8 +398,8 @@ export default function ShiftFormModal({
     ? (
       <p style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
         {anyHidden
-          ? "Everyone who fits this slot is hidden by a filter below — they're either already working this date or have a day-off / holiday request. Use the toggles to include them."
-          : "No active employees have a role that fits this slot."}
+          ? "Everyone eligible is hidden by the filters below"
+          : "No active employee holds a role for this slot"}
       </p>
     )
     : null;
@@ -498,9 +498,19 @@ export default function ShiftFormModal({
     );
   }
 
+  // v16.0.0 (phase 40): these five soft warnings each used to end with the
+  // same sentence — "You can still save; this is just a warning." — and
+  // open with a warning glyph. Both were the modal reassuring the manager
+  // about its own strictness. The Save button is right there and enabled;
+  // that IS the statement that saving is allowed, and repeating it five
+  // times over made the stack read as nagging rather than informing.
+  //
+  // Each is now a noun phrase naming the condition: no glyph, no trailing
+  // period, no second-person framing. The warning tint already says what
+  // kind of thing this is.
   const warningBoxStyle = {
     marginTop: 6,
-    padding: "8px 10px",
+    padding: "6px 10px",
     background: "var(--bg-warning-tint)",
     border: "1px solid var(--border-warning-tint)",
     color: "var(--text-warning)",
@@ -510,10 +520,9 @@ export default function ShiftFormModal({
 
   const conflictBanner = conflict
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ This employee has a <strong>{requestTypeLabel(conflict.type)}</strong> request
-        covering {dateIso}{conflict.notes ? " — " + conflict.notes : ""}. You can
-        still save; this is just a warning.
+      <div style={warningBoxStyle} role="note">
+        <strong>{requestTypeLabel(conflict.type)}</strong> request covering this date
+        {conflict.notes ? ": " + conflict.notes : ""}
       </div>
     )
     : null;
@@ -532,8 +541,8 @@ export default function ShiftFormModal({
     : [];
   const splitShiftBanner = sameDayShifts.length > 0
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ <strong>Split shift.</strong> This employee is already on{" "}
+      <div style={warningBoxStyle} role="note">
+        <strong>Split shift</strong>, already on{" "}
         {sameDayShifts.map(function (s, i) {
           const def = s.section && s.dayPart
             ? (SECTIONS[s.section] ? SECTIONS[s.section].label : s.section)
@@ -546,20 +555,19 @@ export default function ShiftFormModal({
             </span>
           );
         })}{" "}
-        on {dateIso}. Saving gives them both. You can still save; this is
-        just a warning.
+        this date
       </div>
     )
     : null;
 
   const prefMismatchBanner = prefMismatch
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ This employee has requested{" "}
+      <div style={warningBoxStyle} role="note">
+        Requested{" "}
         <strong>
           {prefMismatch.preferredDayPart === "day" ? "day shifts only" : "evening shifts only"}
         </strong>{" "}
-        on this date. You can still save; this is just a warning.
+        on this date
       </div>
     )
     : null;
@@ -571,19 +579,17 @@ export default function ShiftFormModal({
   const maxConsecForCopy = Number.isFinite(maxConsecutiveWorkingDays) ? maxConsecutiveWorkingDays : 5;
   const restWarningBanner = restWarning
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ Saving this would leave this employee without {minOffForCopy} consecutive
-        day{minOffForCopy === 1 ? "" : "s"} off this calendar week. You can still save; this is just a
-        warning.
+      <div style={warningBoxStyle} role="note">
+        Leaves fewer than {minOffForCopy} consecutive
+        day{minOffForCopy === 1 ? "" : "s"} off this week
       </div>
     )
     : null;
 
   const maxConsecutiveBanner = maxConsecutiveWarning
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ Saving this would put this employee at more than {maxConsecForCopy} consecutive
-        working days. You can still save; this is just a warning.
+      <div style={warningBoxStyle} role="note">
+        Exceeds {maxConsecForCopy} consecutive working days
       </div>
     )
     : null;

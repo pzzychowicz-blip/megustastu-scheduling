@@ -332,12 +332,16 @@ export default function EmployeeFairnessModal({
           value={cm.holidayDays + " day" + (cm.holidayDays === 1 ? "" : "s")}
           delta={cm.holidayDays > 0 ? "subtracted from target" : null}
         />
-        <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
-          {cmPartial
-            ? "Target pro-rated to the " + cmActiveDays + " of " + monthLength
-              + " days active (tenure): workingDaysPerWeek × " + cmActiveDays + " / 7."
-            : "Target pro-rated as workingDaysPerWeek × " + monthLength + " / 7."}
-        </div>
+        {/* v16.0.0 (phase 40): only the TENURE case gets a caption now. The
+            other branch spelled out the plain pro-rating formula, naming an
+            internal field at the manager — the target is on the row above
+            and the rule is theirs. A clipped window is different: it is the
+            one case where the number looks wrong without the reason. */}
+        {cmPartial ? (
+          <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
+            {"Active " + cmActiveDays + " of " + monthLength + " days, target pro-rated"}
+          </div>
+        ) : null}
       </Section>
 
       <Section title="Per-week pattern" style={{ marginBottom: 12 }}>
@@ -349,13 +353,10 @@ export default function EmployeeFairnessModal({
             return <WeekBar key={row.weekStartIso} row={row} onClick={handler} />;
           })}
         </div>
-        <div style={{ ...S.muted, fontSize: 11, marginTop: 8 }}>
-          Each bar is shifts worked vs the raw workingDaysPerWeek for that week.
-          Red = under, neutral = at, green = at-or-over target.
-          {typeof onJumpToWeek === "function"
-            ? " Click a bar to open that week in the schedule."
-            : null}
-        </div>
+        {/* The legend explained the colours, the denominator and that the
+            bars are clickable. The counts sit at the end of every bar, the
+            colours match the delta bars on the panel these rows were opened
+            from, and a clickable row is a button. */}
       </Section>
     </>
   );
@@ -388,7 +389,7 @@ export default function EmployeeFairnessModal({
       </div>
 
       <p style={{ ...S.muted, marginTop: 10, fontSize: 11 }}>
-        Informational only. To change shifts or requests, use the Schedule or Requests tabs.
+        Informational only
       </p>
     </>
   );
@@ -403,7 +404,7 @@ export default function EmployeeFairnessModal({
     >
       {empArchived ? (
         <div style={{ ...S.muted, fontSize: 12, marginTop: -6, marginBottom: 12 }}>
-          Archived employee — counts include any orphaned assignments still on the roster.
+          Archived, including any orphaned assignments
         </div>
       ) : null}
 

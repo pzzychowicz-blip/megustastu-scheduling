@@ -76,12 +76,6 @@ export default function SplitConfirmModal({ open, splits, isMobile, onClose, onC
       title={plural ? "This creates split shifts" : "This creates a split shift"}
       footer={footer}
     >
-      <p style={{ ...S.body, marginTop: 0 }}>
-        {plural
-          ? "These people would end up working twice on the same date:"
-          : "This person would end up working twice on the same date:"}
-      </p>
-
       <div
         style={{
           ...S.surfaceSoft,
@@ -94,18 +88,19 @@ export default function SplitConfirmModal({ open, splits, isMobile, onClose, onC
         {list.map(function (sp, i) {
           return (
             <div key={i} style={{ fontSize: 13, marginTop: i === 0 ? 0 : 8 }}>
-              ⚠ <strong>{sp.name}</strong> is already on{" "}
-              <strong>{describeShift(sp.existing)}</strong> on {sp.dateIso}.
+              <strong>{sp.name}</strong> is already on{" "}
+              <strong>{describeShift(sp.existing)}</strong>, {sp.dateIso}
             </div>
           );
         })}
       </div>
 
-      <p style={{ ...S.muted, marginTop: 10, fontSize: 12 }}>
-        Split shifts are allowed, but the auto-generator will never create
-        one — so this stays exactly as you set it until you change it.
-        Undo is available afterwards if this wasn't what you meant.
-      </p>
+      {/* v16.0.0 (phase 40): the reassurance paragraph is gone. It said
+          split shifts are allowed (the confirm button says that), that the
+          generator never makes one (a documented rule, not news at the
+          moment of confirming), and that Undo exists afterwards (the Undo
+          button is in the nav bar). The title states the consequence and
+          the list names who; that is the decision. */}
     </Overlay>
   );
 }

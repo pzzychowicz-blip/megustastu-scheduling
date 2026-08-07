@@ -27,7 +27,7 @@
 //   - usePresence  — read that context.
 //   - SlideView    — directional slide-in wrapper for view/tab switches.
 //
-// Bookings also has `Toast`, `Reveal`, `AutoHeight` and `useFlip`. They are
+// Bookings also has `Reveal`, `AutoHeight` and `useFlip`. They are
 // NOT ported: no Scheduling surface calls them today, and shipping ~120
 // lines of never-executed code — including AutoHeight's ResizeObserver
 // lifecycle and Reveal's double-rAF + delayed overflow flip — just banks
@@ -635,26 +635,6 @@ export function Presence({ show, inClass, outClass, outMs = 200, children, style
   return <Tag className={leaving ? outClass : inClass} style={style}>{children || last.current}</Tag>;
 }
 
-// ── Toast ────────────────────────────────────────────────────────────────
-// v16.0.0 (phase 26). A floating status message that animates in and out.
-// A thin alias over Presence with the toast keyframes — the whole atom is
-// the binding, which is why it is five lines here and five lines in
-// Bookings rather than a shared package.
-//
-// Ported now because it finally has the consumer ROADMAP.md named for it:
-// ScheduleGrid's generate / regenerate / clear / undo result banner, which
-// mounted and unmounted hard. `mgt-toast-in` / `-out` were already defined
-// in index.html with no caller — the other dead token this pass retired.
-// `outMs` is overridable because a Toast nested inside a Reveal has to
-// outlive the Reveal's collapse — see REVEAL_OUT_MS below.
-export function Toast({ show, children, style, outMs = 210 }) {
-  return (
-    <Presence show={show} inClass="mgt-toast-in" outClass="mgt-toast-out" outMs={outMs} style={style}>
-      {children}
-    </Presence>
-  );
-}
-
 // ── Reveal ───────────────────────────────────────────────────────────────
 // v16.0.0 (phase 26). Expand / collapse that EASES rather than cutting.
 //
@@ -691,15 +671,13 @@ export function Toast({ show, children, style, outMs = 210 }) {
 // that would never execute.
 
 // How long a Reveal stays mounted after `show` goes false, i.e. how long
-// the collapse takes. EXPORTED because anything nested inside a Reveal has
-// to outlive it: the result banner in ScheduleGrid puts a Toast inside a
-// Reveal, and with Toast's own 210ms default the content unmounted 90ms
-// before the height finished easing, leaving the last stretch of the
-// collapse animating an empty box. The two constants were picked
-// independently and nothing tied them together, so either one moving
-// silently reopened the gap. Now the nesting site passes this value
-// through and the relationship is explicit.
-export const REVEAL_OUT_MS = 300;
+// the collapse takes.
+//
+// v16.0.0 (phase 40): no longer exported. Its export existed so a nested
+// Toast could be told to outlive the collapse — and the Toast atom, whose
+// only consumer was the result banner phase 38 removed, is gone with it.
+// Kept as a module constant because Reveal itself still needs the value.
+const REVEAL_OUT_MS = 300;
 
 export function Reveal({ show, children, style }) {
   const last = useRetainedChildren(children);

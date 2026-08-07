@@ -1361,8 +1361,7 @@ export default function Settings({
             checked={soloOn}
             onChange={function (next) { onSoloToggle(section, dayPart, next); }}
             label={"Different times on " + partLabel + "-only days"}
-            helper={"Used on weekdays where the " + siblingLabel +
-              " part is closed (restaurant runs " + partLabel + " only)."}
+            helper={"Used when " + siblingLabel + " is closed"}
             className="mgt-hover-scale"
           />
           {soloOn ? soloTimes.map(function (t, i) {
@@ -1614,12 +1613,8 @@ export default function Settings({
 
   return (
     <div>
-      <p style={{ ...S.body, margin: "0 0 16px 0" }}>
-        Configure how many staff each section needs per day part, and the
-        default shift times. Changes affect new cells; existing shifts keep
-        their own per-cell times until edited.
-      </p>
-
+      {/* v16.0.0 (phase 40): the tab opened with a paragraph describing
+          what a Settings tab is for. The section headings below say it. */}
       {/* v15.1.0: effective-from week picker + scheduled-changes list.
           Lives OUTSIDE the single-open accordion on purpose — it governs
           three sections (Operating time's open days, FoH, Kitchen) and
@@ -1638,13 +1633,9 @@ export default function Settings({
               Changes take effect from
             </div>
             <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
-              {"Week of " + formatWeekRange(parseIsoDate(effectiveFromIso)) + ". " +
-                (pickerHasRevision
-                  ? "Editing the scheduled change for this week."
-                  : "Open-day / shift-time edits below will be saved as a change starting this week.")}
-              {effectiveFromIso < currentMondayIso
-                ? " This is a past week — changes apply retroactively to it and to later weeks."
-                : " Earlier weeks keep their current configuration."}
+              {"Week of " + formatWeekRange(parseIsoDate(effectiveFromIso))
+                + (pickerHasRevision ? ", editing an existing change" : "")
+                + (effectiveFromIso < currentMondayIso ? ", applies retroactively" : "")}
             </div>
           </div>
           {mkInp({
@@ -1923,7 +1914,7 @@ export default function Settings({
               </div>
             ) : (
               <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
-                Tap a day to pick which shifts are open. Closed halves are hidden from the schedule grid and excluded from PDF export.
+                Closed halves are hidden from the grid and the PDF
               </div>
             )}
           </div>
@@ -1944,7 +1935,6 @@ export default function Settings({
             checked={showRolePills}
             onChange={onShowRolePillsChange}
             label="Show role pills on schedule cells"
-            helper="The small coloured tag (Bar / Floor / Chef / Plating / Pot) next to each assignee's name in the schedule grid. Off hides them; the Employees tab badges are unaffected."
             className="mgt-hover-scale"
           />
           {/* v0.11.0: dark mode. First-time default follows OS preference;
@@ -1954,9 +1944,7 @@ export default function Settings({
             checked={isDark === true}
             onChange={onDarkModeChange}
             label="Dark mode"
-            helper={darkModeFollowingSystem
-              ? "Following your system preference. Tap to override."
-              : null}
+            helper={darkModeFollowingSystem ? "Following system" : null}
             className="mgt-hover-scale"
           />
           {/* v15.2.0: opt-in to exporting a week with empty cells. Off by
@@ -1967,7 +1955,6 @@ export default function Settings({
             checked={allowIncompleteExport}
             onChange={onAllowIncompleteExportChange}
             label="Allow exporting incomplete schedules"
-            helper="When on, Export PDF works even with empty cells — you'll get a warning before the PDF is generated."
             className="mgt-hover-scale"
           />
           {/* v16.0.0: reduce animations. PER-DEVICE, so it is stored in
@@ -1979,7 +1966,7 @@ export default function Settings({
             checked={reduceMotion}
             onChange={onReduceMotionChange}
             label="Reduce animations"
-            helper="Turns off the modal, tab and banner animations on this device. Your system-wide 'reduce motion' setting is always respected regardless."
+            helper="This device only"
             className="mgt-hover-scale"
           />
         </Collapsible>
@@ -2079,9 +2066,7 @@ export default function Settings({
             checked={pastWeeksLocked}
             onChange={onPastWeeksLockedChange}
             label="Lock past weeks (read-only)"
-            helper={pastWeeksLocked
-              ? "Weeks that have fully ended are read-only on the Schedule tab — no edits, generating, or clearing. Turn off to allow editing history."
-              : "Past weeks stay fully editable. Careful — edits to history feed the fairness statistics."}
+            helper={pastWeeksLocked ? null : "History feeds the fairness statistics"}
             className="mgt-hover-scale"
           />
 
@@ -2175,8 +2160,8 @@ export default function Settings({
             onChange={onStrictPreferenceChange}
             label="Strict shift-preference matching"
             helper={strictPreference
-              ? "Hard — generator only assigns preference-matching employees. May leave cells empty when no preferred candidate is available."
-              : "Soft mode (default) — generator tries preferred employees first, falls back if no one fits."}
+              ? "Only preference-matching staff, cells may stay empty"
+              : "Preferred staff first, falls back to anyone eligible"}
             className="mgt-hover-scale"
           />
         </Collapsible>
