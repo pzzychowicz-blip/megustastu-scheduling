@@ -63,6 +63,18 @@ const COLLECTION_PATHS = ["employees", "shifts", "requests", "configRevisions"];
 const SINGLETON_PATHS = ["shiftTemplate", "settings"];
 const ALL_PATHS = [...COLLECTION_PATHS, ...SINGLETON_PATHS];
 
+// v16.0.0 (phase 42): what to call each path when a write to it fails. The
+// raw key leaks the database schema into a sentence the manager reads —
+// "Couldn't save shiftTemplate" names a node, not a thing they just edited.
+const PATH_LABELS = Object.freeze({
+  employees: "Employees",
+  shifts: "Shifts",
+  requests: "Requests",
+  configRevisions: "Scheduled changes",
+  shiftTemplate: "Shift template",
+  settings: "Settings",
+});
+
 export function usePersistence() {
   // ── State slices ───────────────────────────────────────────────────────
   const [employees, setEmployees] = useState({});
@@ -200,19 +212,30 @@ export function usePersistence() {
   // `isSilent` is honoured the same way the pre-write guards honour it —
   // auto-effects (the eager shiftTemplate migration) must not raise a
   // banner for something the manager did not initiate.
+  // v16.0.0 (phase 42): the warning is now `{ title, detail }` rather than one
+  // long string, because <Notice> renders the two at different weights. The
+  // split is not cosmetic — it forced the copy to separate WHAT failed from
+  // WHAT IT MEANS, and in doing so retired the third sentence the old string
+  // carried ("This is a Firebase Database Rules problem, not a problem with
+  // what you entered"), which was the app reassuring the manager about its own
+  // failure. "Database rules rejected the write" states the same fact without
+  // the bedside manner.
   function reportWriteError(verb, path, err, isSilent) {
     const code = (err && err.code) ? err.code : "unknown error";
     console.warn("[persistence] " + verb + " failed", path, code);
     if (isSilent) return;
     const denied = String(code).toUpperCase().indexOf("PERMISSION_DENIED") !== -1;
+    const what = PATH_LABELS[path] || path;
     setWriteWarning(
       denied
-        ? ("Couldn't save " + path + " — the database refused the write "
-           + "(permission denied). Your change has been rolled back. This is "
-           + "a Firebase Database Rules problem, not a problem with what you "
-           + "entered.")
-        : ("Couldn't save " + path + " — " + code + ". Your change has been "
-           + "rolled back.")
+        ? {
+          title: what + " not saved — permission denied",
+          detail: "Database rules rejected the write. Your change was rolled back.",
+        }
+        : {
+          title: what + " not saved — " + code,
+          detail: "Your change was rolled back.",
+        }
     );
   }
 

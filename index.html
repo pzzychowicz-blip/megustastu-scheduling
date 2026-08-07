@@ -405,6 +405,40 @@
          fixed a monospace Notes field. */
       input, textarea, select, button { font-family: inherit; }
 
+      /* ── v16.0.0 (phase 42): select chevron ─────────────────────────────
+         Chrome paints the native <select> arrow against the BORDER-BOX edge,
+         and no amount of `padding-right` moves it — verified in the browser
+         with two otherwise-identical selects at 28px and 44px, whose arrows
+         landed on the same pixel. Since v16.0.0 gave every control `R.pill`
+         (999px, clamping to half the box), that arrow now sits inside the
+         curve of the right cap and reads as crowding the edge.
+
+         So the native one goes and we draw our own, which also means the
+         chevron finally matches the one the Collapsible headers use instead
+         of being whatever the engine ships.
+
+         The stroke colour is baked into the data URI — an SVG in a
+         `background-image` is a separate document and cannot see this page's
+         custom properties, so the theme split has to happen out here as two
+         rules rather than one `var()`. Keep the two paths identical apart
+         from the `stroke=` value.
+
+         The matching right PADDING is not here — it lives on `S.selectBase`
+         in constants.js, because that token sets `padding` as a shorthand
+         inline and inline wins, so a `padding-right` declared here would just
+         be overwritten. The two values are picked together; if you move the
+         chevron, move the padding with it. */
+      .mgt-select {
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5L6 6.5L11 1.5' stroke='%236b6b70' stroke-width='1.7' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+      }
+      [data-theme="dark"] .mgt-select {
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5L6 6.5L11 1.5' stroke='%23a0a0a8' stroke-width='1.7' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+      }
+
       /* ── v1.9.0: unified hover-scale utility ────────────────────────────
          Single reusable hover affordance, applied to every primary
          interactive surface (schedule cells, nav buttons, list rows,

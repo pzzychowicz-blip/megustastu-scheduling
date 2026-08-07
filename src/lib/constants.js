@@ -137,6 +137,75 @@ export const DEFAULT_WORKING_DAYS = 5;
 // the manager has carefully tuned preferences and wants them respected.
 export const DEFAULT_GENERATOR_STRICT_PREFERENCE = false;
 
+// ── Generator reason labels (v1.4.0, deleted phase 38, restored phase 42) ─
+// Human labels for the codes `buildCandidates` in generator.js returns when
+// no candidate survives its filters. Keyed by reason code — that file emits
+// them, this one names them, and they must stay in step.
+//
+// Phase 38 deleted this along with GenerateResultsModal, on the reasoning
+// that a modal reporting on a finished run was the app narrating its own
+// work. That was right about the MODAL and wrong about the DATA: "this cell
+// is empty" is visible on the grid, but "and nothing could legally go in it"
+// is not deducible from anything on screen, so the manager was left unable
+// to tell a cell the generator skipped from one it never considered.
+//
+// Restored in a different shape. The label now hangs on the CELL it explains
+// rather than in a list that describes the run, which is the distinction
+// that matters: it answers a question the artifact raises, in the place the
+// question is raised.
+//
+//   tag    — the in-cell badge. Rendered uppercase at BADGE_SIZE.cell, so it
+//            has ~50px beside the word "Open". Terse to the point of being
+//            a mnemonic; `detail` is what actually explains it.
+//   detail — the title tooltip. One clause, names the constraint, no
+//            trailing period and no advice about what to do next.
+//
+// The "regenerated" code is deliberately absent. It tags shifts CLEARED by a
+// Regenerate wipe, and no surface shows cleared records any more — a label
+// nothing renders is the dead-token case this file warns about elsewhere.
+export const GENERATOR_REASONS = Object.freeze({
+  "no-role-match": {
+    tag: "no role",
+    detail: "No active employee holds a role for this slot",
+  },
+  "out-of-tenure": {
+    tag: "tenure",
+    detail: "Everyone qualified is outside their active dates on this date",
+  },
+  "all-on-request": {
+    tag: "on leave",
+    detail: "Everyone qualified has a day-off or holiday request on this date",
+  },
+  "all-shift-pref": {
+    tag: "day part",
+    detail: "Everyone qualified has a shift-preference request against this day part",
+  },
+  "all-conflicted": {
+    tag: "booked",
+    detail: "Everyone qualified already works this date, or their fixed days exclude it",
+  },
+  "all-at-quota": {
+    tag: "at quota",
+    detail: "Everyone qualified has reached their weekly shift quota",
+  },
+  "no-2-off": {
+    tag: "rest rule",
+    detail: "Assigning anyone would break the consecutive-days-off rule",
+  },
+  "max-consecutive": {
+    tag: "max days",
+    detail: "Assigning anyone would exceed the consecutive-working-days cap",
+  },
+  "preference": {
+    tag: "preference",
+    detail: "No qualified employee prefers this day part, and strict matching is on",
+  },
+  "no-eligible": {
+    tag: "no staff",
+    detail: "No employee qualified for this cell",
+  },
+});
+
 // ── Scheduling rules (v1.11.0) ───────────────────────────────────────────
 // Three rules that used to be hard-coded constants become first-class
 // /settings knobs in v1.11.0. Defaults preserve every prior version's
@@ -372,6 +441,36 @@ export const S = Object.freeze({
     // it was suppressing is now replaced by that rule's accent ring.
   },
 
+  // Selects. Identical to inputBase except that the fill is set with
+  // `backgroundColor` rather than the `background` SHORTHAND — and that is
+  // the entire reason this token exists, so do not "simplify" it back.
+  //
+  // v16.0.0 (phase 42) draws the dropdown chevron as a `background-image` on
+  // the `.mgt-select` class in index.html (see there for why the native one
+  // had to go). An inline `background: …` is a shorthand, so it resets
+  // `background-image` to `none`, and inline styles beat class rules — which
+  // silently deleted the chevron and left the control with no affordance at
+  // all. Longhand touches only the colour and leaves the image alone.
+  //
+  // The right padding IS here, and has to be: it clears the chevron, so it
+  // belongs with the chevron — but `padding` is a shorthand and inline beats
+  // the class, so a `padding-right` in `.mgt-select` would be overwritten by
+  // this token exactly the way the `background` shorthand was overwriting the
+  // chevron. Measured in the browser, which is the only reason it was caught.
+  // 34px against the chevron's `right 14px` leaves the glyph clear of both
+  // the pill's curve and the longest option label.
+  selectBase: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "10px 34px 10px 12px",
+    fontSize: 14,
+    color: "var(--text-input)",
+    backgroundColor: "var(--bg-input)",
+    border: "1px solid var(--border-input)",
+    borderRadius: R.pill,
+    boxShadow: "var(--shadow-input-inset)",
+  },
+
   // Field block
   // v16.0.0 (pill radius): Fld-wrapped rows opt into `.mgt-hover-scale` in
   // Settings and had no radius of their own — they took their hover-card
@@ -500,9 +599,19 @@ export const BTN_SIZE = Object.freeze({
 // line. Two surfaces need it — the role chip and the inert "closed" /
 // "not today" tag — and before this they were 1px 6px/10 and 1px 5px/9,
 // near-identical for no reason anyone recorded.
+//
+// `status` (v16.0.0 phase 42) is the grid's PAGE-LEVEL chip — the swap
+// refusal, the no-op notice, the unfilled count, the read-only marker. It
+// sits alone above a 944px grid with nothing beside it to be scaled
+// against, and at `base` metrics it was legible but easy to miss: an 11px
+// pill floating over a grid of 13px assignee names does not read as the
+// thing that just happened. Roughly +30% on both axes, landing a hair above
+// BTN_SIZE.lg — deliberate, since this is the one label on the page
+// competing with a whole data grid for attention.
 export const BADGE_SIZE = Object.freeze({
   base: { padding: "2px 8px", fontSize: 11 },
   cell: { padding: "1px 6px", fontSize: 10 },
+  status: { padding: "5px 14px", fontSize: 14 },
 });
 
 // ── Selectable-pill tones ────────────────────────────────────────────────

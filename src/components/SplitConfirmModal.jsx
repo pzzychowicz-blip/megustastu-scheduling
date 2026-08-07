@@ -23,22 +23,28 @@
 //   onClose     (fn)     — cancel; the swap is discarded
 //   onConfirm   (fn)     — proceed with the swap/move
 
-import { S, BTN, SECTIONS } from "../lib/constants.js";
-import { Overlay, mkBtn } from "./atoms.jsx";
+import { SECTIONS } from "../lib/constants.js";
+import { Overlay, Notice, mkBtn } from "./atoms.jsx";
 import { useEscClose } from "../hooks/useEscClose.js";
 
-// Describe the shift the employee already holds, e.g. "Kitchen Day
-// (11:00–16:00)". Falls back gracefully if a record is missing fields —
-// this is warning copy, it must never throw.
+// Describe the shift the employee already holds, split into the two halves
+// <Notice> wants: `label` ("Kitchen Day") is the clash and leads the title,
+// `time` ("11:00–16:00") is what makes it a long day and goes in the detail.
+// Falls back gracefully if a record is missing fields — this is warning copy,
+// it must never throw.
+//
+// v16.0.0 (phase 42): was one concatenated string, because the row it fed was
+// one line of inline <strong> markup.
 function describeShift(shift) {
-  if (!shift) return "another shift";
+  if (!shift) return { label: "another shift", time: "" };
   const section = shift.section && SECTIONS[shift.section]
     ? SECTIONS[shift.section].label
     : shift.section;
   const part = shift.dayPart === "day" ? "Day" : (shift.dayPart === "evening" ? "Evening" : "");
-  const label = [section, part].filter(Boolean).join(" ") || "another shift";
-  const time = shift.start && shift.end ? " (" + shift.start + "–" + shift.end + ")" : "";
-  return label + time;
+  return {
+    label: [section, part].filter(Boolean).join(" ") || "another shift",
+    time: shift.start && shift.end ? shift.start + "–" + shift.end : "",
+  };
 }
 
 export default function SplitConfirmModal({ open, splits, isMobile, onClose, onConfirm }) {
@@ -76,21 +82,20 @@ export default function SplitConfirmModal({ open, splits, isMobile, onClose, onC
       title={plural ? "This creates split shifts" : "This creates a split shift"}
       footer={footer}
     >
-      <div
-        style={{
-          ...S.surfaceSoft,
-          background: "var(--bg-warning-tint)",
-          border: "1px solid var(--border-warning-tint)",
-          color: "var(--text-warning)",
-          marginTop: 8,
-        }}
-      >
+      {/* v16.0.0 (phase 42): was ONE warning-tinted panel with N lines of
+          inline <strong> markup inside it. Now one <Notice> per person, so
+          each clash is its own object with the same title/detail structure
+          the picker's split warning uses — and two people clashing no longer
+          run together as two sentences in a single block. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
         {list.map(function (sp, i) {
+          const d = describeShift(sp.existing);
           return (
-            <div key={i} style={{ fontSize: 13, marginTop: i === 0 ? 0 : 8 }}>
-              <strong>{sp.name}</strong> is already on{" "}
-              <strong>{describeShift(sp.existing)}</strong>, {sp.dateIso}
-            </div>
+            <Notice
+              key={i}
+              title={sp.name + " — already on " + d.label}
+              detail={d.time ? d.time + ", " + sp.dateIso : sp.dateIso}
+            />
           );
         })}
       </div>

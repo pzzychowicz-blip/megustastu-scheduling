@@ -2008,10 +2008,11 @@ separate Firebase project, same UI conventions).
   - *`GenerateResultsModal`* — the "Why didn't X fill?" list — and
     *`EmployeeFairnessModal`'s Reasoning view*, which restated each figure
     as a worked formula with values substituted in (phases 38-39). Both
-    are a system showing its working. **Deliberately removed on request,
-    accepting that the generator's per-cell reasons are no longer
-    surfaced anywhere;** the codes still exist in generator.js if a future
-    surface wants them.
+    are a system showing its working. Removed on request, accepting that
+    the generator's per-cell reasons went unsurfaced. **Phase 42 brought
+    the REASONS back but not the modal — see "Generator reasons belong on
+    the cell" below.** `EmployeeFairnessModal`'s Reasoning view stays
+    deleted.
   - *Instructional and reassuring copy* (phase 40): the grid's six-line
     footer manual, the Settings tab intro, `SplitConfirmModal`'s closing
     reassurance, the fairness sparkline legend, and the five
@@ -2024,10 +2025,19 @@ separate Firebase project, same UI conventions).
   already the statement that the action is allowed.
 
   **Feedback that survives is a `statusChip`,** not a banner: auto-width,
-  `R.pill`, `BADGE_SIZE.base`, neutral or danger tone, no dismiss control,
-  self-expiring. One helper in `ScheduleGrid` serves both remaining cases
-  (a refused swap, a no-change run). A refusal also shakes the offending
-  cell (`@keyframes mgt-cell-reject`), so which and why arrive together.
+  `R.pill`, `BADGE_SIZE.status`, CENTRED, neutral / warning / danger tone,
+  no dismiss control, self-expiring at 2600ms. One helper in `ScheduleGrid`
+  serves every remaining case (a refused swap, a no-change run, an unfilled
+  count, the past-week marker). A refusal also shakes the offending cell
+  (`@keyframes mgt-cell-react`), so which and why arrive together.
+
+  *Phase 42 sizing:* the chip was `BADGE_SIZE.base` (11px) and left-aligned
+  until phase 42. Left-aligned it sat in the same column as the nav bar's
+  Prev button and read as a fourth control; at 11px it was legible but
+  easy to miss above a grid of 13px assignee names. Now centred, and
+  `BADGE_SIZE.status` (14px / 5×14, roughly +30%) — a hair above
+  `BTN_SIZE.lg`, deliberately, because it is the one label competing with
+  a whole data grid for attention.
 
 - **Swap selection is solid `--accent`, and drag-and-drop is a second path
   (v16.0.0 phase 37).** Two related reversals of v1.7.0.
@@ -2057,6 +2067,118 @@ separate Firebase project, same UI conventions).
   drop handlers attach UNCONDITIONALLY and guard on `dragSource` inside —
   gating the props themselves left cells with no handler in any frame
   where the state had been cleared.
+
+- **Generator reasons belong on the cell (v16.0.0 phase 42).** Partly
+  reverses phase 38, and the distinction it draws is the useful part.
+  Phase 38 deleted `GenerateResultsModal` along with `GENERATOR_REASONS`,
+  treating both as the app reporting on its own work. That was right about
+  the MODAL and wrong about the DATA: "this cell is empty" is visible on
+  the grid, but "and nothing could legally go in it" is not deducible from
+  anything on screen, so a cell the generator skipped became
+  indistinguishable from one it never considered.
+
+  `GENERATOR_REASONS` is back in `constants.js` in a new
+  `{ tag, detail }` shape — `tag` is a terse uppercase badge (`at quota`,
+  `booked`, `rest rule`), `detail` the one-clause `title` tooltip. After a
+  run, `handleGenerateResult` builds
+  `unfilledByCell = { "<dateIso>|<slotKey>": reasonCode }` from
+  `summary.unfilledCells`, and `renderCell` hangs the badge beside the word
+  "Open" — the line it qualifies. **The modal did not come back.** The
+  reason now answers a question the artifact raises, in the place it is
+  raised, instead of describing the run.
+
+  *The chip and the badges have different lifetimes, deliberately.* The
+  chip ("3 unfilled") is an announcement and expires with every other chip
+  at 2600ms; the badges are an annotation on the schedule and persist until
+  the manager navigates to another week or runs the generator again. Count
+  is news, reasons are reference. Both are in-memory only, so leaving the
+  Schedule tab clears them — the same scope as the undo stack, for the same
+  reason.
+
+  The reason vocabulary is shared with `ShiftFormModal`'s manual warnings
+  ("Rest rule — …", "Consecutive cap — …"), so a constraint reads the same
+  whether the manager hit it by hand or the auto-run hit it for them.
+  `"regenerated"` is deliberately absent from the map: it tags CLEARED
+  records, and no surface shows those.
+
+- **A committed swap flashes green (v16.0.0 phase 42).** Narrower than the
+  success banner phase 37 deleted, and not a reinstatement of it. The
+  banner was a sentence elsewhere on the page describing what the grid
+  already showed; this points AT the cells that changed, which is the one
+  thing the grid does not make obvious — a swap moves two names between
+  cells that may sit a column and three rows apart, and afterwards both
+  look like every other filled cell.
+
+  `swapSuccess = { cellKeys: [...] }` paints `--bg-active-on` plus one
+  `mgt-cell-react` shake, clearing at 1100ms (shorter than a refusal's
+  2600ms — there is no text to read). **Swap flashes BOTH cells; Move
+  flashes only the destination** — a green arrival flash on the emptied
+  source would say the opposite of what happened there. No chip either
+  way.
+
+  The flash paints identically to the sticky pill highlight, with the
+  shake as the only difference — the same arrangement v1.9.3 used for the
+  jump target, so "this cell is the focus" looks one way however the
+  manager got there. The pill highlight is a standing filter and does not
+  animate; this is an event and does.
+
+- **One tinted message block: the `Notice` atom (v16.0.0 phase 42).** Three
+  hand-rolled versions of the same box existed in three files, drifted on
+  padding (6×10 / 8×10 / 10×12), on whether the lead was bold, and on
+  whether the copy closed with a reassurance. `Notice` in `atoms.jsx`
+  replaces all of them: `AppShell`'s write-error banner, `ShiftFormModal`'s
+  five picker warnings, and `SplitConfirmModal`'s clash list.
+
+  *Structure is title + detail, always in that order* — the fact at 13/700
+  in the tone's colour, the specifics at 12.5/500 in the same hue at 82%.
+  Two weights of one colour, not two colours, so the block stays one
+  object. The split did real work on the copy: it forced WHAT failed apart
+  from WHAT IT MEANS, which is what retired the write error's third
+  sentence ("This is a Firebase Database Rules problem, not a problem with
+  what you entered") — the app reassuring the manager about its own
+  failure. "Database rules rejected the write" states the same fact
+  without the bedside manner.
+
+  *The action is a SOLID pill,* not the ghost button the write banner
+  carried. Phase 23 settled this everywhere else: an actionable control is
+  filled. An outlined Dismiss inside a red panel, two rows below solid
+  Regenerate and Export pills, read as decoration.
+
+  *No glyph.* The tint is the severity signal and a ⚠ in front of amber
+  text says it twice; semantics go to `role` (`alert` for something that
+  just failed, `note` for a standing caution) where a screen reader can
+  reach them.
+
+  `usePersistence`'s `writeWarning` is now `{ title, detail }` rather than
+  one long string, and `PATH_LABELS` maps the RTDB node to something a
+  manager recognises — "Couldn't save shiftTemplate" named a database key,
+  not a thing they had just edited.
+
+- **The select chevron is drawn, not native (v16.0.0 phase 42).** Chrome
+  paints the native `<select>` arrow against the BORDER-BOX edge and no
+  amount of `padding-right` moves it — verified with two otherwise
+  identical selects at 28px and 44px whose arrows landed on the same pixel.
+  Since v16.0.0 gave every control `R.pill`, that arrow sat inside the
+  curve of the right cap. `.mgt-select` in `index.html` sets
+  `appearance: none` and draws a chevron as a `background-image`.
+
+  Two things about it are load-bearing and easy to undo by accident:
+
+  1. **`S.selectBase`, not `S.inputBase`.** It differs only in using
+     `backgroundColor` instead of the `background` SHORTHAND — the
+     shorthand resets `background-image` to `none`, and inline beats a
+     class, which silently deleted the chevron and left the control with no
+     affordance at all.
+  2. **The right padding lives in `S.selectBase`, not in the CSS class,**
+     for the same precedence reason: an inline `padding` shorthand would
+     overwrite a `padding-right` declared in the class. The 34px padding
+     and the chevron's `right 14px` are picked together; move one, move
+     the other.
+
+  The stroke colour is baked into the data URI (an SVG in a
+  `background-image` is a separate document and cannot read this page's
+  custom properties), so the light/dark split is two rules that must stay
+  identical apart from `stroke=`.
 
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel

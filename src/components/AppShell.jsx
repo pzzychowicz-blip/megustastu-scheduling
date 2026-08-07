@@ -23,7 +23,7 @@ import {
   isShiftTemplateMigrated,
   materializeShiftTemplate,
 } from "../lib/schedule-logic.js";
-import { ModalPresence, SlideView } from "./atoms.jsx";
+import { ModalPresence, SlideView, Notice } from "./atoms.jsx";
 import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
@@ -189,32 +189,21 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   }
 
   // ── Write-warning banner ───────────────────────────────────────────────
+  // v16.0.0 (phase 42): was a hand-rolled tinted box with a GHOST Dismiss —
+  // an outlined button inside a red panel, two rows below the solid Generate
+  // and Export pills, reading as decoration rather than as the control that
+  // clears the thing. It is the <Notice> atom now: same tint, real type
+  // hierarchy, and a solid danger pill for the action.
   const warningBanner = writeWarning
     ? (
-      <div
-        style={{
-          marginBottom: 12,
-          padding: "10px 12px",
-          background: "var(--bg-danger-tint)",
-          border: "1px solid var(--border-danger-tint)",
-          color: "var(--text-danger)",
-          borderRadius: R.card,
-          fontSize: 13,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <span>{writeWarning}</span>
-        <button
-          className="mgt-hover-scale mgt-press"
-          onClick={clearWriteWarning}
-          style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }}
-        >
-          Dismiss
-        </button>
-      </div>
+      <Notice
+        tone="danger"
+        title={writeWarning.title}
+        detail={writeWarning.detail}
+        actionLabel="Dismiss"
+        onAction={clearWriteWarning}
+        style={{ marginBottom: 12 }}
+      />
     )
     : null;
 

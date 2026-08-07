@@ -31,6 +31,7 @@ import {
   MAX_CONSECUTIVE_WORKING_DAYS_MAX,
   DEFAULT_DAY_REQUIRED_ROLES,
   DEFAULT_PAST_WEEKS_LOCKED,
+  GENERATOR_REASONS,
 } from "../lib/constants.js";
 import {
   startOfWeek,
@@ -379,6 +380,20 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // Only the refusal survives, because it is the one case with information
   // the grid CANNOT show: nothing moved, and why not is not deducible.
   const [swapReject, setSwapReject] = useState(null);
+  // v16.0.0 (phase 42): the success counterpart — `{ cellKeys: [...] }` for
+  // the cells that just changed hands. They flash green and shake once.
+  //
+  // This is NOT the success banner coming back. The banner was a sentence
+  // in a different part of the page describing what the grid already showed;
+  // this points AT the cells that changed, which is the one thing the grid
+  // does not make obvious. A swap moves two names between cells that may sit
+  // a column and three rows apart, and after the commit both look exactly
+  // like every other filled cell — nothing marks which two just moved. The
+  // flash marks them, for a second, and then the grid is just the grid.
+  //
+  // Swap → both cells. Move → the destination only; the source is empty now
+  // and shaking an empty cell green would read as something arriving there.
+  const [swapSuccess, setSwapSuccess] = useState(null);
   // v16.0.0 (phase 37): drag-and-drop, the second path into the SAME
   // mechanic. A filled cell is draggable; dropping it on another cell calls
   // attemptSwap with exactly the source/target pair the two-click flow
@@ -425,8 +440,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // chip names the reason; both clear together on a timer. Swap mode drops,
   // matching the pre-existing behaviour on every refusal path.
   function rejectSwap(cellKey, reason) {
+    setSwapSuccess(null);
     setSwapReject({ cellKey: cellKey, reason: reason });
     setSwapMode(null);
+  }
+  // v16.0.0 (phase 42): the success counterpart to rejectSwap. Clears any
+  // standing refusal so the two flashes can never overlap on one repaint.
+  function flashSwapSuccess(cellKeys) {
+    setSwapReject(null);
+    setSwapSuccess({ cellKeys: cellKeys });
   }
 
   // v1.12.0: if the manager navigates from a current/future week into a
@@ -533,33 +555,72 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // both leave the screen identical, so silence is indistinguishable from
   // a dead button. That case gets a short phrase and nothing else.
   //
-  // Holds a string (or null), not the old summary object — no counts, no
-  // week range, no mode, no reason arrays.
-  const [noOpNotice, setNoOpNotice] = useState(null);
+  // Holds `{ text, tone }` (or null), not the old summary object — no week
+  // range, no mode, no reason arrays. The `tone` arrived in phase 42 with
+  // the unfilled count, which is a caveat rather than a neutral statement.
+  const [runNotice, setRunNotice] = useState(null);
   useEffect(function () {
-    if (!noOpNotice) return undefined;
-    const t = setTimeout(function () { setNoOpNotice(null); }, 2600);
+    if (!runNotice) return undefined;
+    const t = setTimeout(function () { setRunNotice(null); }, 2600);
     return function () { clearTimeout(t); };
-  }, [noOpNotice]);
+  }, [runNotice]);
+
+  // ── Unfilled-cell reasons (v1.4.0, deleted phase 38, restored phase 42) ─
+  // `{ "2026-08-04|kitchen-evening-0": "all-at-quota", ... }` — every cell the
+  // last run considered and could not fill, keyed the same way the grid keys
+  // its cells. renderCell reads it to hang a reason badge on the cell itself.
+  //
+  // Deliberately OUTLIVES the chip. The chip is an announcement and expires
+  // in 2600ms; the badges are an annotation on the schedule and stay until
+  // the manager navigates away or runs the generator again. That split is
+  // the whole point of the phase-42 shape: the count is news, the reasons
+  // are reference.
+  const [unfilledByCell, setUnfilledByCell] = useState({});
+  // Reasons describe one specific week's run, so they cannot survive a week
+  // change — the same slot key means a different cell next Monday.
+  useEffect(function () {
+    // Returning `prev` unchanged when it is already empty keeps this from
+    // costing a render on mount, where it would otherwise swap one empty
+    // object for another.
+    setUnfilledByCell(function (prev) {
+      return Object.keys(prev).length === 0 ? prev : {};
+    });
+  }, [weekStart]);
+
   // Both callbacks still receive the generator's full summary — the
   // generator's return shape is unchanged, and GenerateButton / ClearButton
-  // still build it. We simply only look at whether anything happened.
+  // still build it.
   function handleGenerateResult(summary) {
     if (!summary) return;
-    if ((summary.filled || 0) > 0 || (summary.cleared || 0) > 0) {
-      setNoOpNotice(null);
+    const unfilled = Array.isArray(summary.unfilledCells) ? summary.unfilledCells : [];
+    const nextMap = {};
+    for (let i = 0; i < unfilled.length; i++) {
+      const u = unfilled[i];
+      if (u && u.dateIso && u.slotKey) nextMap[u.dateIso + "|" + u.slotKey] = u.reason;
+    }
+    setUnfilledByCell(nextMap);
+
+    if (unfilled.length > 0) {
+      // The count, and only the count. WHICH cells and WHY are on the cells.
+      // "unfilled" is an adjective here, not a noun, so it does not pluralise
+      // — "1 unfilled" and "3 unfilled" are both right as written.
+      setRunNotice({ text: unfilled.length + " unfilled", tone: "warning" });
       return;
     }
-    // Nothing changed, and the two ways that happens are genuinely
-    // different: there was nothing to do, versus there was and no one
-    // qualified. The grid shows neither (a cell that could not be filled
-    // looks exactly like one that was already fine), so the phrase has to
-    // carry it. `total` is the worklist size — cells the run considered.
-    setNoOpNotice((summary.total || 0) === 0 ? "Nothing to fill" : "No eligible staff");
+    if ((summary.filled || 0) > 0 || (summary.cleared || 0) > 0) {
+      // A clean run says nothing: the grid just filled in, on screen.
+      setRunNotice(null);
+      return;
+    }
+    // Nothing changed and nothing was blocked — the week was already full,
+    // so the run had no work. Without this the button would look dead.
+    setRunNotice({ text: "Nothing to fill", tone: "neutral" });
   }
   function handleClearResult(summary) {
     if (!summary) return;
-    setNoOpNotice((summary.cleared || 0) > 0 ? null : "Nothing to clear");
+    setRunNotice((summary.cleared || 0) > 0
+      ? null
+      : { text: "Nothing to clear", tone: "neutral" });
   }
 
   // ── Undo stack (v1.10.0) ─────────────────────────────────────────────
@@ -765,12 +826,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     const targetSnap = target.shift
       ? JSON.parse(JSON.stringify(target.shift))
       : null;
+    const sourceKey = source.dateIso + "|" + source.slotDef.key;
+    const targetKey = target.dateIso + "|" + target.slotDef.key;
     if (targetEmp) {
       // Swap two assignments. Each cell keeps its own role/start/end.
       actions.upsertShift({ ...source.shift, employeeId: targetEmp.id });
       actions.upsertShift({ ...target.shift, employeeId: sourceEmp.id });
       // v16.0.0 (phase 37): no success banner. Both cells just changed hands
       // on screen; announcing it is the app narrating its own output.
+      // (phase 42): they DO flash green, both of them — see swapSuccess.
+      flashSwapSuccess([sourceKey, targetKey]);
       // v1.10.0: undo restores both employees to their original cells
       // (the cells themselves keep their ids — only employeeId moved).
       // No removeIds: nothing was deleted or freshly created.
@@ -805,6 +870,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
       //   - null when the write-guard refused (initial load incomplete)
       const newTargetId = actions.upsertShift(targetPayload);
       // v16.0.0 (phase 37): no success banner — see the swap branch above.
+      // (phase 42): destination only. The source cell is empty now, and a
+      // green arrival flash on an emptied cell would say the opposite of
+      // what happened there.
+      flashSwapSuccess([targetKey]);
       // v1.10.0: undo logic depends on whether target had an existing
       // record before the move.
       //   - Placeholder existed: restore both snapshots (re-upserting
@@ -873,6 +942,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     const t = setTimeout(function () { setSwapReject(null); }, 2600);
     return function () { clearTimeout(t); };
   }, [swapReject]);
+
+  // v16.0.0 (phase 42): clear the success flash. Shorter than the refusal's
+  // 2600ms because there is nothing to read — the shake is done at 400ms and
+  // the green only has to outlast it enough to be seen as deliberate. A
+  // refusal has to hold long enough for a chip to be read; this does not.
+  useEffect(function () {
+    if (!swapSuccess) return undefined;
+    const t = setTimeout(function () { setSwapSuccess(null); }, 1100);
+    return function () { clearTimeout(t); };
+  }, [swapSuccess]);
 
   // v1.3.0: closed-dayPart placeholder. Renders a non-interactive cell so
   // the grid keeps its row/column rhythm but the manager can see the slot
@@ -1043,7 +1122,14 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     const isDropTarget = Boolean(dragSource) && dragOverKey === cellKey &&
       !(existing && existing.id === dragSource.shift.id);
     const isRejected = Boolean(swapReject) && swapReject.cellKey === cellKey;
-    const isAnyHighlight = isHighlighted;
+    // v16.0.0 (phase 42): one of the cells a swap/move just committed to.
+    // Paints the SAME green as the pill highlight, with the shake as the
+    // only distinguishing cue — the identical arrangement v1.9.3 used for
+    // the jump target, and for the same reason: "this cell is the focus"
+    // should look one way regardless of how the manager got there.
+    const isConfirmed =
+      Boolean(swapSuccess) && swapSuccess.cellKeys.indexOf(cellKey) !== -1;
+    const isAnyHighlight = isHighlighted || isConfirmed;
     const isAccentPicked = isSwapSource || isDropTarget;
 
     // SOLID accent, not an accent tint. This matters: an ASSIGNED cell's
@@ -1094,11 +1180,16 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           ? "0 0 0 3px var(--bg-active-on), var(--shadow-soft)"
           : "var(--shadow-soft)";
     // v16.0.0 (phase 37): the only cell animations left are ONE-SHOT
-    // reactions to something the manager just did — a refusal shake and the
-    // jump bounce. The infinite swap-source pulse is gone; selection is now
-    // a static state, as it is everywhere else in the app.
-    const cellAnimation = isRejected
-      ? "mgt-cell-reject 400ms ease-in-out 1"
+    // reactions to something the manager just did. The infinite swap-source
+    // pulse is gone; selection is now a static state, as it is everywhere
+    // else in the app.
+    //
+    // (phase 42): both outcomes of a swap shake — refusal and commit. The
+    // sticky pill highlight deliberately does NOT, which is what keeps the
+    // two green states apart: a cell lit by clicking a summary pill is a
+    // standing filter, a cell that just took an assignment is an event.
+    const cellAnimation = (isRejected || isConfirmed)
+      ? "mgt-cell-react 400ms ease-in-out 1"
       : undefined;
 
     // v16.0.0 (phase 37): the cursor carries what the info banner used to
@@ -1106,6 +1197,13 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     // hovering a filled one → `grab`, which also advertises that the cell
     // can be dragged. This is feedback at the point of contact, before the
     // click, instead of a sentence after it.
+    // v16.0.0 (phase 42): the reason the last run left this cell open, if it
+    // did. Only meaningful while the cell is still empty — the moment it is
+    // filled the question stops being asked.
+    const unfilledReason = !isFilled
+      ? GENERATOR_REASONS[unfilledByCell[cellKey]] || null
+      : null;
+
     const canDrag = !isReadOnly && isFilled;
     const cellCursor = isReadOnly
       ? "pointer"
@@ -1214,16 +1312,52 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         </div>
         <div
           style={{
-            fontSize: 13,
-            color: isAccentPicked
-              ? "var(--text-on-accent)"
-              : (emp ? "var(--text-primary)" : palette.text),
-            fontWeight: emp ? 600 : 500,
-            opacity: empArchived ? 0.5 : 1,
-            textDecoration: empArchived ? "line-through" : "none",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 6,
           }}
         >
-          {emp ? emp.name : "Open"}
+          <span
+            style={{
+              fontSize: 13,
+              color: isAccentPicked
+                ? "var(--text-on-accent)"
+                : (emp ? "var(--text-primary)" : palette.text),
+              fontWeight: emp ? 600 : 500,
+              opacity: empArchived ? 0.5 : 1,
+              textDecoration: empArchived ? "line-through" : "none",
+            }}
+          >
+            {emp ? emp.name : "Open"}
+          </span>
+          {/* v16.0.0 (phase 42): why the last generator run left this cell
+              open. Sits beside "Open" rather than in the time row because
+              that is the line it qualifies — the cell is open, and this is
+              the reason it stayed that way. The tag is a mnemonic; the
+              `title` carries the actual clause.
+
+              Only ever on an EMPTY cell: `isFilled` gates it, so a cell the
+              manager fills by hand afterwards drops its badge with no
+              bookkeeping. */}
+          {unfilledReason ? (
+            <span
+              title={unfilledReason.detail}
+              style={{
+                ...BADGE_SIZE.cell,
+                flexShrink: 0,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                borderRadius: R.pill,
+                background: "var(--bg-warning-tint)",
+                color: "var(--text-warning)",
+                border: "1px solid var(--border-warning-tint)",
+              }}
+            >
+              {unfilledReason.tag}
+            </span>
+          ) : null}
         </div>
       </button>
     );
@@ -1621,19 +1755,41 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   // What used to be here was a full-width result banner announcing the
   // outcome of every run ("Cleared 4 stale, filled 12, 3 left empty for
   // 3-9 Aug 2026.") with a Details button and an x. It is gone; see the
-  // noOpNotice state for why the no-change case is the only survivor.
+  // runNotice state for which cases still say anything at all.
+  //
+  // v16.0.0 (phase 42): CENTRED, and up a size to BADGE_SIZE.status. Left-
+  // aligned at `base` metrics the chip sat in the same column as the nav
+  // bar's Prev button and read as a fourth control rather than as feedback;
+  // centred over the grid it has nothing to be mistaken for, and the +30%
+  // makes it survive a glance across a 944px week.
   function statusChip(text, tone) {
-    const danger = tone === "danger";
+    const palette = tone === "danger"
+      ? {
+        bg: "var(--bg-danger-tint)",
+        border: "var(--border-danger-tint)",
+        fg: "var(--text-danger)",
+      }
+      : tone === "warning"
+        ? {
+          bg: "var(--bg-warning-tint)",
+          border: "var(--border-warning-tint)",
+          fg: "var(--text-warning)",
+        }
+        : {
+          bg: "var(--bg-soft)",
+          border: "var(--border-soft)",
+          fg: "var(--text-secondary)",
+        };
     return (
-      <div style={{ display: "flex", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
         <span
           role="status"
           style={{
-            ...BADGE_SIZE.base,
+            ...BADGE_SIZE.status,
             borderRadius: R.pill,
-            background: danger ? "var(--bg-danger-tint)" : "var(--bg-soft)",
-            border: "1px solid " + (danger ? "var(--border-danger-tint)" : "var(--border-soft)"),
-            color: danger ? "var(--text-danger)" : "var(--text-secondary)",
+            background: palette.bg,
+            border: "1px solid " + palette.border,
+            color: palette.fg,
             fontWeight: 600,
             boxShadow: "var(--shadow-soft)",
           }}
@@ -1644,9 +1800,9 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     );
   }
 
-  // The no-change notice. Neutral, not accent-tinted: nothing happened, so
-  // there is nothing to celebrate or warn about.
-  const noOpView = noOpNotice ? statusChip(noOpNotice, "neutral") : null;
+  // The post-run notice: an unfilled count (warning) or a nothing-happened
+  // phrase (neutral). Never a success line — a run that worked is visible.
+  const runNoticeView = runNotice ? statusChip(runNotice.text, runNotice.tone) : null;
 
   // The swap-refusal chip. The cell that was refused shakes at the same
   // moment (see cellAnimation), so WHICH cell and WHY arrive together
@@ -1663,14 +1819,19 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
           static accent state, and mgt-jump-pulse (phase 38) along with the
           results modal that was the only thing able to trigger a jump.
 
-          mgt-cell-reject — a short horizontal shake on a cell whose swap
-          was refused. Transform-only, so it composes with the box-shadow
-          ring set inline rather than fighting it. Under
-          `prefers-reduced-motion` it collapses to no movement; the danger
-          tint and the chip still carry the refusal, so nothing is lost,
-          only the motion. */}
+          mgt-cell-react — a short horizontal shake, used by BOTH outcomes of
+          a swap: refused (danger tint) and committed (green tint). One
+          motion, two colours, because the motion means "this cell is what
+          your last action was about" and the colour says how it went.
+          Named for the reaction rather than the refusal since phase 42 gave
+          it a second caller.
+
+          Transform-only, so it composes with the box-shadow ring set inline
+          rather than fighting it. Under `prefers-reduced-motion` it
+          collapses to no movement; the tint still carries the outcome, so
+          nothing is lost, only the motion. */}
       <style>{
-        "@keyframes mgt-cell-reject {" +
+        "@keyframes mgt-cell-react {" +
         "  0%,100% { transform: translateX(0); }" +
         "  20%     { transform: translateX(-5px); }" +
         "  40%     { transform: translateX(5px); }" +
@@ -1678,7 +1839,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         "  80%     { transform: translateX(3px); }" +
         "}" +
         "@media (prefers-reduced-motion: reduce) {" +
-        "  @keyframes mgt-cell-reject { 0%,100% { transform: translateX(0); } }" +
+        "  @keyframes mgt-cell-react { 0%,100% { transform: translateX(0); } }" +
         "}"
       }</style>
       {navBar}
@@ -1704,7 +1865,7 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
         {isReadOnly ? statusChip("Past week, read-only", "neutral") : null}
       </Reveal>
       <Reveal show={Boolean(swapRejectView)}>{swapRejectView}</Reveal>
-      <Reveal show={Boolean(noOpView)}>{noOpView}</Reveal>
+      <Reveal show={Boolean(runNoticeView)}>{runNoticeView}</Reveal>
       {allClosedNotice}
       {dates.length > 0 ? (
         <SlideView key={weekSlide.key} dir={weekSlide.dir}>

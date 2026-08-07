@@ -78,7 +78,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { R, S, BTN, BTN_SIZE, SECTIONS, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
-import { Overlay, Fld, Toggle, mkInp, mkBtn, usePresence, Reveal } from "./atoms.jsx";
+import { Overlay, Fld, Toggle, Notice, mkInp, mkBtn, usePresence, Reveal } from "./atoms.jsx";
 import {
   formatDayHeader,
   parseIsoDate,
@@ -508,22 +508,21 @@ export default function ShiftFormModal({
   // Each is now a noun phrase naming the condition: no glyph, no trailing
   // period, no second-person framing. The warning tint already says what
   // kind of thing this is.
-  const warningBoxStyle = {
-    marginTop: 6,
-    padding: "6px 10px",
-    background: "var(--bg-warning-tint)",
-    border: "1px solid var(--border-warning-tint)",
-    color: "var(--text-warning)",
-    borderRadius: R.card,
-    fontSize: 12,
-  };
+  //
+  // v16.0.0 (phase 42): all five are <Notice> now, so the picker's warnings
+  // and the app-level write error are one component with one set of metrics.
+  // The title/detail split did real work on the copy: it separated the
+  // CONDITION (which is the whole message) from the SPECIFICS (which used to
+  // be spliced into the same sentence with <strong> tags and connectives).
+  const noticeGap = { marginTop: 6 };
 
   const conflictBanner = conflict
     ? (
-      <div style={warningBoxStyle} role="note">
-        <strong>{requestTypeLabel(conflict.type)}</strong> request covering this date
-        {conflict.notes ? ": " + conflict.notes : ""}
-      </div>
+      <Notice
+        style={noticeGap}
+        title={requestTypeLabel(conflict.type) + " request on this date"}
+        detail={conflict.notes || undefined}
+      />
     )
     : null;
 
@@ -539,36 +538,38 @@ export default function ShiftFormModal({
   const sameDayShifts = form.employeeId
     ? findSameDayShifts(weekShifts, form.employeeId, dateIso, currentShiftId)
     : [];
+  // The slot names go in the title (that is the clash), the hours in the
+  // detail (that is what makes it a long day). Splitting them this way also
+  // removes the connective-heavy inline markup the old single line needed.
+  const sameDayLabels = sameDayShifts.map(function (s) {
+    return s.section && s.dayPart
+      ? (SECTIONS[s.section] ? SECTIONS[s.section].label : s.section)
+        + " " + (s.dayPart === "day" ? "Day" : "Evening")
+      : "another shift";
+  });
+  const sameDayTimes = sameDayShifts
+    .map(function (s) { return s.start && s.end ? s.start + "–" + s.end : null; })
+    .filter(Boolean);
   const splitShiftBanner = sameDayShifts.length > 0
     ? (
-      <div style={warningBoxStyle} role="note">
-        <strong>Split shift</strong>, already on{" "}
-        {sameDayShifts.map(function (s, i) {
-          const def = s.section && s.dayPart
-            ? (SECTIONS[s.section] ? SECTIONS[s.section].label : s.section)
-              + " " + (s.dayPart === "day" ? "Day" : "Evening")
-            : "another shift";
-          const time = s.start && s.end ? " (" + s.start + "–" + s.end + ")" : "";
-          return (
-            <span key={s.id || i}>
-              {i > 0 ? " and " : ""}<strong>{def}</strong>{time}
-            </span>
-          );
-        })}{" "}
-        this date
-      </div>
+      <Notice
+        style={noticeGap}
+        title={"Split shift — already on " + sameDayLabels.join(" and ")}
+        detail={sameDayTimes.length > 0
+          ? sameDayTimes.join(" and ") + ", this date"
+          : "This date"}
+      />
     )
     : null;
 
   const prefMismatchBanner = prefMismatch
     ? (
-      <div style={warningBoxStyle} role="note">
-        Requested{" "}
-        <strong>
-          {prefMismatch.preferredDayPart === "day" ? "day shifts only" : "evening shifts only"}
-        </strong>{" "}
-        on this date
-      </div>
+      <Notice
+        style={noticeGap}
+        title={"Shift preference — "
+          + (prefMismatch.preferredDayPart === "day" ? "day shifts only" : "evening shifts only")}
+        detail="Requested for this date"
+      />
     )
     : null;
 
@@ -577,20 +578,26 @@ export default function ShiftFormModal({
   // missing, keeping the message accurate even for legacy callers.
   const minOffForCopy = Number.isFinite(minConsecutiveDaysOff) ? minConsecutiveDaysOff : 2;
   const maxConsecForCopy = Number.isFinite(maxConsecutiveWorkingDays) ? maxConsecutiveWorkingDays : 5;
+  // "Rest rule" / "Consecutive cap" lead both of these so they name the same
+  // constraints the generator's in-cell badges do — one vocabulary whether
+  // the manager hit the rule by hand or the auto-run hit it for them.
   const restWarningBanner = restWarning
     ? (
-      <div style={warningBoxStyle} role="note">
-        Leaves fewer than {minOffForCopy} consecutive
-        day{minOffForCopy === 1 ? "" : "s"} off this week
-      </div>
+      <Notice
+        style={noticeGap}
+        title={"Rest rule — fewer than " + minOffForCopy + " consecutive day"
+          + (minOffForCopy === 1 ? "" : "s") + " off"}
+        detail="Counted across this week"
+      />
     )
     : null;
 
   const maxConsecutiveBanner = maxConsecutiveWarning
     ? (
-      <div style={warningBoxStyle} role="note">
-        Exceeds {maxConsecForCopy} consecutive working days
-      </div>
+      <Notice
+        style={noticeGap}
+        title={"Consecutive cap — more than " + maxConsecForCopy + " working days in a row"}
+      />
     )
     : null;
 
@@ -664,11 +671,11 @@ export default function ShiftFormModal({
     <Overlay open={open} isMobile={isMobile} onClose={onClose} title={headerTitle}>
       <Fld label="Assignee">
         <select
-          className={readOnly ? undefined : "mgt-hover-scale"}
+          className={readOnly ? "mgt-select" : "mgt-hover-scale mgt-select"}
           value={form.employeeId}
           onChange={function (e) { setField("employeeId", e.target.value); }}
           disabled={readOnly}
-          style={{ ...S.inputBase, paddingRight: 28, opacity: readOnly ? 0.8 : 1 }}
+          style={{ ...S.selectBase, opacity: readOnly ? 0.8 : 1 }}
         >
           {employeeOptions}
         </select>

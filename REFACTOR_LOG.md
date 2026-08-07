@@ -939,6 +939,8 @@ show this?*
 
 **Known cost, accepted on request:** the generator's per-cell reasons are
 no longer surfaced anywhere in the UI. The codes remain in `generator.js`.
+**Closed in phase 42 below** — the reasons came back on the cells; the
+modal did not.
 
 **Verification** — in DEV against the live grid, not from source: armed
 state and both cursors; source selection; a refused swap (chip + shake +
@@ -946,6 +948,55 @@ clean expiry); a completed drag-move; undo restoring the grid
 byte-for-byte; the compact confirm modal; a no-change run showing the
 correct one of the two phrases; the fairness modal's three sections and
 sparkline; all four tabs rendering after a cache-cleared server restart.
+
+---
+
+### Phase 42 — Feedback surfaces: reasons back on the cells, one Notice
+
+**Files:** `ScheduleGrid.jsx`, `ShiftFormModal.jsx`, `SplitConfirmModal.jsx`,
+`RequestFormModal.jsx`, `AppShell.jsx`, `atoms.jsx`, `usePersistence.js`,
+`constants.js`, `index.html`.
+
+**Behavioural change:** Yes — new feedback on the grid, one new shared
+component, and a partial reversal of phase 38.
+
+- **Status chips centred and +30%.** New `BADGE_SIZE.status` (5×14 / 14px,
+  up from `base`'s 2×8 / 11px); `statusChip`'s container gains
+  `justifyContent: center` and a third `warning` tone. Left-aligned at 11px
+  the chip read as a fourth nav-bar control and was easy to miss over the
+  grid.
+- **A committed swap flashes green.** New `swapSuccess` state; swap flashes
+  both cells, move flashes only the destination; `mgt-cell-reject` renamed
+  `mgt-cell-react` now that both outcomes drive it. Clears at 1100ms. No
+  chip — the flash marks WHICH cells changed, the part the grid does not
+  show.
+- **Generator reasons restored, on the cells.** `GENERATOR_REASONS` returns
+  to `constants.js` in a `{ tag, detail }` shape; `unfilledByCell` maps
+  `dateIso|slotKey → reasonCode` from `summary.unfilledCells`; the badge
+  renders beside "Open" with the clause as its `title`. A centred warning
+  chip carries the count. `GenerateResultsModal` stays deleted.
+- **`Notice` atom.** Replaces three hand-rolled tinted boxes — the write
+  error, five picker warnings, the split-shift clash list. Title + detail
+  at 13/700 and 12.5/500, `12px 14px`, `R.card`, solid pill action.
+  `writeWarning` became `{ title, detail }`; `PATH_LABELS` maps RTDB nodes
+  to names a manager recognises.
+- **Drawn select chevron.** `.mgt-select` + `S.selectBase`. Chrome ignores
+  `padding-right` for the native arrow (measured: 28px and 44px landed on
+  the same pixel), so it sat inside the pill's right cap.
+
+**Two precedence traps, both found by reading computed styles rather than
+by looking:** an inline `background` shorthand silently killed the
+chevron's `background-image`, and an inline `padding` shorthand silently
+killed the class's `padding-right`. Both now live in `S.selectBase`.
+
+**Verification** — in DEV against the live grid: refusal chip measured at
+14px / 5×14 / centred with the danger tint and `mgt-cell-react` on the
+target; a same-employee swap flashing both cells `--bg-active-on` and
+pushing "Undo: Swap"; a Fill-empty run reporting "9 unfilled" with `booked`
+/ `at quota` badges and their tooltips on all nine cells; the split-shift
+`Notice` measured at 13/700 + 12.5/500; the two-person `SplitConfirmModal`
+list; the danger `Notice` with its solid pill, triggered by the DEV
+project's still-live `/settings` PERMISSION_DENIED; `npm run build` clean.
 
 ---
 

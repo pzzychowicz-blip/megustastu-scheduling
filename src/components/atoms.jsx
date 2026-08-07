@@ -39,7 +39,7 @@
 // Vite's automatic JSX runtime: NO React import required.
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { R, S, BTN, BADGE_SIZE } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, BADGE_SIZE } from "../lib/constants.js";
 
 // ── Overlay ──────────────────────────────────────────────────────────────
 // Props:
@@ -516,6 +516,83 @@ export function TBadge({ children, palette, style }) {
     : {};
   const merged = { ...base, ...colours, ...(style || {}) };
   return <span style={merged}>{children}</span>;
+}
+
+// ── Notice ───────────────────────────────────────────────────────────────
+// v16.0.0 (phase 42). The app's one tinted message block: a permission
+// error above the tab bar, a split-shift warning inside the picker, a rest-
+// rule caution under an assignee dropdown. Before this there were three
+// hand-rolled versions of the same box in three files, drifted apart on
+// padding (6×10 / 8×10 / 10×12), on whether the lead was bold, and on
+// whether the copy ended in a reassuring sentence.
+//
+// SHAPE — title + detail, always in that order:
+//   title   the fact, in the tone's colour at 700. What happened.
+//   detail  the consequence or the specifics, one line, same hue at 82%.
+//           Optional; a Notice can be a title alone.
+// Two weights of the same colour rather than two colours, so the block
+// still reads as one object rather than as two stacked messages.
+//
+// ACTION — a SOLID pill, not the ghost button the write-error banner used
+// to carry. The rest of the app resolved this in phase 23: an actionable
+// control is filled. A dismiss sitting in a red box, outlined, read as
+// decoration next to the Regenerate and Fill-empty buttons two rows up.
+// `actionVariant` picks which BTN fill; it defaults to the tone's own, so
+// callers normally pass only `actionLabel` + `onAction`.
+//
+// NO GLYPH. The tint IS the severity signal, and a ⚠ in front of amber text
+// says it twice. Semantics go to `role` instead, where they reach a screen
+// reader — "alert" for something that just failed, "note" for a standing
+// caution the manager is reading past.
+export function Notice({
+  tone = "warning", title, detail, actionLabel, onAction, actionVariant, role, style,
+}) {
+  const danger = tone === "danger";
+  const palette = danger
+    ? { bg: "var(--bg-danger-tint)", border: "var(--border-danger-tint)", fg: "var(--text-danger)" }
+    : { bg: "var(--bg-warning-tint)", border: "var(--border-warning-tint)", fg: "var(--text-warning)" };
+  const hasAction = Boolean(actionLabel) && Boolean(onAction);
+  return (
+    <div
+      role={role || (danger ? "alert" : "note")}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        padding: "12px 14px",
+        background: palette.bg,
+        border: "1px solid " + palette.border,
+        borderRadius: R.card,
+        color: palette.fg,
+        ...(style || {}),
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>{title}</div>
+        {detail ? (
+          <div style={{ fontSize: 12.5, fontWeight: 500, lineHeight: 1.4, opacity: 0.82, marginTop: 2 }}>
+            {detail}
+          </div>
+        ) : null}
+      </div>
+      {hasAction ? (
+        <button
+          type="button"
+          className="mgt-hover-scale mgt-press"
+          onClick={onAction}
+          style={{
+            ...BTN.base,
+            ...(BTN[actionVariant || (danger ? "danger" : "secondary")] || BTN.secondary),
+            ...BTN_SIZE.sm,
+            flexShrink: 0,
+          }}
+        >
+          {actionLabel}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 // ── mkInp ────────────────────────────────────────────────────────────────
