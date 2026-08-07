@@ -4340,6 +4340,19 @@ megustastu-scheduling/
                                               // in [dateFrom..dateTo].
       notes? }
 
+/settingsRev                                                // v16.0.0
+/shiftTemplateRev                                           // v16.0.0
+  → integer. Revision counter beside each whole-node singleton, written
+    atomically WITH it in one root update() (src/lib/revGuard.js). The
+    database rule accepts a write only when the rev is exactly stored + 1,
+    so a stale device's whole-object overwrite is rejected instead of
+    silently winning. Never read into app state — usePersistence keeps the
+    last server value in a ref and bumps it optimistically on write.
+    The keyed collections (/employees, /shifts, /requests,
+    /configRevisions) are deliberately NOT guarded: they are written one
+    child at a time, so two writers touching different records write
+    disjoint paths and the database merges them. See database.rules.json.
+
 /settings
   → { operatingStart: "11:00", operatingEnd: "23:00",
       openingDays?: {                              // v0.12.0; per-day-part v1.3.0
@@ -4533,6 +4546,36 @@ returned. Do **not** repeat. Build this pattern in from the first commit.
 
 Both configs are hardcoded in `firebase.js`. Firebase web API keys are
 NOT secrets — Database Rules are the actual security layer.
+
+**⚠️ DEV currently points at `megustastu-bookings-dev` — the BOOKINGS DEV
+database — and this is a bug, not a choice.** Both apps' data sits in one
+database: `/bookings`, `/tableBlocks`, `/recurring`, `/conversations`,
+`/messages`, `/templates` (Bookings) alongside `/shifts`, `/employees`,
+`/requests`, `/configRevisions` (Scheduling). Worse, **`/settings` is a
+single node holding both apps' keys** — Bookings' `layout`, `optimizer`,
+`bookingDefaults`, `general`, `dayShifts`, `operatingHours`, `whatsapp`,
+`users/{uid}/prefs` interleaved with Scheduling's `openingDays`,
+`darkMode`, `operatingStart`/`End`, and the rest.
+
+That is why **every Scheduling settings save fails in DEV with
+PERMISSION_DENIED** while shifts and employees write fine. `usePersistence`
+reads the whole `/settings` node, so `Settings.jsx`'s
+`saveSettings({...settings, …})` spreads Bookings' children back into its
+own write. Bookings' rules guard each of those with a rev-CAS pair
+requiring `stored + 1`; rewriting them at their existing values fails that
+check and the whole write is rejected. **The rules are working correctly —
+Scheduling is the thing at fault.** Do NOT "fix" this by relaxing the
+Bookings rules; that would let this app rewrite another app's config nodes
+on every settings change.
+
+The fix is the dedicated project that has existed all along:
+`megustastu-scheduling-dev` →
+`megustastu-scheduling-dev-default-rtdb.europe-west1.firebasedatabase.app`.
+Swapping `devConfig` needs `apiKey` / `messagingSenderId` / `appId` from
+Firebase Console → Project settings → Your apps → Web app; the other four
+fields follow from the project name. Until that swap lands, DEV settings
+saves stay broken and the memory note "DEV is the safe sandbox" is only
+true for the four keyed collections.
 
 ### Single central save path
 - Any code path that modifies shifts should pass through a single helper

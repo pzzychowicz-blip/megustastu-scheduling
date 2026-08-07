@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+
+    "settings":          { ".validate": "newData.parent().child('settingsRev').val() === (data.parent().child('settingsRev').exists() ? data.parent().child('settingsRev').val() + 1 : 1)" },
+    "settingsRev":       { ".validate": "newData.isNumber() && (data.exists() ? newData.val() === data.val() + 1 : newData.val() === 1)" },
+
+    "shiftTemplate":     { ".validate": "newData.parent().child('shiftTemplateRev').val() === (data.parent().child('shiftTemplateRev').exists() ? data.parent().child('shiftTemplateRev').val() + 1 : 1)" },
+    "shiftTemplateRev":  { ".validate": "newData.isNumber() && (data.exists() ? newData.val() === data.val() + 1 : newData.val() === 1)" }
+  }
+}

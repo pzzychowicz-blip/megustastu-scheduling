@@ -618,6 +618,10 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
   }
   function handleClearResult(summary) {
     if (!summary) return;
+    // Clearing frees up quota and un-books people, so every reason the last
+    // generator run recorded is now a claim about a week that no longer
+    // exists — "at quota" on a week with no shifts in it. Drop them.
+    setUnfilledByCell({});
     setRunNotice((summary.cleared || 0) > 0
       ? null
       : { text: "Nothing to clear", tone: "neutral" });
@@ -673,12 +677,15 @@ export default function ScheduleGrid({ shifts, employees, requests, shiftTemplat
     for (let i = 0; i < op.removeIds.length; i++) {
       actions.deleteShift(op.removeIds[i]);
     }
-    setResultBanner({
-      kind: "undo",
-      label: op.label,
-      restored: op.restoreShifts.length,
-      removed: op.removeIds.length,
-    });
+    // v16.0.0 (phase 38) deleted the "Undid: <label>." banner that used to
+    // fire here — an undo is visible in the grid the moment it lands. The
+    // setter call outlived the state it wrote to and threw on every undo;
+    // the writes above had already run, so the undo worked and then blew up.
+    // Nothing replaces it: silence IS the phase-38 rule for a visible result.
+    //
+    // Reason badges have to go, though. An undo changes who works when, so
+    // last run's "at quota" / "booked" verdicts no longer describe the week.
+    setUnfilledByCell({});
   }
 
 

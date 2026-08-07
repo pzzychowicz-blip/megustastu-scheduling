@@ -951,6 +951,55 @@ sparkline; all four tabs rendering after a cache-cleared server restart.
 
 ---
 
+### Phase 43 — Revision CAS on the two singletons + rules source of truth
+
+**Files:** `src/lib/revGuard.js` (new), `src/hooks/usePersistence.js`,
+`database.rules.json` (new), `database.rules.README.md` (new), `CLAUDE.md`.
+
+**Behavioural change:** Yes — `/settings` and `/shiftTemplate` writes become
+atomic root updates carrying a `<name>Rev` counter. Additive under the
+current (permissive) rules, so it is rolling-safe: app first, rules second.
+
+**Why now.** Chasing the DEV `PERMISSION_DENIED` on settings saves turned up
+the actual cause, and it is not a rules problem: Scheduling's `devConfig`
+points at `megustastu-bookings-dev`, so both apps share one database and one
+`/settings` node. `usePersistence` reads that whole node, `Settings.jsx`
+spreads it back into its own write, and the write therefore rewrites
+Bookings' rev-guarded children (`layout`, `optimizer`, `bookingDefaults`,
+`general`, `dayShifts`, `operatingHours`, `whatsapp`, `users/{uid}/prefs`)
+at their existing values without bumping their revs. Bookings' rules reject
+exactly that. **The rules were right; the app was wrong.** Fix is the
+dedicated `megustastu-scheduling-dev` project — pending the web config,
+which cannot be derived.
+
+- **`revGuard.js`** — pure (no Firebase import, per the `src/lib/` rule):
+  `revKeyFor(path)` and `buildRevUpdate(path, value, baseRev)` returning the
+  root-relative payload plus the rev it used.
+- **`usePersistence`** — each singleton is now two subscriptions, and the
+  path counts as loaded only when BOTH have reported. That gate is
+  load-bearing: writing with the node loaded but the rev unknown would send
+  rev 1 and be rejected against any existing counter. The rev ref is bumped
+  optimistically at write time so Settings' 800ms auto-save debounce can
+  fire two writes without the second self-rejecting on a stale base; a
+  rejection's rollback echo resets it to server truth.
+- **Scope.** Only the two whole-object nodes. The keyed collections write
+  disjoint child paths and cannot race wholesale — the same reasoning
+  Bookings' own README gives for keyed `/bookings/{id}`. Per-record
+  `updatedAt`/`baseUpdatedAt` CAS is explicitly NOT included: these records
+  carry no `updatedAt`, and publishing that rule would reject every shift
+  write. Noted in `database.rules.README.md` as deferred.
+- **No auto-retry** on rejection. Bookings resyncs and replays because two
+  staff share a tablet and a laptop; this app has one manager, so the banner
+  plus the SDK's rollback is the honest answer.
+
+**Verification** — build clean; rules JSON parses; the app boots with the two
+extra subscriptions against a database where neither rev node exists (`ready`
+still flips, no hang). The success path could NOT be verified end-to-end: DEV
+still points at the Bookings database, where this write is denied for the
+reason above. It stays denied cleanly — banner renders, no JS errors.
+
+---
+
 ### Phase 42 — Feedback surfaces: reasons back on the cells, one Notice
 
 **Files:** `ScheduleGrid.jsx`, `ShiftFormModal.jsx`, `SplitConfirmModal.jsx`,

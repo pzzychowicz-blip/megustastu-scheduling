@@ -10,6 +10,11 @@
 //   /shiftTemplate        — singleton (null if never customized)
 //   /settings             — singleton (null if never customized)
 //
+// Plus two integers the app writes but never reads into state:
+//
+//   /shiftTemplateRev     — revision counter for the singleton beside it
+//   /settingsRev          — ditto (v16.0.0; see src/lib/revGuard.js)
+//
 // API:
 //   const { data, ready, writeWarning, clearWriteWarning, actions } = usePersistence();
 //
@@ -21,11 +26,15 @@
 //   data.settings        : object | null   ← null means "never customized"
 //
 //   ready              : boolean — true once all six paths have completed
-//                                  their first onValue callback. Consumers
-//                                  should render a loading state until then.
+//                                  their first onValue callback. For the two
+//                                  singletons that means the node AND its
+//                                  rev sibling, since a write needs both.
 //
-//   writeWarning       : string | null — non-null when a write was refused
-//                                        by a safety guard. Show as a banner.
+//   writeWarning       : { title, detail } | null — non-null when a write was
+//                                  refused, either by a local safety guard or
+//                                  by the server. Rendered by <Notice>, which
+//                                  reads the two fields at different weights —
+//                                  a bare string here renders an empty banner.
 //
 //   actions            : per-record CRUD helpers. See bottom of file.
 //
@@ -55,8 +64,9 @@
 //      effects in dev and would otherwise leave the ref stuck at false.
 
 import { useEffect, useRef, useState } from "react";
-import { ref, onValue, set, remove, push } from "firebase/database";
+import { ref, onValue, set, remove, push, update } from "firebase/database";
 import { db } from "../firebase.js";
+import { buildRevUpdate, revKeyFor } from "../lib/revGuard.js";
 
 // ── Path metadata ────────────────────────────────────────────────────────
 const COLLECTION_PATHS = ["employees", "shifts", "requests", "configRevisions"];
@@ -95,6 +105,26 @@ export function usePersistence() {
   const templateLoaded = useRef(false);
   const settingsLoaded = useRef(false);
 
+  // ── Revision refs (v16.0.0 — see src/lib/revGuard.js) ──────────────────
+  // Last rev this client saw from the server for each guarded singleton.
+  // Held in a ref, not state: writes read it synchronously inside event
+  // handlers, and a re-render on every echo would be pure noise.
+  //
+  // Bumped OPTIMISTICALLY at write time, before the server echo lands.
+  // That matters here specifically because Settings.jsx auto-saves on an
+  // 800ms debounce — flip two toggles in quick succession and the second
+  // write can leave before the first one's echo returns. Reading the ref
+  // un-bumped would send the same base twice, and the rule would reject
+  // the second write as stale even though it isn't. A rejected write's
+  // rollback echo resets the ref to server truth, so a wrong optimistic
+  // guess self-corrects rather than sticking.
+  const settingsRev = useRef(0);
+  const templateRev = useRef(0);
+  const revRefByPath = {
+    settings: settingsRev,
+    shiftTemplate: templateRev,
+  };
+
   // Map path string → loaded ref, for lookup inside helpers.
   const loadedRefByPath = {
     employees: employeesLoaded,
@@ -128,26 +158,52 @@ export function usePersistence() {
       unsubs.push(unsub);
     }
 
-    function subscribeSingleton(path, setter, loadedRef) {
-      const unsub = onValue(ref(db, path), function (snap) {
+    // v16.0.0: a guarded singleton is TWO subscriptions — the node and its
+    // `<name>Rev` sibling — and the path only counts as loaded once BOTH
+    // have reported. Gating on both is load-bearing: a write that fires
+    // with the node loaded but the rev still unknown would send base 0,
+    // i.e. rev 1, and the rule rejects that against any existing rev. The
+    // write-guard's "initial read has not completed" refusal now covers
+    // the rev too, which is exactly the failure it exists to prevent.
+    function subscribeSingleton(path, setter, loadedRef, revRef) {
+      let nodeSeen = false;
+      let revSeen = false;
+      function markLoaded() {
+        if (loadedRef.current || !nodeSeen || !revSeen) return;
+        loadedRef.current = true;
+        setReadyMap(function (prev) { return { ...prev, [path]: true }; });
+      }
+      const unsubNode = onValue(ref(db, path), function (snap) {
         if (!mounted.current) return;
         setter(snap.val());  // null is valid for singletons
-        if (!loadedRef.current) {
-          loadedRef.current = true;
-          setReadyMap(function (prev) { return { ...prev, [path]: true }; });
-        }
+        nodeSeen = true;
+        markLoaded();
       }, function (err) {
         console.warn("[persistence] onValue error at", path, err && err.code, err && err.message);
       });
-      unsubs.push(unsub);
+      const revPath = revKeyFor(path);
+      const unsubRev = onValue(ref(db, revPath), function (snap) {
+        if (!mounted.current) return;
+        // Server truth always wins over the optimistic bump — including
+        // after a rejected write, where the rollback echo is what puts the
+        // ref back in step so the manager's retry can succeed.
+        const val = snap.val();
+        revRef.current = typeof val === "number" && val > 0 ? val : 0;
+        revSeen = true;
+        markLoaded();
+      }, function (err) {
+        console.warn("[persistence] onValue error at", revPath, err && err.code, err && err.message);
+      });
+      unsubs.push(unsubNode);
+      unsubs.push(unsubRev);
     }
 
     subscribeCollection("employees", setEmployees, employeesLoaded);
     subscribeCollection("shifts", setShifts, shiftsLoaded);
     subscribeCollection("requests", setRequests, requestsLoaded);
     subscribeCollection("configRevisions", setConfigRevisions, configRevisionsLoaded);
-    subscribeSingleton("shiftTemplate", setShiftTemplate, templateLoaded);
-    subscribeSingleton("settings", setSettings, settingsLoaded);
+    subscribeSingleton("shiftTemplate", setShiftTemplate, templateLoaded, templateRev);
+    subscribeSingleton("settings", setSettings, settingsLoaded, settingsRev);
 
     return function cleanup() {
       mounted.current = false;
@@ -159,11 +215,23 @@ export function usePersistence() {
   const ready = ALL_PATHS.every(function (p) { return readyMap[p] === true; });
 
   // ── Write-guard helper ─────────────────────────────────────────────────
+  // v16.0.0 (phase 42): `reason` is a `{ title, detail }` object, not a
+  // string. It shares the shape `reportWriteError` sets below because
+  // <Notice> in AppShell reads `.title` / `.detail` off whatever lands in
+  // `writeWarning` — a string leaves both undefined and renders an empty red
+  // banner with nothing in it but a Dismiss button, which is the exact
+  // opposite of what a write-guard banner is for. No caller passes `reason`
+  // today; the parameter stays as the escape hatch it always was.
   function refuseUnlessLoaded(path, isSilent, reason) {
     const loadedRef = loadedRefByPath[path];
     if (!loadedRef.current) {
       console.warn("[SAFE] Refused to write " + path + " — initial read not complete.");
-      if (!isSilent) setWriteWarning(reason || "Cannot save — data still loading. Try again in a moment.");
+      if (!isSilent) {
+        setWriteWarning(reason || {
+          title: (PATH_LABELS[path] || path) + " not saved — still loading",
+          detail: "The initial read has not completed. Try again in a moment.",
+        });
+      }
       return false;
     }
     return true;
@@ -273,15 +341,42 @@ export function usePersistence() {
   // ── Singletons: shiftTemplate / settings ───────────────────────────────
   // Singletons are object-replace. Empty-object writes are refused — that's
   // almost certainly an accidental wipe, not a user-intended "reset to nothing."
-
+  //
+  // v16.0.0: object-replace is also the one shape of write that can lose
+  // another device's work wholesale, so these two are the app's only
+  // revision-guarded nodes. The write is an atomic ROOT update carrying the
+  // node and its `<name>Rev` sibling together (see src/lib/revGuard.js);
+  // the database rule accepts it only if the rev is exactly stored + 1.
+  //
+  // `update()` not `set()`, and rooted not scoped to the node, because the
+  // rev lives BESIDE the node rather than inside it — scoping to `settings`
+  // could not reach `settingsRev`, and two separate writes would let the
+  // rev advance without the node (or vice versa) if one half failed.
+  //
+  // No auto-retry on rejection. A rejection means someone else's write is
+  // already in, so the safe move is to show the manager the banner and let
+  // them re-apply their change on top of what actually landed — the SDK has
+  // already rolled the UI back to server truth by then. (Bookings does
+  // resync-and-replay here; it needs to, because two staff members share a
+  // tablet and a laptop. This app has one manager.)
   function saveSingleton(path, value, isSilent) {
     if (!refuseUnlessLoaded(path, isSilent)) return;
     if (!value || (typeof value === "object" && Object.keys(value).length === 0)) {
       console.warn("[SAFE] Refused to write empty " + path + ".");
-      if (!isSilent) setWriteWarning("Refused to save empty " + path + ".");
+      // Same `{ title, detail }` shape as every other writeWarning — see
+      // refuseUnlessLoaded above for why a bare string cannot go here.
+      if (!isSilent) {
+        setWriteWarning({
+          title: (PATH_LABELS[path] || path) + " not saved — empty value refused",
+          detail: "Writing this would have wiped the record, so nothing was sent.",
+        });
+      }
       return;
     }
-    set(ref(db, path), value).catch(function (err) {
+    const revRef = revRefByPath[path];
+    const built = buildRevUpdate(path, value, revRef.current);
+    revRef.current = built.nextRev;
+    update(ref(db), built.payload).catch(function (err) {
       reportWriteError("write", path, err, isSilent);
     });
   }
