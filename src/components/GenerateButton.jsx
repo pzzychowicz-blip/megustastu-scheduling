@@ -244,7 +244,6 @@ function GenerateButton({
           <GenerateConfirmModal
             open
             weekLabel={formatWeekRange(weekStart)}
-            strictPref={Boolean(strictPreference)}
             busy={busy}
             isMobile={isMobile}
             onClose={handleClose}

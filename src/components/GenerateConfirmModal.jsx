@@ -28,7 +28,6 @@
 // Props:
 //   open          (bool)
 //   weekLabel     (string)  — e.g. "12–18 May 2026" from formatWeekRange()
-//   strictPref    (bool)    — current /settings.generatorStrictPreference
 //   busy          (bool)    — disables both action buttons during a run
 //   isMobile      (bool)
 //   onClose       (fn)
@@ -42,7 +41,7 @@ import { Overlay, Toggle, mkBtn } from "./atoms.jsx";
 import { useEscClose } from "../hooks/useEscClose.js";
 
 export default function GenerateConfirmModal({
-  open, weekLabel, strictPref, busy, isMobile, onClose, onConfirm,
+  open, weekLabel, busy, isMobile, onClose, onConfirm,
 }) {
   // v1.8.1: per-run policy state. Resets each time the modal opens —
   // sticky-across-opens would be a power-user request, default resets
@@ -66,24 +65,18 @@ export default function GenerateConfirmModal({
 
   if (!open) return null;
 
-  const prefHint = strictPref
-    ? "Hard — only preference-matching employees considered. Cells may be left empty if no preferred candidate fits."
-    : "Soft — preferred employees tried first; falls back to anyone eligible if none match.";
-
   // v1.8.1: regenerate is "destructive" when either preserve flag is OFF.
-  // Drives the button variant (red vs blue) and the explainer copy.
+  // Drives the Regenerate button's variant (red vs blue).
+  //
+  // v16.0.0 (phase 38): that colour is now the ONLY thing signalling it,
+  // and it is enough. This modal also carried an intro paragraph, a
+  // five-bullet list of the generator's rules, a card restating the
+  // preference mode from Settings, and a pair of explainer sentences that
+  // rewrote themselves as the toggles below flipped. All of it described
+  // locked behaviour, re-read on every single run, to the one person who
+  // decided that behaviour. What is left is the two controls that actually
+  // change what the run does, and three buttons.
   const destructive = !preserveTimes || !preserveAssignments;
-
-  let regenExplainer;
-  if (preserveTimes && preserveAssignments) {
-    regenExplainer = "Re-fills only the truly empty cells. Existing shifts stay as-is.";
-  } else if (preserveTimes && !preserveAssignments) {
-    regenExplainer = "Reassigns staff but keeps your custom start/end times and evening roles.";
-  } else if (!preserveTimes && preserveAssignments) {
-    regenExplainer = "Keeps existing employees on each cell but resets start/end times and roles to template defaults.";
-  } else {
-    regenExplainer = "Clears every shift in this week and re-allocates the whole rota fresh.";
-  }
 
   return (
     <Overlay
@@ -92,81 +85,6 @@ export default function GenerateConfirmModal({
       onClose={busy ? undefined : onClose}
       title={"Auto-fill empty cells for " + weekLabel + "?"}
     >
-      <p style={{ ...S.body, margin: "0 0 12px 0" }}>
-        The generator will fill empty cells respecting the same rules the
-        manual picker enforces.
-      </p>
-
-      <ul style={{ ...S.body, margin: "0 0 12px 16px", padding: 0, fontSize: 13 }}>
-        {/* v16.0.0: worth stating explicitly now that split shifts exist
-            as a manual action — the generator still never creates one. */}
-        <li>Role match + working-days quota, and never two shifts for the
-          same person on one date (split shifts stay manual-only).</li>
-        <li>Skips any cell that's already assigned.</li>
-        <li>
-          Never auto-assigns over a day-off or holiday request — you can
-          override manually from the cell modal afterwards.
-        </li>
-        <li>Respects each employee's fixed working days when set.</li>
-        <li>
-          Leaves the cell <em>empty</em> if no eligible employee is
-          available — no rules are bent.
-        </li>
-      </ul>
-
-      <div
-        style={{
-          ...S.surfaceSoft,
-          padding: "8px 10px",
-          marginBottom: 12,
-          fontSize: 12,
-        }}
-      >
-        <span style={{ fontWeight: 600 }}>Preference mode: </span>
-        <span style={{ color: "var(--text-secondary)" }}>{prefHint}</span>
-        <div style={{ ...S.muted, marginTop: 4, fontSize: 11 }}>
-          Change this in Settings → Auto-generator.
-        </div>
-      </div>
-
-      {/* v1.1.0: Fill-empty vs Regenerate explainer.
-          v1.7.0: Regenerate explicit destructive-by-default copy.
-          v1.8.1: explainer + Regenerate label colour adapt to the
-                  preserve toggles' state. */}
-      <div
-        style={{
-          ...S.surfaceSoft,
-          padding: "8px 10px",
-          marginBottom: 12,
-          fontSize: 12,
-        }}
-      >
-        <div style={{ marginBottom: 4 }}>
-          <span style={{ fontWeight: 600 }}>Fill empty</span>
-          <span style={{ color: "var(--text-secondary)" }}>
-            {" — only fills cells that are currently empty. Existing assignments untouched."}
-          </span>
-        </div>
-        <div>
-          <span
-            style={{
-              fontWeight: 600,
-              color: destructive ? "var(--text-danger)" : "var(--text-primary)",
-            }}
-          >
-            Regenerate
-          </span>
-          <span style={{ color: "var(--text-secondary)" }}>
-            {" — "}
-            {destructive
-              ? (
-                <strong>{regenExplainer}</strong>
-              )
-              : regenExplainer}
-          </span>
-        </div>
-      </div>
-
       {/* v1.8.1: preserve-overrides toggles. v1.9.0 default state =
           preserveTimes ON / preserveAssignments OFF (modal opens in
           danger-red Regenerate variant by default).
@@ -185,8 +103,7 @@ export default function GenerateConfirmModal({
           On Regenerate:
         </div>
         <Toggle
-          label="Preserve manual time/role edits"
-          helper="Cells where you've changed start/end times or the evening role stay as-is."
+          label="Keep manual time and role edits"
           checked={preserveTimes}
           onChange={setPreserveTimes}
           disabled={busy}
@@ -194,8 +111,7 @@ export default function GenerateConfirmModal({
         />
         <div style={{ height: 6 }} />
         <Toggle
-          label="Preserve existing assignments"
-          helper="Cells with an assigned employee stay as-is."
+          label="Keep existing assignments"
           checked={preserveAssignments}
           onChange={setPreserveAssignments}
           disabled={busy}

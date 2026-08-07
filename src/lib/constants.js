@@ -137,18 +137,6 @@ export const DEFAULT_WORKING_DAYS = 5;
 // the manager has carefully tuned preferences and wants them respected.
 export const DEFAULT_GENERATOR_STRICT_PREFERENCE = false;
 
-// v1.9.4: generator-results banner auto-dismiss + duration. The banner
-// appears above the schedule grid after a Generate/Regenerate/Clear run
-// summarizing the outcome. By default it auto-dismisses 5s after
-// appearing; the manager can disable auto-dismiss entirely (banner
-// stays until they ×-close it or another run replaces it) or tune the
-// duration (1–60s). ScheduleGrid reads these settings on every render;
-// the auto-dismiss effect re-runs when either value changes.
-export const DEFAULT_GENERATOR_BANNER_AUTO_DISMISS = true;
-export const DEFAULT_GENERATOR_BANNER_DURATION_SEC = 5;
-export const GENERATOR_BANNER_DURATION_MIN = 1;
-export const GENERATOR_BANNER_DURATION_MAX = 60;
-
 // ── Scheduling rules (v1.11.0) ───────────────────────────────────────────
 // Three rules that used to be hard-coded constants become first-class
 // /settings knobs in v1.11.0. Defaults preserve every prior version's
@@ -643,35 +631,6 @@ export const REQUEST_TYPES = Object.freeze([
 export const DAY_PARTS = Object.freeze({
   day: { label: "Day", short: "D" },
   evening: { label: "Evening", short: "E" },
-});
-
-// ── Generator reason labels (v1.4.0) ─────────────────────────────────────
-// Human-readable labels for the reason codes that generator.js attaches to
-// `summary.unfilledCells[].reason` and `summary.clearedReasons[].reason`.
-// Surfaced by the "Details" modal opened from the generator result banner —
-// the manager sees grouped-by-reason lists instead of a bare count.
-//
-// v1.7.0: Regenerate became wipe-and-refill (every shift in the week is
-// cleared with reason "regenerated" before fill-empty runs). The
-// constraint-by-constraint reason codes that the old `clearInvalidShifts`
-// pre-pass emitted (closed-day, on-request, fixed-days, etc.) are gone —
-// none of that machinery survives the rewrite. The codes still listed
-// below are the ones `buildCandidates` continues to emit when no
-// candidate fits a cell.
-export const GENERATOR_REASONS = Object.freeze({
-  // Unfilled (eligibility filter, in order from generator.js buildCandidates)
-  "no-role-match": "No employee holds the required role",
-  "no-eligible": "No eligible employee for this cell",
-  "all-on-request": "All eligible staff are on a day off or holiday",
-  "all-shift-pref": "All eligible staff are blocked by a shift-preference request",
-  "all-conflicted": "All eligible staff are already on another shift that day",
-  "all-at-quota": "All eligible staff have reached their working-days quota",
-  "no-2-off": "Would break the 2-consecutive-days-off rule for every candidate",
-  "max-consecutive": "Would exceed the max consecutive working-days cap for every candidate",
-  "preference": "No staff with matching shift preference (Hard mode)",
-  "out-of-tenure": "No eligible staff are within their active employment dates",
-  // Cleared (v1.7.0 Regenerate wipe — every record gets this one reason)
-  "regenerated": "Cleared for regeneration",
 });
 
 // ── Weekday helpers ──────────────────────────────────────────────────────
