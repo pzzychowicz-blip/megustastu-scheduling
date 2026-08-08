@@ -951,6 +951,65 @@ sparkline; all four tabs rendering after a cache-cleared server restart.
 
 ---
 
+### Phase 44 — A removed scheduled change stays removed
+
+**Files:** `src/components/Settings.jsx`, `src/hooks/usePersistence.js`,
+`CLAUDE.md`.
+
+**Behavioural change:** Yes — removing a `/configRevisions` record no longer
+re-creates it (or a phantom sibling) ~800 ms later.
+
+**The bug, as reported.** Settings → picker on "Week of 10–16 Aug 2026" →
+Remove that row → the row disappears and comes back about a second later.
+
+**Root cause: two clocks inside one component.** `deleteConfigRevision` is
+fire-and-forget, so the `configRevisions` prop keeps the record until
+Firebase echoes back. `handleRemoveRevision` re-seeded the forms from a
+locally filtered map, but the dirty baseline `resolvedAtPicker` kept
+resolving against the live prop. For as long as the echo took, the form
+held post-delete values and the baseline held pre-delete ones — so
+`openDaysFormDirty` / `fohDirty` / `kitchenDirty` read true and armed the
+800 ms auto-save. Two ways that lands, both observed as "it came back":
+
+- picker on the deleted revision's **own** Monday →
+  `findRevisionIdForMonday` scans the stale map, returns the id just
+  deleted, and `upsertConfigRevision` writes the whole record back at the
+  same key (the merge spread even restores the axis the save didn't touch);
+- picker on a **later** Monday → no existing id, so a brand-new revision is
+  pushed at the picker week carrying the fallback config.
+
+The pre-v16 comment on `handleRemoveRevision` claimed the filtered map
+prevented this. It only ever reached `seedFormsFor` — not the baseline, not
+the id lookup, not `revisionList`.
+
+- **Pending-delete ledger.** `pendingDeletedIds` state + a memoised
+  `visibleRevisions` (the prop minus those ids). Every in-component read now
+  goes through it: both form seed initialisers, `seedFormsFor`,
+  `findRevisionIdForMonday`, `upsertRevisionAxis`'s merge spread,
+  `resolvedAtPicker`, `revisionList`, and both save effects' dep arrays.
+  One map per render, so a delete can no longer manufacture a dirty state —
+  and because the ledger changes the dep identity immediately, it also
+  cancels any armed debounce timer in the same commit instead of waiting on
+  the echo.
+- **The ledger is optimistic, so it releases on settle.** A rejected delete
+  (rules, offline) is rolled back by the SDK, and the row must come back —
+  hiding it behind a delete that never landed would be a worse bug than the
+  one being fixed. `deleteFromCollection` therefore returns a
+  `Promise<boolean>`; Settings clears the id when it settles either way.
+  Failure reporting is unchanged (`reportWriteError` already surfaced it).
+- **`handleReset` routed through the same helper.** Factory reset deletes
+  every revision and had the identical staleness — its `skipNextReseedRef`
+  dance was covering for it on the seeding side only.
+
+**Verified in DEV** (`megustastu-scheduling-dev`, live grid + Settings): the
+reported repro with the picker on the deleted revision's own Monday — row
+stays gone past 6 s, no new record in `/configRevisions`; the later-picker
+variant — no phantom revision at the picker week, opening days correctly
+fall back; creating a revision still works; the schedule grid resolves the
+surviving revision's config. Bundle unchanged at 183.24 kB gz.
+
+---
+
 ### Phase 43 — Revision CAS on the two singletons + rules source of truth
 
 **Files:** `src/lib/revGuard.js` (new), `src/hooks/usePersistence.js`,

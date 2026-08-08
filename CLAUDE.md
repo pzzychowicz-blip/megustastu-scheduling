@@ -1400,6 +1400,23 @@ separate Firebase project, same UI conventions).
   `pastWeeksLocked`, and moves the picker back to next Monday —
   leaving revisions would make the reset a visible no-op for weeks
   at/after the earliest revision.
+  **Pending-delete ledger (v16.0.0):** inside `Settings.jsx` NOTHING
+  reads the `configRevisions` prop directly any more — every read goes
+  through `visibleRevisions` (the prop minus a `pendingDeletedIds`
+  state list). The prop keeps a removed record until Firebase echoes,
+  so a component that seeds its forms from a post-delete view while
+  computing its dirty baseline from the pre-delete prop reads dirty for
+  the length of the round trip, and the 800 ms auto-save then re-writes
+  the record it just deleted (same id when the picker sits on that
+  Monday, a phantom new revision at the picker week otherwise) — the
+  v16.0.0 "removed change comes back a second later" bug. Keep the
+  single-map rule when adding any new read: form seeds, `seedFormsFor`,
+  `findRevisionIdForMonday`, `upsertRevisionAxis`, `resolvedAtPicker`,
+  `revisionList`, and both save effects' dep arrays. The ledger is
+  optimistic and MUST release when the delete settles either way —
+  `deleteFromCollection` returns `Promise<boolean>` for exactly this, so
+  a rules-rejected delete (rolled back by the SDK) makes the row
+  reappear instead of hiding a record Firebase still holds.
 
 - **Per-open-mode ("solo") shift times (v15.1.0):** a template block
   may carry an optional `soloTimes: [{start,end}, ...]` axis (same

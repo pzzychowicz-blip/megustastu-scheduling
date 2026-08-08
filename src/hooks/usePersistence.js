@@ -317,11 +317,20 @@ export function usePersistence() {
     return id;
   }
 
+  // v16.0.0: returns a promise resolving to whether the delete actually
+  // landed. Callers that keep an optimistic local view of the collection
+  // (Settings.jsx's pending-delete ledger) need to know when a rejected
+  // delete was rolled back, so they can stop hiding a record Firebase
+  // still has. Ignoring the return value keeps the pre-v16 behaviour —
+  // the failure is still reported by reportWriteError either way.
   function deleteFromCollection(path, id, isSilent) {
-    if (!refuseUnlessLoaded(path, isSilent)) return;
-    if (!id) return;
-    remove(ref(db, path + "/" + id)).catch(function (err) {
+    if (!refuseUnlessLoaded(path, isSilent)) return Promise.resolve(false);
+    if (!id) return Promise.resolve(false);
+    return remove(ref(db, path + "/" + id)).then(function () {
+      return true;
+    }).catch(function (err) {
       reportWriteError("delete", path, err, isSilent);
+      return false;
     });
   }
 

@@ -83,7 +83,7 @@
 // SECTIONS.foh.label / .kitchen.label drive the card titles so renaming
 // a section in constants.js propagates automatically.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   R, S, BTN, BTN_SIZE, BADGE_SIZE, pillTone, SECTIONS,
   DEFAULT_SHIFT_TEMPLATE,
@@ -470,6 +470,54 @@ export default function Settings({
     setEffectiveFromIso(isoDate(startOfWeek(parsed)));
   }
 
+  // ── Pending-delete ledger (v16.0.0) ────────────────────────────────────
+  // `deleteConfigRevision` is fire-and-forget: the `configRevisions` prop
+  // still carries the removed record until Firebase echoes back. Every
+  // read below goes through `visibleRevisions` so the forms, the dirty
+  // baseline, the merge-target id lookup, and the Scheduled-changes list
+  // all see the SAME map within one render.
+  //
+  // Without it the delete handler seeded the forms from a locally filtered
+  // map while `resolvedAtPicker` kept resolving against the live prop. The
+  // two disagreed for as long as the echo took, the section read dirty,
+  // and the 800 ms auto-save wrote the record straight back — same id via
+  // findRevisionIdForMonday when the picker sat on the deleted revision's
+  // own Monday, or a phantom new revision at the picker week otherwise.
+  // That was the "removed change comes back a second later" bug.
+  //
+  // The ledger is optimistic, so it is cleared as soon as the delete
+  // settles: on success the record is already gone from the prop, and on
+  // REJECTION (rules, offline) Firebase rolls it back and the row must
+  // reappear rather than stay hidden behind a delete that never landed.
+  const [pendingDeletedIds, setPendingDeletedIds] = useState([]);
+  const visibleRevisions = useMemo(function () {
+    if (pendingDeletedIds.length === 0) return configRevisions || {};
+    const out = { ...(configRevisions || {}) };
+    pendingDeletedIds.forEach(function (id) { delete out[id]; });
+    return out;
+  }, [configRevisions, pendingDeletedIds]);
+
+  function forgetPendingDelete(id) {
+    setPendingDeletedIds(function (prev) {
+      return prev.filter(function (pid) { return pid !== id; });
+    });
+  }
+
+  // Hide the record locally, then release the ledger entry once the write
+  // settles either way. `deleteConfigRevision` reports its own failure as
+  // a write warning — this only owns the local visibility.
+  function deleteRevisionOptimistically(id, isSilent) {
+    setPendingDeletedIds(function (prev) {
+      return prev.indexOf(id) === -1 ? prev.concat([id]) : prev;
+    });
+    const settled = deleteConfigRevision(id, isSilent);
+    if (settled && typeof settled.then === "function") {
+      settled.then(function () { forgetPendingDelete(id); });
+      return;
+    }
+    forgetPendingDelete(id);
+  }
+
   // ── Seed local form state ──────────────────────────────────────────────
   // We deliberately do NOT re-sync from props after mount. Manager-only
   // app, single tab editing — if the prop changes mid-edit it's because
@@ -480,7 +528,7 @@ export default function Settings({
   // base) and re-seed whenever the picker changes — see the effect below.
   const [form, setForm] = useState(function () {
     const resolved = resolveConfigForWeek(
-      configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+      visibleRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
     );
     return cloneTemplate(resolved.shiftTemplate || DEFAULT_SHIFT_TEMPLATE);
   });
@@ -507,7 +555,7 @@ export default function Settings({
   // week, like the template form above.
   const [openingDaysForm, setOpeningDaysForm] = useState(function () {
     const resolved = resolveConfigForWeek(
-      configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+      visibleRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
     );
     return normalizeOpeningDays(resolved.openingDays || DEFAULT_OPENING_DAYS);
   });
@@ -518,18 +566,21 @@ export default function Settings({
   // the 800 ms debounce window when the picker changes are dropped — the
   // save effects carry `effectiveFromIso` in their dep arrays, so their
   // cleanup clears the timers in the same commit, before this re-seed.
+  // `revMapOverride` exists for handlers that seed in the SAME tick as a
+  // delete: the ledger's state update hasn't applied yet, so the closed-over
+  // `visibleRevisions` still carries the record being removed.
   function seedFormsFor(iso, revMapOverride) {
     const resolved = resolveConfigForWeek(
-      revMapOverride || configRevisions, settings, shiftTemplate, parseIsoDate(iso)
+      revMapOverride || visibleRevisions, settings, shiftTemplate, parseIsoDate(iso)
     );
     setForm(cloneTemplate(resolved.shiftTemplate || DEFAULT_SHIFT_TEMPLATE));
     setOpeningDaysForm(normalizeOpeningDays(resolved.openingDays || DEFAULT_OPENING_DAYS));
   }
   const effectiveFromSeededRef = useRef(false);
   // handleReset sets this before moving the picker: it has ALREADY seeded
-  // the forms to defaults, and the configRevisions prop is stale at that
-  // moment (the delete echoes haven't landed) — a re-seed here would
-  // resurrect just-deleted revision values into the form.
+  // the forms to defaults, and its ledger writes haven't applied yet at
+  // that point in the tick — a re-seed here would resurrect just-deleted
+  // revision values into the form.
   const skipNextReseedRef = useRef(false);
   useEffect(function () {
     if (!effectiveFromSeededRef.current) {
@@ -994,7 +1045,7 @@ export default function Settings({
   // `effectiveFrom` + at least one axis — collections have no empty-object
   // write guard, so this is where the invariant is enforced.
   function findRevisionIdForMonday(iso) {
-    const map = configRevisions || {};
+    const map = visibleRevisions;
     let bestId = null;
     Object.keys(map).forEach(function (id) {
       const rev = map[id];
@@ -1008,7 +1059,7 @@ export default function Settings({
     const existingId = findRevisionIdForMonday(effectiveFromIso);
     if (existingId) {
       upsertConfigRevision({
-        ...(configRevisions[existingId] || {}),
+        ...(visibleRevisions[existingId] || {}),
         id: existingId,
         effectiveFrom: effectiveFromIso,
         [axisKey]: value,
@@ -1017,13 +1068,15 @@ export default function Settings({
     }
     upsertConfigRevision({ effectiveFrom: effectiveFromIso, [axisKey]: value });
   }
-  // Remove a scheduled change. The immediate re-seed runs against a
-  // LOCALLY filtered map — re-seeding from the live prop would re-seed
-  // the just-deleted values (the Firebase echo hasn't landed yet), leave
-  // the form dirty against the post-delete baseline, and the debounced
-  // save would silently re-create the revision.
+  // Remove a scheduled change. Both halves of this handler read the SAME
+  // post-delete map: the ledger hides the record from every derived read
+  // on the next render (including the dirty baseline), and `filtered`
+  // covers this tick, where the ledger's state update hasn't applied yet.
+  // Before v16.0.0 only the form seeding was filtered while the baseline
+  // kept resolving the live prop, which is what made the debounced save
+  // re-create the revision ~800 ms later.
   function handleRemoveRevision(id) {
-    const rev = (configRevisions || {})[id];
+    const rev = visibleRevisions[id];
     if (!rev) return;
     const ok = window.confirm(
       "Remove the scheduled change for the week of " +
@@ -1031,8 +1084,8 @@ export default function Settings({
       "? Weeks from that Monday fall back to the previous configuration."
     );
     if (!ok) return;
-    deleteConfigRevision(id);
-    const filtered = { ...(configRevisions || {}) };
+    deleteRevisionOptimistically(id);
+    const filtered = { ...visibleRevisions };
     delete filtered[id];
     seedFormsFor(effectiveFromIso, filtered);
   }
@@ -1101,7 +1154,7 @@ export default function Settings({
   // echo). resolveConfigForWeek is cheap (linear scan over a handful of
   // revisions), so a per-render call is fine.
   const resolvedAtPicker = resolveConfigForWeek(
-    configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+    visibleRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
   );
   const savedTemplate = resolvedAtPicker.shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
   const fohDirty =
@@ -1161,11 +1214,14 @@ export default function Settings({
   }, [hoursDirty, hoursForm, opsErr, settings, saveSettings]);
 
   // Opening days → config revision at the effective-from week (v15.1.0).
-  // `effectiveFromIso` + `configRevisions` sit in the dep array on
+  // `effectiveFromIso` + `visibleRevisions` sit in the dep array on
   // purpose: a picker change (or a revision delete) clears any pending
   // timer in the same commit, so a stale form can never be written
   // against the new effective date. Dirty auto-clears once the revision
   // echo lands (the baseline then matches the form).
+  // v16.0.0: the dep is the ledger-filtered map, not the raw prop, so a
+  // delete cancels the pending timer immediately rather than waiting on
+  // the Firebase echo to change the prop's identity.
   useEffect(function () {
     if (!openDaysFormDirty) return undefined;
     if (openDaysErr !== null) return undefined;
@@ -1173,9 +1229,9 @@ export default function Settings({
       upsertRevisionAxis("openingDays", normalizeOpeningDays(openingDaysForm));
     }, 800);
     return function () { clearTimeout(t); };
-    // upsertRevisionAxis closes over effectiveFromIso + configRevisions,
+    // upsertRevisionAxis closes over effectiveFromIso + visibleRevisions,
     // both of which are in the deps — the closure is never stale.
-  }, [openDaysFormDirty, openingDaysForm, openDaysErr, effectiveFromIso, configRevisions]);
+  }, [openDaysFormDirty, openingDaysForm, openDaysErr, effectiveFromIso, visibleRevisions]);
 
   // Shift template: FoH + Kitchen blocks → config revision (v15.1.0).
   // Saved as one template object so an in-flight FoH edit doesn't race a
@@ -1193,7 +1249,7 @@ export default function Settings({
     }, 800);
     return function () { clearTimeout(t); };
   }, [fohDirty, kitchenDirty, form, errors.fohDay, errors.fohEvening,
-      errors.kitchenDay, errors.kitchenEvening, effectiveFromIso, configRevisions]);
+      errors.kitchenDay, errors.kitchenEvening, effectiveFromIso, visibleRevisions]);
 
   function handleReset() {
     const ok = window.confirm(
@@ -1244,8 +1300,12 @@ export default function Settings({
     // earliest revision (the resolver would keep picking the revision over
     // the freshly-reset base). Silent deletes: this is one user action,
     // the confirm above already covered it.
-    Object.keys(configRevisions || {}).forEach(function (id) {
-      deleteConfigRevision(id, true);
+    // v16.0.0: routed through the pending-delete ledger like the per-row
+    // Remove, so the freshly-defaulted forms and the dirty baseline agree
+    // straight away instead of the baseline resolving revisions that are
+    // on their way out.
+    Object.keys(visibleRevisions).forEach(function (id) {
+      deleteRevisionOptimistically(id, true);
     });
     // Only arm the skip when the picker will actually move — a no-op
     // state set never fires the effect, and the stale flag would then
@@ -1600,8 +1660,8 @@ export default function Settings({
   // v15.1.0: scheduled-changes list for the effective-from card. Sorted
   // by effectiveFrom ascending (then id for deterministic duplicate
   // order, which Settings itself never creates).
-  const revisionList = Object.keys(configRevisions || {})
-    .map(function (id) { return { ...(configRevisions[id] || {}), id: id }; })
+  const revisionList = Object.keys(visibleRevisions)
+    .map(function (id) { return { ...(visibleRevisions[id] || {}), id: id }; })
     .filter(function (r) { return Boolean(r.effectiveFrom); })
     .sort(function (a, b) {
       if (a.effectiveFrom !== b.effectiveFrom) {
