@@ -1417,6 +1417,19 @@ separate Firebase project, same UI conventions).
   `deleteFromCollection` returns `Promise<boolean>` for exactly this, so
   a rules-rejected delete (rolled back by the SDK) makes the row
   reappear instead of hiding a record Firebase still holds.
+  **Scheduled-changes rows are a second path to the picker (v16.0.0):**
+  clicking a row sets `effectiveFromIso` to that revision's Monday, so
+  editing an existing change no longer means retyping its date; the row
+  matching the picker carries an `--accent-tint-strong` border, because
+  the header's "editing an existing change" doesn't say WHICH one once
+  several exist. The clickable target is a content-sized `<button>`
+  around the label + axis badges with Remove as a SIBLING — never
+  nested, matching `<MonthlyFairnessPanel>`'s row and the
+  `<WeeklyRequestsPreview>` pill. Note the pre-existing v15.1.0
+  semantic this inherits: changing the picker drops any edit still
+  inside the 800 ms debounce window (the save effects carry
+  `effectiveFromIso` in their deps), and a row click is now the
+  cheapest way to trigger that.
 
 - **Per-open-mode ("solo") shift times (v15.1.0):** a template block
   may carry an optional `soloTimes: [{start,end}, ...]` axis (same
@@ -1544,6 +1557,19 @@ separate Firebase project, same UI conventions).
     (`TABS[n-1].key`); `?` → open `<ShortcutsModal>` (a read-only,
     `Overlay`-wrapped cheatsheet using a new `Kbd` keycap atom; it owns
     its own Esc-to-close since the Overlay atom has none).
+    **`Shift`+`D` → flip the theme (v16.0.0)** — the app's only chord.
+    It writes `darkMode: !isDark` through `saveSettings`, i.e. the exact
+    write the Display toggle makes, so the flip is persisted and a
+    manager who was following the system pref stops following it. Two
+    rules the chord must keep: (a) match on `e.shiftKey && e.key === D|d`
+    rather than gating the handler on `e.shiftKey` — `?` is Shift+/ and
+    AZERTY-style layouts deliver DIGITS with shift set, so a blanket
+    shift guard silently kills those shortcuts; (b) the write needs live
+    `isDark` + `settings`, so it goes through a ref that a separate
+    effect keeps current — the listener itself stays mounted once with
+    an empty dep array rather than re-subscribing on every settings
+    echo. `ShortcutRow` gained a `joiner` prop ("+" for chords, default
+    "/" for alternatives) so the cheatsheet reads "Shift + D".
   - **ScheduleGrid** extends its existing Esc effect: `←`/`→` →
     `goPrev`/`goNext`, `T` → `goToday`; `G`/`S`/`U`/`C`/`E` →
     Generate / Swap / Undo / Clear / Export. The five action keys are

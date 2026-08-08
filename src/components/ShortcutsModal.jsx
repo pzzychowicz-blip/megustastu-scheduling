@@ -17,7 +17,10 @@ import { Overlay, mkBtn, Kbd } from "./atoms.jsx";
 import { useEscClose } from "../hooks/useEscClose.js";
 
 // ── One row: keycap(s) + label ───────────────────────────────────────────
-function ShortcutRow({ keys, label }) {
+// `joiner` is what sits between keycaps: "/" for alternatives (the default —
+// "← / →" means either key does the thing), "+" for a chord that must be
+// pressed together (v16.0.0: Shift + D).
+function ShortcutRow({ keys, label, joiner }) {
   return (
     <div
       style={{
@@ -41,7 +44,9 @@ function ShortcutRow({ keys, label }) {
           return (
             <Fragment key={i}>
               {i > 0 ? (
-                <span style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 3px" }}>/</span>
+                <span style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 3px" }}>
+                  {joiner || "/"}
+                </span>
               ) : null}
               <Kbd k={k} />
             </Fragment>
@@ -62,6 +67,7 @@ const SHORTCUT_SECTIONS = [
       { keys: ["←", "→"], label: "Previous / next week" },
       { keys: ["T"], label: "Jump to this week" },
       { keys: ["1", "2", "3", "4"], label: "Schedule / Employees / Requests / Settings" },
+      { keys: ["Shift", "D"], joiner: "+", label: "Light / dark theme" },
       { keys: ["?"], label: "Show this help" },
     ],
   },
@@ -94,8 +100,8 @@ export default function ShortcutsModal({ open, isMobile, onClose }) {
   return (
     <Overlay open={open} isMobile={isMobile} onClose={onClose} title="Keyboard shortcuts">
       <p style={{ ...S.muted, margin: "0 0 14px 0", fontSize: 12 }}>
-        Single-key shortcuts — they don't fire while you're typing in a field
-        or while another window is open.
+        Shortcuts don't fire while you're typing in a field or while another
+        window is open.
       </p>
 
       <div>
@@ -119,7 +125,7 @@ export default function ShortcutsModal({ open, isMobile, onClose }) {
               </div>
               <div>
                 {sec.rows.map(function (r, ri) {
-                  return <ShortcutRow key={ri} keys={r.keys} label={r.label} />;
+                  return <ShortcutRow key={ri} keys={r.keys} label={r.label} joiner={r.joiner} />;
                 })}
               </div>
             </div>

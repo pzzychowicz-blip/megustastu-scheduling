@@ -1712,6 +1712,7 @@ export default function Settings({
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {revisionList.map(function (rev) {
                 const isPastRev = rev.effectiveFrom < currentMondayIso;
+                const isPicked = rev.effectiveFrom === effectiveFromIso;
                 return (
                   <div
                     key={rev.id}
@@ -1723,39 +1724,72 @@ export default function Settings({
                       padding: "6px 8px",
                       borderRadius: R.inset,
                       background: "var(--bg-chip)",
-                      border: "1px solid var(--hairline)",
+                      // v16.0.0 (phase 45): the row the picker currently
+                      // points at reads back which change is being edited —
+                      // the header line says "editing an existing change"
+                      // but not WHICH one once there are several.
+                      border: isPicked
+                        ? "1px solid var(--accent-tint-strong)"
+                        : "1px solid var(--hairline)",
                     }}
                   >
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
-                      {"Week of " + formatWeekRange(parseIsoDate(rev.effectiveFrom))}
-                    </span>
-                    {/* v16.0.0 (phase 33): these two axis badges were a
-                        byte-for-byte duplicated <span> at 1px 8px / 10 —
-                        a fourth hand-rolled badge, off the BADGE_SIZE
-                        scale and differing from every other badge in the
-                        app. One definition, rendered per present axis. */}
-                    {[
-                      rev.openingDays ? "Opening days" : null,
-                      rev.shiftTemplate ? "Shift times" : null,
-                    ].filter(Boolean).map(function (axisLabel) {
-                      return (
-                        <span
-                          key={axisLabel}
-                          style={{
-                            ...BADGE_SIZE.base,
-                            borderRadius: R.pill,
-                            background: "var(--accent-tint-soft)",
-                            color: "var(--accent-on-tint)",
-                            border: "1px solid var(--accent-tint-strong)",
-                          }}
-                        >
-                          {axisLabel}
-                        </span>
-                      );
-                    })}
-                    {isPastRev ? (
-                      <span style={{ ...S.muted, fontSize: 10 }}>(already in effect)</span>
-                    ) : null}
+                    {/* v16.0.0 (phase 45): second path to the picker —
+                        clicking a row jumps the effective-from date to that
+                        revision's Monday, so editing an existing change no
+                        longer means retyping its date. Content-sized button
+                        with Remove as a SIBLING (never nested — invalid
+                        HTML), matching the MonthlyFairnessPanel row and the
+                        WeeklyRequestsPreview pill. */}
+                    <button
+                      type="button"
+                      className="mgt-hover-scale mgt-press"
+                      onClick={function () { setEffectiveFromIso(rev.effectiveFrom); }}
+                      title={"Edit the change for the week of "
+                        + formatWeekRange(parseIsoDate(rev.effectiveFrom))}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        padding: "4px 8px",
+                        borderRadius: R.inset,
+                        background: "transparent",
+                        border: "none",
+                        textAlign: "left",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                        {"Week of " + formatWeekRange(parseIsoDate(rev.effectiveFrom))}
+                      </span>
+                      {/* v16.0.0 (phase 33): these two axis badges were a
+                          byte-for-byte duplicated <span> at 1px 8px / 10 —
+                          a fourth hand-rolled badge, off the BADGE_SIZE
+                          scale and differing from every other badge in the
+                          app. One definition, rendered per present axis. */}
+                      {[
+                        rev.openingDays ? "Opening days" : null,
+                        rev.shiftTemplate ? "Shift times" : null,
+                      ].filter(Boolean).map(function (axisLabel) {
+                        return (
+                          <span
+                            key={axisLabel}
+                            style={{
+                              ...BADGE_SIZE.base,
+                              borderRadius: R.pill,
+                              background: "var(--accent-tint-soft)",
+                              color: "var(--accent-on-tint)",
+                              border: "1px solid var(--accent-tint-strong)",
+                            }}
+                          >
+                            {axisLabel}
+                          </span>
+                        );
+                      })}
+                      {isPastRev ? (
+                        <span style={{ ...S.muted, fontSize: 10 }}>(already in effect)</span>
+                      ) : null}
+                    </button>
                     <button
                       type="button"
                       className="mgt-hover-scale mgt-press"

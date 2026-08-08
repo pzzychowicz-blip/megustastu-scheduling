@@ -75,17 +75,35 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   }, [tab]);
 
   // ── v15.3.0: global keyboard shortcuts (app-wide) ───────────────────────
-  // Tab switching (digits 1–4) + the `?` help overlay. Single-key, no
-  // modifier — Cmd/Ctrl/Alt combos pass through to the browser/OS. Suppressed
-  // while typing in a field and while any modal is open (the latter via the
-  // data-mgt-overlay sentinel on the Overlay backdrop). Schedule-specific
-  // shortcuts (week nav, Generate/Swap/Undo/Clear/Export, Esc) live in
-  // ScheduleGrid; the two handlers never overlap on a key.
+  // Tab switching (digits 1–4), the `?` help overlay, and (v16.0.0) Shift+D
+  // for the theme. Cmd/Ctrl/Alt combos pass through to the browser/OS.
+  // Suppressed while typing in a field and while any modal is open (the
+  // latter via the data-mgt-overlay sentinel on the Overlay backdrop).
+  // Schedule-specific shortcuts (week nav, Generate/Swap/Undo/Clear/Export,
+  // Esc) live in ScheduleGrid; the two handlers never overlap on a key.
+  //
+  // v16.0.0: the theme flip reads live state (resolved theme + the settings
+  // object it has to spread), so it goes through a ref that a later effect
+  // keeps current. That keeps this listener mounted once with an empty dep
+  // array instead of re-subscribing on every settings echo.
+  const toggleThemeRef = useRef(null);
   useEffect(function () {
     function onKey(e) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (isAnyOverlayOpen()) return;
+      // Shift+D — the only chord in the app. Matched on the key itself
+      // rather than gating the whole handler on `e.shiftKey`: `?` IS Shift+/
+      // on most layouts, and on AZERTY (and other layouts where the number
+      // row is shifted) the digits arrive with shiftKey set too, so a blanket
+      // shift guard would silently kill tab switching there. Both cases of
+      // the letter are checked — the browser reports "D" or "d" depending on
+      // caps lock and platform.
+      if (e.shiftKey && (e.key === "D" || e.key === "d")) {
+        e.preventDefault();
+        if (toggleThemeRef.current) toggleThemeRef.current();
+        return;
+      }
       if (e.key === "?") {
         setShowShortcuts(true);
         return;
@@ -145,6 +163,19 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   // can pass it down to the Settings Toggle's checked-state.
   // Before `ready` flips true, data.settings is null → undefined → system.
   const isDark = useThemeMode(data.settings ? data.settings.darkMode : undefined);
+
+  // v16.0.0: Shift+D writes the opposite of the RESOLVED theme as an
+  // explicit boolean — same write the Display toggle makes, so a manager
+  // who was following the system pref stops following it, exactly as if
+  // they had flipped the switch in Settings. Held before `ready` because
+  // the /settings write guard would refuse it and surface a banner for a
+  // keystroke the manager can simply repeat a moment later.
+  useEffect(function () {
+    toggleThemeRef.current = function () {
+      if (!ready) return;
+      actions.saveSettings({ ...(data.settings || {}), darkMode: !isDark });
+    };
+  }, [ready, isDark, data.settings, actions]);
 
   // v15.2.0: live Firebase RTDB connection state for the header status dot.
   // v16.0.0: the hook returns `{connected, hasConnected}` now — the latch

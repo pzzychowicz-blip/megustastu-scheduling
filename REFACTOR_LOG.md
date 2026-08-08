@@ -951,6 +951,47 @@ sparkline; all four tabs rendering after a cache-cleared server restart.
 
 ---
 
+### Phase 45 — Clickable scheduled-change rows + Shift+D theme chord
+
+**Files:** `src/components/Settings.jsx`, `src/components/AppShell.jsx`,
+`src/components/ShortcutsModal.jsx`, `CLAUDE.md`.
+
+**Behavioural change:** Yes — two additive shortcuts to existing controls.
+Neither replaces the path it shortcuts.
+
+- **Scheduled-changes rows select the picker week.** Editing an existing
+  change meant reading its week off the row and retyping that date into
+  the effective-from input. Clicking the row now does it. The row is a
+  content-sized `<button>` wrapping the label + axis badges, with Remove
+  as a **sibling** — the nested-`<button>` shape is invalid HTML, and this
+  matches `<MonthlyFairnessPanel>`'s name-button + delta-bar pair and the
+  `<WeeklyRequestsPreview>` pill. The row whose Monday equals the picker
+  now carries an `--accent-tint-strong` border: the header line says
+  "editing an existing change" but not which one once several exist.
+- **`Shift`+`D` flips the theme from anywhere.** Writes `darkMode:
+  !isDark` via `saveSettings` — byte-identical to the Display toggle's
+  write, so it persists and a manager following the system pref stops
+  following it, exactly as if they had flipped the switch.
+- **Two review findings, fixed before commit.** (a) The chord was first
+  written as `if (e.shiftKey) { …; return; }`, which swallowed every
+  other shifted keystroke: on AZERTY-style layouts the number row arrives
+  with `shiftKey` set, so digit tab-switching would have died there. Now
+  matched as `e.shiftKey && e.key === "D"|"d"` with everything else
+  falling through. (b) The row tooltip printed the raw ISO date; it now
+  reuses `formatWeekRange` like every other label in the card.
+- **Live state without re-subscribing.** The theme write needs current
+  `isDark` + `settings`; the keydown listener stays mounted once with an
+  empty dep array and reaches them through a ref that a separate effect
+  keeps current. `ShortcutRow` gained a `joiner` prop ("+" for chords,
+  "/" for alternatives) so the cheatsheet reads "Shift + D".
+
+**Verified in DEV:** row click moves the picker and the highlight and
+writes nothing; digit tab-switching, `?`, and Esc still work; Shift+D
+round-trips dark → light → dark and is correctly inert while typing in a
+field and while the help overlay is open. Bundle 183.38 kB gz (+0.14).
+
+---
+
 ### Phase 44 — A removed scheduled change stays removed
 
 **Files:** `src/components/Settings.jsx`, `src/hooks/usePersistence.js`,
