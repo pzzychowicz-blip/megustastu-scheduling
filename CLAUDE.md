@@ -2239,7 +2239,7 @@ separate Firebase project, same UI conventions).
 
 ---
 
-## File structure (current — v15.2.0)
+## File structure
 
 ```
 megustastu-scheduling/
@@ -4297,6 +4297,20 @@ megustastu-scheduling/
                                     here AND wire the handler. Owns its own
                                     Esc-to-close (the Overlay atom has none).
 ```
+Run `find src -type f` for the current layout — it is authoritative and
+never goes stale. Per-file version history lives in `REFACTOR_LOG.md`.
+
+Placement rules (these are NOT derivable from the tree):
+
+- `src/hooks/` — one hook per file, filename matches the export
+  (`useXxx.{js,jsx}`).
+- `src/components/` — one component per file, PascalCase filename matches
+  the export. `atoms.jsx` is the deliberate exception: it exports several
+  tightly-coupled primitives together (`Overlay`, `Fld`, `Section`,
+  `Collapsible`, `Toggle`, `TBadge`, `Kbd`, `mkInp`, `mkBtn`).
+- `src/lib/` — pure JS only. No React, no Firebase imports.
+- Any file containing JSX must use the `.jsx` extension — Vite/oxc rejects
+  JSX in `.js` files at startup.
 
 ---
 
@@ -4652,10 +4666,6 @@ under Authentication → Users, and `database.rules.json` must be published
 - **"sum up this thread"** — produce a markdown thread summary suitable
   for attaching to the next thread.
 
-### Preview file naming (when iterating before deployment)
-- Pattern: `scheduling_v{X}_preview {N}.jsx` (incremented chronologically,
-  never overwrite).
-
 ### Local preview server — MANDATORY (locked 2026-05-16, sharpened v1.5.0)
 
 **For any session that touches visual code** (styling, layout, UI tokens,
@@ -4710,54 +4720,9 @@ ships as its own branch with its own PR — never bundle multiple
 versions on a single branch. If a previous PR is still open when work
 on the next version is ready to start, wait for it to merge first.
 
-Standard flow:
-
-1. After the previous PR merges, `git checkout main && git pull --ff-only`.
-2. Create a new branch off fresh `main` — naming convention
-   `feat/v{X.Y.Z}-{short-slug}` for features (`feat/v0.9.0-polish`),
-   `chore/{slug}` for non-version changes (docs, refactors, tooling).
-3. Make the edits in `src/`.
-4. Bump `__APP_SIGNATURE__` in `src/App.jsx`.
-5. Update `CLAUDE.md` file-structure block + locked-decisions if the
-   change affects either.
-6. Prepend an entry to `REFACTOR_LOG.md`.
-7. `npm run build` — must succeed; note the main-bundle gz size delta.
-8. Commit with descriptive message
-   (e.g. `v0.9.0 — Polish (PDF trim, specialists-first picker, role-pills toggle)`).
-9. `git push -u origin <branch>`.
-10. `gh pr create --base main --head <branch> --title "..." --body "..."`.
-11. Patryk reviews + merges. Vercel auto-deploys from `main`.
-12. Confirm the console boot banner / `window.__MGT_SCHED_BUILD__.version`
-    matches the new version on production.
-13. **Sync the local working folder** (locked v0.10.1, extended v1.5.0):
-    ```
-    git -C /Users/patrykzychowicz/Desktop/megustastu-scheduling pull --ff-only origin main
-    cp /Users/patrykzychowicz/Desktop/megustastu-scheduling/CLAUDE.md \
-       "/Users/patrykzychowicz/Desktop/megustastu-scheduling Claude context/CLAUDE.md"
-    cp /Users/patrykzychowicz/Desktop/megustastu-scheduling/REFACTOR_LOG.md \
-       "/Users/patrykzychowicz/Desktop/megustastu-scheduling Claude context/REFACTOR_LOG.md"
-    ```
-    The pull keeps the local checkout always on `main` so `npm run dev`
-    and any manual file inspection reflect the shipped state without
-    manual hunting. The local folder never rides a feature branch —
-    branches live only in the `.claude/worktrees/` subfolders.
-
-    The two `cp` lines (v1.5.0) keep the Claude-context folder copy of
-    `CLAUDE.md` + `REFACTOR_LOG.md` in sync. That folder is what Patryk
-    attaches to fresh chats; if the copy is stale, the next session
-    loads with outdated architectural context (we hit this exact
-    failure mode pre-v1.4.0).
-
-**Why one-per-branch:**
-- Reverts are surgical — a single bad version reverts cleanly without
-  also yanking unrelated work.
-- PR review stays scoped — reviewer doesn't need to keep two
-  versions' design decisions in their head at once.
-- Vercel preview URLs map 1:1 to versions, making smoke-tests on the
-  preview deployment unambiguous.
-
-**`gh` CLI** is installed at `/opt/homebrew/bin/gh` (not on `$PATH` —
-use absolute path or add `/opt/homebrew/bin` to your shell rc).
+The mechanical sequence (branch naming, the 13-step build/commit/PR flow,
+post-merge folder sync, preview-file naming, `gh` path) lives in the
+`deploy` skill — invoke it when shipping a version.
 
 ---
 
@@ -4778,115 +4743,6 @@ missing details.
 After ~25 messages in a single chat, remind Patryk to start a new
 conversation. Carry context forward via a `"sum up this thread"` summary
 attached to the next thread.
-
----
-
-## Pre-v1.0 archive
-
-Per-file v0.x sub-entries extracted from the file-structure block on
-2026-05-26 (session 23) to keep the active per-file blocks scannable.
-Behaviour is still live in the shipped code; this is documentation
-archaeology. Full version history also lives in REFACTOR_LOG.md.
-
-### index.html (v0.11.0)
-
-- **v0.11.0:** hosts the theme token block — `:root` defines light
-  values, `[data-theme="dark"]` overrides for dark mode. Also has an
-  inline no-flash script that paints the right theme before React
-  mounts.
-
-### src/hooks/useThemeMode.js (v0.11.0)
-
-- **v0.11.0:** NEW. dark/light resolver. Takes explicit boolean (or
-  undefined → follow system pref live). Writes `data-theme` on
-  `<html>`; returns isDark.
-
-### src/lib/constants.js (v0.10.2, v0.11.0, v0.12.0)
-
-- **v0.10.2:** `S.surfaceSoft` strengthened (0.78 white, dark hairline
-  border, soft elevation shadow) — cascades to Collapsible / Section /
-  mobile day-cards.
-- **v0.11.0:** every visual token now reads from a CSS var defined in
-  `index.html` (`:root` light / `[data-theme="dark"]` dark).
-  ROLE_COLORS entries became `var(--role-x-rgb)` RGB triplets —
-  callers compose alpha at use site via `rgba(${rgb}, 0.2)`. Zero
-  rgba/hex literals remain in JS.
-- **v0.12.0:** + `DEFAULT_OPENING_DAYS` (all seven weekdays true) —
-  fallback for `/settings.openingDays`. + `DEFAULT_WORKING_DAYS = 5`
-  — fallback for employee `.workingDaysPerWeek`.
-
-### src/lib/schedule-logic.js (v0.8.0, v0.12.0)
-
-- **v0.8.0:** slot enumeration order changed to Kitchen first.
-- **v0.12.0:** + `weekdayKeyForDate(date)` and
-  `visibleWeekDates(weekStart, openingDays)` — filters out closed
-  days. `isWeekComplete` now takes `openingDays` and skips closed days
-  (returns false when none open).
-
-### src/lib/pdf-export.js (v0.9.0, v0.12.0)
-
-- **v0.9.0:** evening cells = name only; evening row labels = start
-  time only (the end is the close of service and was visual noise on
-  the printed sheet). Day rows keep the full `start–end` range.
-- **v0.12.0:** accepts `openingDays`; uses `visibleWeekDates` so
-  closed days drop out of the table head + body. Filename date range
-  uses first / last visible date (no longer `dates[6]`).
-
-### src/components/EmployeesList.jsx (v0.12.0)
-
-- **v0.12.0:** each row shows "Pattern: N/M" below the role chips
-  (N = `workingDaysPerWeek`, M = 7 − N).
-
-### src/components/EmployeeFormModal.jsx (v0.12.0)
-
-- **v0.12.0:** + "Working days per week" segmented control (1..7) with
-  live "N working / M off" helper. Stored on
-  `/employees/{id}.workingDaysPerWeek`. Legacy / out-of-range values
-  clamp to the default (5) on read.
-
-### src/components/ScheduleGrid.jsx (v0.10.2, v0.12.0)
-
-- **v0.10.2:** date pill row (today highlighted); centred banded
-  section headers spanning all columns with `marginTop` split between
-  groups; label-cell chips in the left column; mobile sub-headers
-  reshaped to match.
-- **v0.12.0:** reads `settings.openingDays`; uses `visibleWeekDates`
-  so closed days drop out. Desktop `gridTemplateColumns` + `minWidth`
-  derive from `dates.length`. Defensive empty-state when zero days
-  open. Forwards `openingDays` to ExportButton.
-
-### src/components/ShiftFormModal.jsx (v0.8.0, v0.9.0, v0.10.1)
-
-- **v0.8.0:** picker filters — role match, STRICT same-date exclusion,
-  request hide-by-default (with show-all toggle + yellow banner).
-  Save-time same-day guard. Evening slots prefill default role
-  (Bar/Floor, Chef/Plating/Pot).
-- **v0.9.0:** picker sorts specialists first (role-count asc, then
-  name).
-- **v0.10.1:** "Show staff on day off / holiday" control converted
-  from a checkbox to the Toggle atom; hidden-count surfaces in the
-  Toggle's `helper` slot.
-
-### src/components/Settings.jsx (v0.9.0, v0.10.0, v0.11.0, v0.12.0)
-
-- **v0.9.0:** + Display card with `showRolePills` toggle.
-- **v0.10.0:** single-open accordion (Operating Hours, Display, FoH,
-  Kitchen). Per-section dirty dot in Collapsible headers. Display
-  section uses Toggle atom and auto-saves on change (no Save click).
-  Save click force-opens the first error section.
-- **v0.11.0:** + Dark mode Toggle in Display. Receives `isDark`
-  (resolved) from AppShell. Helper line says "Following your system
-  preference. Tap to override." while `settings.darkMode` is
-  undefined; collapses to null once an explicit boolean is saved.
-- **v0.12.0:** + Open days picker inside the Operating Hours section
-  (weekday pill row). Validation requires ≥1 open day; error
-  force-opens Hours. Dirty tracking combines hours + open-days into
-  `operatingDirty` for the section header dot.
-
-### src/components/ExportButton.jsx (v0.12.0)
-
-- **v0.12.0:** + `openingDays` prop, forwarded to `isWeekComplete` +
-  `pdf-export`.
 
 ---
 
