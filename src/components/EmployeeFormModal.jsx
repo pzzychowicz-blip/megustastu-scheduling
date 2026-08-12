@@ -24,14 +24,15 @@
 
 import { useEffect, useState } from "react";
 import {
+  R,
   ROLES,
   WEEKDAYS,
   S,
-  BTN,
+  BTN, BTN_SIZE, pillTone, segmentTone,
   ROLE_COLORS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
-import { Overlay, Fld, mkInp, mkBtn, TBadge } from "./atoms.jsx";
+import { Overlay, Fld, mkInp, mkBtn, TBadge, usePresence, Reveal } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
 
@@ -104,7 +105,11 @@ export default function EmployeeFormModal({
     form.name.trim().length > 0 &&
     form.roles.length > 0 &&
     !(Boolean(form.activeFrom) && Boolean(form.activeUntil) && form.activeUntil < form.activeFrom);
-  useEnterSubmit(open, enterCanSave, handleSave);
+  // v16.0.0: during ModalPresence's 200ms exit the cached element still
+  // carries open={true}, so a stray Enter would re-fire the primary
+  // action on a modal that is already closing. Gate on !leaving.
+  const { leaving } = usePresence();
+  useEnterSubmit(open && !leaving, enterCanSave, handleSave);
   useEscClose(open, onClose);
 
   if (!open) return null;
@@ -182,13 +187,12 @@ export default function EmployeeFormModal({
           <button
             key={r}
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={function () { toggleRole(r); }}
             style={{
               ...BTN.base,
-              padding: "6px 12px",
-              fontSize: 13,
-              borderRadius: 999,
+              ...BTN_SIZE.md,
+              borderRadius: R.pill,
               background: on ? "rgb(" + rgb + ")" : "var(--bg-pill)",
               color: on ? "var(--text-on-accent)" : "var(--text-primary)",
               border: "1px solid " + (on ? "rgb(" + rgb + ")" : "var(--btn-ghost-border)"),
@@ -206,7 +210,7 @@ export default function EmployeeFormModal({
       style={{
         display: "inline-flex",
         background: "var(--bg-segment-strong)",
-        borderRadius: 10,
+        borderRadius: R.pill,
         padding: 3,
       }}
     >
@@ -220,16 +224,13 @@ export default function EmployeeFormModal({
           <button
             key={opt.key}
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={function () { setField("preference", opt.key); }}
             style={{
               ...BTN.base,
-              padding: "6px 14px",
-              fontSize: 13,
-              borderRadius: 8,
-              background: on ? "var(--accent)" : "transparent",
-              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-              border: "1px solid transparent",
+              ...BTN_SIZE.md,
+              borderRadius: R.pill,
+              ...segmentTone(on),
             }}
           >
             {opt.label}
@@ -246,7 +247,7 @@ export default function EmployeeFormModal({
       style={{
         display: "inline-flex",
         background: "var(--bg-segment-strong)",
-        borderRadius: 10,
+        borderRadius: R.pill,
         padding: 3,
         flexWrap: "wrap",
       }}
@@ -257,17 +258,14 @@ export default function EmployeeFormModal({
           <button
             key={n}
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={function () { setField("workingDaysPerWeek", n); }}
             style={{
               ...BTN.base,
-              padding: "6px 12px",
-              fontSize: 13,
+              ...BTN_SIZE.md,
               minWidth: 36,
-              borderRadius: 8,
-              background: on ? "var(--accent)" : "transparent",
-              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-              border: "1px solid transparent",
+              borderRadius: R.pill,
+              ...segmentTone(on),
             }}
           >
             {n}
@@ -277,8 +275,17 @@ export default function EmployeeFormModal({
     </div>
   );
 
-  const fixedDaysSection = form.fixedDays
-    ? (
+  // v16.0.0 (phase 31): the weekday row used to pop into existence the
+  // instant "Fixed days" flipped ON, shoving everything below it down by
+  // its full height in one frame. Reveal eases that height instead.
+  //
+  // `form.fixedDays &&` guards the map: on the way OUT the state is already
+  // null while Reveal is still collapsing, so the map would throw. Reveal
+  // re-renders its cached children through that window, which is what keeps
+  // the pills visible all the way down.
+  const fixedDaysSection = (
+    <Reveal show={Boolean(form.fixedDays)}>
+      {form.fixedDays ? (
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
         {WEEKDAYS.map(function (d) {
           const on = form.fixedDays[d.key];
@@ -286,17 +293,14 @@ export default function EmployeeFormModal({
             <button
               key={d.key}
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-press"
               onClick={function () { toggleFixedDay(d.key); }}
               style={{
                 ...BTN.base,
-                padding: "6px 10px",
-                fontSize: 12,
-                borderRadius: 8,
+                ...BTN_SIZE.sm,
+                borderRadius: R.pill,
                 minWidth: 44,
-                background: on ? "var(--accent)" : "var(--bg-pill)",
-                color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                ...pillTone(on),
               }}
             >
               {d.label}
@@ -304,18 +308,18 @@ export default function EmployeeFormModal({
           );
         })}
       </div>
-    )
-    : null;
+      ) : null}
+    </Reveal>
+  );
 
   const activeToggle = (
     <button
       type="button"
-      className="mgt-hover-scale"
+      className="mgt-hover-scale mgt-press"
       onClick={function () { setField("active", !form.active); }}
       style={{
         ...BTN.base,
-        padding: "6px 12px",
-        fontSize: 13,
+        ...BTN_SIZE.md,
         background: form.active ? "var(--bg-active-on)" : "var(--bg-active-off)",
         color: form.active ? "var(--text-active-on)" : "var(--text-active-off)",
         border: "1px solid " + (form.active ? "var(--border-active-on)" : "var(--border-active-off)"),
@@ -328,15 +332,12 @@ export default function EmployeeFormModal({
   const fixedDaysToggle = (
     <button
       type="button"
-      className="mgt-hover-scale"
+      className="mgt-hover-scale mgt-press"
       onClick={toggleFixedDaysOnOff}
       style={{
         ...BTN.base,
-        padding: "6px 12px",
-        fontSize: 13,
-        background: form.fixedDays ? "var(--accent-tint-mid)" : "var(--bg-pill)",
-        color: form.fixedDays ? "var(--accent-on-tint)" : "var(--text-primary)",
-        border: "1px solid " + (form.fixedDays ? "var(--accent-tint-strong)" : "var(--btn-ghost-border)"),
+        ...BTN_SIZE.md,
+        ...pillTone(Boolean(form.fixedDays)),
       }}
     >
       {form.fixedDays ? "Fixed days: ON" : "Fixed days: OFF"}
@@ -349,15 +350,12 @@ export default function EmployeeFormModal({
   const priorityToggle = (
     <button
       type="button"
-      className="mgt-hover-scale"
+      className="mgt-hover-scale mgt-press"
       onClick={function () { setField("schedulingPriority", !form.schedulingPriority); }}
       style={{
         ...BTN.base,
-        padding: "6px 12px",
-        fontSize: 13,
-        background: form.schedulingPriority ? "var(--accent)" : "var(--bg-pill)",
-        color: form.schedulingPriority ? "var(--text-on-accent)" : "var(--text-primary)",
-        border: "1px solid " + (form.schedulingPriority ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+        ...BTN_SIZE.md,
+        ...pillTone(form.schedulingPriority === true),
       }}
     >
       {form.schedulingPriority ? "Priority: ON" : "Priority: OFF"}
@@ -482,8 +480,8 @@ export default function EmployeeFormModal({
           }}
         >
           {tenureRangeInvalid
-            ? "End date must be on or after the start date."
-            : "Leave blank for no limit. The employee won't be scheduled or counted outside these dates."}
+            ? "End date must be on or after the start date"
+            : "Blank for no limit"}
         </div>
       </Fld>
       </div>

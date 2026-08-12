@@ -28,7 +28,7 @@
 // Visual: mirrors RequestFormModal's vertical Fld stack so the preview
 // feels like the "read mode" of the edit form rather than a separate UI.
 
-import { S, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { R, S, BADGE_SIZE, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
 import { Overlay, Fld, mkBtn } from "./atoms.jsx";
 import { parseIsoDate } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -66,7 +66,7 @@ function typeMeta(key) {
   for (let i = 0; i < REQUEST_TYPES.length; i++) {
     if (REQUEST_TYPES[i].key === key) return REQUEST_TYPES[i];
   }
-  return { key: key, label: key, palette: null };
+  return { key: key, label: key, palette: null, solidPalette: null };
 }
 
 // Mon..Sun source-order rendering of the recurringDaysOfWeek list.
@@ -142,14 +142,16 @@ export default function RequestPreviewModal({ open, request, employees, isMobile
         <div style={{ paddingTop: 4 }}>
           <span
             style={{
-              padding: "3px 10px",
-              borderRadius: 999,
-              fontSize: 12,
+              // v16.0.0 (phase 24): was 3px 10px / 12. The SAME request
+              // type renders through TBadge in RequestsList, so a preview
+              // of that record should not be a different size.
+              ...BADGE_SIZE.base,
+              borderRadius: R.pill,
               fontWeight: 500,
-              background: meta.palette ? meta.palette.bg : "var(--bg-pill)",
-              color: meta.palette ? meta.palette.text : "var(--text-secondary)",
-              border: meta.palette
-                ? ("1px solid " + meta.palette.border)
+              background: meta.solidPalette ? meta.solidPalette.bg : "var(--bg-pill)",
+              color: meta.solidPalette ? meta.solidPalette.text : "var(--text-secondary)",
+              border: meta.solidPalette
+                ? ("1px solid " + meta.solidPalette.border)
                 : "1px solid var(--hairline-strong)",
               display: "inline-block",
             }}

@@ -43,9 +43,10 @@
 // employees.
 
 import { useState, forwardRef, useImperativeHandle } from "react";
-import { BTN } from "../lib/constants.js";
+import { BTN, BTN_SIZE } from "../lib/constants.js";
 import { formatWeekRange } from "../lib/schedule-logic.js";
 import { generateWeek } from "../lib/generator.js";
+import { ModalPresence } from "./atoms.jsx";
 import GenerateConfirmModal from "./GenerateConfirmModal.jsx";
 
 // v15.3.0: forwardRef so the `G` keyboard shortcut in ScheduleGrid can open
@@ -220,8 +221,7 @@ function GenerateButton({
   const style = {
     ...BTN.base,
     ...BTN.primary,
-    padding: "6px 12px",
-    fontSize: 13,
+    ...BTN_SIZE.md,
     opacity: disabled ? 0.5 : 1,
     cursor: disabled ? "not-allowed" : "pointer",
   };
@@ -230,7 +230,7 @@ function GenerateButton({
     <>
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={handleClick}
         disabled={disabled}
         style={style}
@@ -239,15 +239,18 @@ function GenerateButton({
         Generate
       </button>
 
-      <GenerateConfirmModal
-        open={open}
-        weekLabel={formatWeekRange(weekStart)}
-        strictPref={Boolean(strictPreference)}
-        busy={busy}
-        isMobile={isMobile}
-        onClose={handleClose}
-        onConfirm={handleConfirm}
-      />
+      <ModalPresence show={open}>
+        {open ? (
+          <GenerateConfirmModal
+            open
+            weekLabel={formatWeekRange(weekStart)}
+            busy={busy}
+            isMobile={isMobile}
+            onClose={handleClose}
+            onConfirm={handleConfirm}
+          />
+        ) : null}
+      </ModalPresence>
     </>
   );
 }

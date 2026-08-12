@@ -25,8 +25,8 @@
 //   AND dateTo >= dateFrom (lexicographic compare on "YYYY-MM-DD" works).
 
 import { useEffect, useState } from "react";
-import { S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
-import { Overlay, Fld, mkInp, mkBtn } from "./atoms.jsx";
+import { R, S, BTN, BTN_SIZE, pillTone, segmentTone, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { Overlay, Fld, mkInp, mkBtn, usePresence, Reveal } from "./atoms.jsx";
 import { useEnterSubmit } from "../hooks/useEnterSubmit.js";
 import { useEscClose } from "../hooks/useEscClose.js";
 
@@ -96,7 +96,11 @@ export default function RequestFormModal({
     (form.type !== "shift-preference" ||
       form.preferredDayPart === "day" ||
       form.preferredDayPart === "evening");
-  useEnterSubmit(open, enterCanSave, handleSave);
+  // v16.0.0: during ModalPresence's 200ms exit the cached element still
+  // carries open={true}, so a stray Enter would re-fire the primary
+  // action on a modal that is already closing. Gate on !leaving.
+  const { leaving } = usePresence();
+  useEnterSubmit(open && !leaving, enterCanSave, handleSave);
   useEscClose(open, onClose);
 
   if (!open) return null;
@@ -198,7 +202,7 @@ export default function RequestFormModal({
         display: "inline-flex",
         flexWrap: "wrap",
         background: "var(--bg-segment-strong)",
-        borderRadius: 10,
+        borderRadius: R.pill,
         padding: 3,
       }}
     >
@@ -208,16 +212,13 @@ export default function RequestFormModal({
           <button
             key={t.key}
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={function () { setField("type", t.key); }}
             style={{
               ...BTN.base,
-              padding: "6px 14px",
-              fontSize: 13,
-              borderRadius: 8,
-              background: on ? "var(--accent)" : "transparent",
-              color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-              border: "1px solid transparent",
+              ...BTN_SIZE.md,
+              borderRadius: R.pill,
+              ...segmentTone(on),
             }}
           >
             {t.label}
@@ -239,7 +240,7 @@ export default function RequestFormModal({
           style={{
             display: "inline-flex",
             background: "var(--bg-segment-strong)",
-            borderRadius: 10,
+            borderRadius: R.pill,
             padding: 3,
           }}
         >
@@ -252,16 +253,13 @@ export default function RequestFormModal({
               <button
                 key={opt.key}
                 type="button"
-                className="mgt-hover-scale"
+                className="mgt-hover-scale mgt-press"
                 onClick={function () { setField("preferredDayPart", opt.key); }}
                 style={{
                   ...BTN.base,
-                  padding: "6px 14px",
-                  fontSize: 13,
-                  borderRadius: 8,
-                  background: on ? "var(--accent)" : "transparent",
-                  color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                  border: "1px solid transparent",
+                  ...BTN_SIZE.md,
+                  borderRadius: R.pill,
+                  ...segmentTone(on),
                 }}
               >
                 {opt.label}
@@ -291,16 +289,13 @@ export default function RequestFormModal({
               <button
                 key={w.key}
                 type="button"
-                className="mgt-hover-scale"
+                className="mgt-hover-scale mgt-press"
                 onClick={function () { toggleRecurringDay(w.key); }}
                 style={{
                   ...BTN.base,
-                  padding: "6px 12px",
-                  fontSize: 13,
-                  borderRadius: 8,
-                  background: on ? "var(--accent)" : "var(--bg-segment-strong)",
-                  color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                  border: "1px solid transparent",
+                  ...BTN_SIZE.sm,
+                  borderRadius: R.pill,
+                  ...pillTone(on),
                 }}
               >
                 {w.label}
@@ -338,10 +333,10 @@ export default function RequestFormModal({
     >
       <Fld label="Employee">
         <select
-          className="mgt-hover-scale"
+          className="mgt-hover-scale mgt-select"
           value={form.employeeId}
           onChange={function (e) { setField("employeeId", e.target.value); }}
-          style={{ ...S.inputBase, paddingRight: 28 }}
+          style={S.selectBase}
         >
           {employeeOptions}
         </select>
@@ -351,9 +346,15 @@ export default function RequestFormModal({
         {typeSegments}
       </Fld>
 
-      {dayPartSegments}
+      {/* v16.0.0 (phase 31): both of these appear only for the
+          `shift-preference` type, so picking that type used to shove the
+          date fields and everything below them down in one frame — and
+          picking a different type snapped them back. Reveal eases both.
+          Each const is already an element-or-null, so wrapping needs no
+          change to how they're built. */}
+      <Reveal show={Boolean(dayPartSegments)}>{dayPartSegments}</Reveal>
 
-      {recurringDaysPicker}
+      <Reveal show={Boolean(recurringDaysPicker)}>{recurringDaysPicker}</Reveal>
 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
@@ -388,7 +389,15 @@ export default function RequestFormModal({
           onChange={function (e) { setField("notes", e.target.value); }}
           rows={2}
           placeholder="e.g. medical appointment, family event"
-          style={{ ...S.inputBase, resize: "vertical", fontFamily: "inherit" }}
+          // v16.0.0: S.inputBase is R.pill (999px), which is right for a
+          // single-line control — CSS clamps it to half the box, giving a
+          // true pill at any input height. A MULTI-LINE box is the case
+          // that breaks: at rows=2 (~62px) it clamps to ~31px per corner
+          // and the field reads as a lozenge with the first and last lines
+          // crowded against the curve, and `resize: vertical` makes it
+          // worse as the box grows. Same reasoning as the schedule grid's
+          // canvas exception — a textarea is a surface, not a control.
+          style={{ ...S.inputBase, borderRadius: R.card, resize: "vertical", fontFamily: "inherit" }}
         />
       </Fld>
 

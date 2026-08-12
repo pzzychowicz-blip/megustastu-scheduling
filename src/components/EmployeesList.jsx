@@ -11,10 +11,10 @@
 
 import { useState } from "react";
 import {
-  S, BTN, ROLE_COLORS, WEEKDAYS,
+  R, S, BTN, BTN_SIZE, ROLE_COLORS, WEEKDAYS,
   DEFAULT_WORKING_DAYS,
 } from "../lib/constants.js";
-import { mkBtn, TBadge } from "./atoms.jsx";
+import { mkBtn, TBadge, ModalPresence, Reveal } from "./atoms.jsx";
 import { parseIsoDate } from "../lib/schedule-logic.js";
 import EmployeeFormModal from "./EmployeeFormModal.jsx";
 
@@ -116,10 +116,14 @@ export default function EmployeesList({ employees, actions, isMobile }) {
       return (
         <TBadge
           key={r}
+          // v16.0.0: role chips render SOLID as labels — same weight as
+          // the buttons beside them. The role PICKERS in the employee and
+          // shift modals keep chosen-solid / rest-tinted, since there the
+          // tint is the only thing marking an option as unselected.
           palette={{
-            bg: "rgba(" + rgb + ", 0.15)",
-            text: "rgb(" + rgb + ")",
-            border: "rgba(" + rgb + ", 0.33)",
+            bg: "rgb(" + rgb + ")",
+            text: "var(--text-on-accent)",
+            border: "var(--border-overlay-sheet)",
           }}
         >
           {r}
@@ -131,7 +135,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
       <button
         key={emp.id}
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={function () { openEdit(emp); }}
         style={{
           display: "block",
@@ -139,7 +143,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
           textAlign: "left",
           background: inactive ? "var(--bg-row-soft)" : "var(--bg-pill)",
           border: "1px solid var(--hairline-strong)",
-          borderRadius: 12,
+          borderRadius: R.card,
           padding: 12,
           marginBottom: 8,
           cursor: "pointer",
@@ -158,9 +162,7 @@ export default function EmployeesList({ employees, actions, isMobile }) {
         >
           <div
             style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: "var(--text-primary)",
+              ...S.rowTitle,
               textDecoration: inactive ? "line-through" : "none",
             }}
           >
@@ -248,9 +250,9 @@ export default function EmployeesList({ employees, actions, isMobile }) {
         </span>
         <button
           type="button"
-          className="mgt-hover-scale"
+          className="mgt-hover-scale mgt-press"
           onClick={function () { setShowArchived(function (v) { return !v; }); }}
-          style={{ ...BTN.base, ...BTN.ghost, padding: "4px 10px", fontSize: 12 }}
+          style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }}
         >
           {showArchived ? "Hide" : "Show"}
         </button>
@@ -258,9 +260,15 @@ export default function EmployeesList({ employees, actions, isMobile }) {
     )
     : null;
 
-  const archivedSection = (archived.length > 0 && showArchived)
-    ? <div>{archived.map(renderRow)}</div>
-    : null;
+  // v16.0.0 (phase 31): "Show" used to drop the whole archived list into
+  // the page in one frame. Reveal eases the height. The inner guard is on
+  // `showArchived` only — `archived.length` can't change while the reveal
+  // runs, and Reveal replays its cached children on the way out.
+  const archivedSection = archived.length > 0 ? (
+    <Reveal show={showArchived}>
+      {showArchived ? <div>{archived.map(renderRow)}</div> : null}
+    </Reveal>
+  ) : null;
 
   const headerRow = total > 0
     ? (
@@ -294,14 +302,18 @@ export default function EmployeesList({ employees, actions, isMobile }) {
       {archivedHeader}
       {archivedSection}
 
-      <EmployeeFormModal
-        open={modalOpen}
-        employee={editing}
-        isMobile={isMobile}
-        onClose={closeModal}
-        onSave={handleSave}
-        onDelete={handleDelete}
-      />
+      <ModalPresence show={modalOpen}>
+        {modalOpen ? (
+          <EmployeeFormModal
+            open
+            employee={editing}
+            isMobile={isMobile}
+            onClose={closeModal}
+            onSave={handleSave}
+            onDelete={handleDelete}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

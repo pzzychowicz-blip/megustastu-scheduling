@@ -15,7 +15,7 @@
 //   appVersion— __APP_SIGNATURE__.version string (for the header label)
 
 import { useEffect, useRef, useState } from "react";
-import { S, BTN } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE } from "../lib/constants.js";
 import { usePersistence } from "../hooks/usePersistence.js";
 import { useThemeMode } from "../hooks/useThemeMode.js";
 import { useFirebaseConnection } from "../hooks/useFirebaseConnection.js";
@@ -23,6 +23,7 @@ import {
   isShiftTemplateMigrated,
   materializeShiftTemplate,
 } from "../lib/schedule-logic.js";
+import { ModalPresence, SlideView, Notice } from "./atoms.jsx";
 import EmployeesList from "./EmployeesList.jsx";
 import RequestsList from "./RequestsList.jsx";
 import ScheduleGrid from "./ScheduleGrid.jsx";
@@ -74,17 +75,35 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   }, [tab]);
 
   // ── v15.3.0: global keyboard shortcuts (app-wide) ───────────────────────
-  // Tab switching (digits 1–4) + the `?` help overlay. Single-key, no
-  // modifier — Cmd/Ctrl/Alt combos pass through to the browser/OS. Suppressed
-  // while typing in a field and while any modal is open (the latter via the
-  // data-mgt-overlay sentinel on the Overlay backdrop). Schedule-specific
-  // shortcuts (week nav, Generate/Swap/Undo/Clear/Export, Esc) live in
-  // ScheduleGrid; the two handlers never overlap on a key.
+  // Tab switching (digits 1–4), the `?` help overlay, and (v16.0.0) Shift+D
+  // for the theme. Cmd/Ctrl/Alt combos pass through to the browser/OS.
+  // Suppressed while typing in a field and while any modal is open (the
+  // latter via the data-mgt-overlay sentinel on the Overlay backdrop).
+  // Schedule-specific shortcuts (week nav, Generate/Swap/Undo/Clear/Export,
+  // Esc) live in ScheduleGrid; the two handlers never overlap on a key.
+  //
+  // v16.0.0: the theme flip reads live state (resolved theme + the settings
+  // object it has to spread), so it goes through a ref that a later effect
+  // keeps current. That keeps this listener mounted once with an empty dep
+  // array instead of re-subscribing on every settings echo.
+  const toggleThemeRef = useRef(null);
   useEffect(function () {
     function onKey(e) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (isAnyOverlayOpen()) return;
+      // Shift+D — the only chord in the app. Matched on the key itself
+      // rather than gating the whole handler on `e.shiftKey`: `?` IS Shift+/
+      // on most layouts, and on AZERTY (and other layouts where the number
+      // row is shifted) the digits arrive with shiftKey set too, so a blanket
+      // shift guard would silently kill tab switching there. Both cases of
+      // the letter are checked — the browser reports "D" or "d" depending on
+      // caps lock and platform.
+      if (e.shiftKey && (e.key === "D" || e.key === "d")) {
+        e.preventDefault();
+        if (toggleThemeRef.current) toggleThemeRef.current();
+        return;
+      }
       if (e.key === "?") {
         setShowShortcuts(true);
         return;
@@ -145,8 +164,49 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   // Before `ready` flips true, data.settings is null → undefined → system.
   const isDark = useThemeMode(data.settings ? data.settings.darkMode : undefined);
 
+  // v16.0.0: Shift+D writes the opposite of the RESOLVED theme as an
+  // explicit boolean — same write the Display toggle makes, so a manager
+  // who was following the system pref stops following it, exactly as if
+  // they had flipped the switch in Settings. Held before `ready` because
+  // the /settings write guard would refuse it and surface a banner for a
+  // keystroke the manager can simply repeat a moment later.
+  useEffect(function () {
+    toggleThemeRef.current = function () {
+      if (!ready) return;
+      actions.saveSettings({ ...(data.settings || {}), darkMode: !isDark });
+    };
+  }, [ready, isDark, data.settings, actions]);
+
   // v15.2.0: live Firebase RTDB connection state for the header status dot.
-  const connected = useFirebaseConnection();
+  // v16.0.0: the hook returns `{connected, hasConnected}` now — the latch
+  // lets <ConnectionStatus> tell "still connecting" apart from "dropped",
+  // instead of flashing red on every page load.
+  const { connected, hasConnected } = useFirebaseConnection();
+
+  // v16.0.0: directional tab transition. The incoming view slides in from
+  // the side it conceptually came from — move right along the tab strip and
+  // the new view enters from the right, and vice versa. `slide.key` is
+  // bumped on every change so <SlideView> remounts and replays its CSS
+  // animation (remounting is the only way to re-trigger a keyframe). The
+  // outgoing view is not animated; it simply unmounts, which keeps the swap
+  // crisp rather than crossfaded.
+  //
+  // These hooks MUST sit above the `if (!ready)` early return below —
+  // hooks run unconditionally or React's ordering invariant breaks.
+  const tabIndex = TABS.findIndex(function (t) { return t.key === tab; });
+  const prevTabIndex = useRef(tabIndex);
+  const [slide, setSlide] = useState({ key: 0, dir: "mgt-view-in-right" });
+  useEffect(function () {
+    const prev = prevTabIndex.current;
+    if (tabIndex === prev || tabIndex < 0) return;
+    prevTabIndex.current = tabIndex;
+    setSlide(function (s) {
+      return {
+        key: s.key + 1,
+        dir: tabIndex > prev ? "mgt-view-in-right" : "mgt-view-in-left",
+      };
+    });
+  }, [tabIndex]);
 
   // ── Loading state ──────────────────────────────────────────────────────
   if (!ready) {
@@ -160,31 +220,21 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
   }
 
   // ── Write-warning banner ───────────────────────────────────────────────
+  // v16.0.0 (phase 42): was a hand-rolled tinted box with a GHOST Dismiss —
+  // an outlined button inside a red panel, two rows below the solid Generate
+  // and Export pills, reading as decoration rather than as the control that
+  // clears the thing. It is the <Notice> atom now: same tint, real type
+  // hierarchy, and a solid danger pill for the action.
   const warningBanner = writeWarning
     ? (
-      <div
-        style={{
-          marginBottom: 12,
-          padding: "10px 12px",
-          background: "var(--bg-danger-tint)",
-          border: "1px solid var(--border-danger-tint)",
-          color: "var(--text-danger)",
-          borderRadius: 10,
-          fontSize: 13,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <span>{writeWarning}</span>
-        <button
-          onClick={clearWriteWarning}
-          style={{ ...BTN.base, ...BTN.ghost, padding: "4px 10px", fontSize: 12 }}
-        >
-          Dismiss
-        </button>
-      </div>
+      <Notice
+        tone="danger"
+        title={writeWarning.title}
+        detail={writeWarning.detail}
+        actionLabel="Dismiss"
+        onAction={clearWriteWarning}
+        style={{ marginBottom: 12 }}
+      />
     )
     : null;
 
@@ -206,33 +256,48 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
       {/* v15.2.0: version + user email line removed from here. The user
           email now lives in the ConnectionStatus popover; the version
           stays on the Settings footer. */}
+      {/* v16.0.0 (phase 35): the connection dot sits AFTER Sign out, so it
+          is the last thing in the header. Its popover anchors itself by
+          measuring at open time rather than assuming a side (v16.0.0
+          ConnectionStatus), so moving it to the viewport edge needs no
+          change there — the measurement now simply resolves to
+          right-aligned where it used to resolve to left. */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-        <ConnectionStatus
-          connected={connected}
-          userEmail={user.email}
-          isMobile={isMobile}
-        />
         <button
-          className="mgt-hover-scale"
-          style={{ ...BTN.base, ...BTN.ghost }}
+          className="mgt-hover-scale mgt-press"
+          style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.md }}
           onClick={signOut}
         >
           Sign out
         </button>
+        <ConnectionStatus
+          connected={connected}
+          hasConnected={hasConnected}
+          userEmail={user.email}
+        />
       </div>
     </div>
   );
 
   // ── Tab nav ────────────────────────────────────────────────────────────
+  // v16.0.0: aligned with MGT Bookings' pill-track styling — the track and
+  // the lifted active pill both use R.pill rather than the card/tight
+  // radii. The track scrolls rather than widening the layout on narrow
+  // viewports, and `.mgt-no-scrollbar` hides the bar that would otherwise
+  // paint under the pills. That has to be a CLASS: WebKit only responds to
+  // `::-webkit-scrollbar`, which an inline style cannot express, so the
+  // inline `scrollbarWidth` this started as worked in Firefox and nowhere
+  // the app is actually used.
   const tabNav = (
     <div
+      className="mgt-no-scrollbar"
       style={{
         display: "flex",
         gap: 4,
         marginBottom: 16,
         padding: 4,
         background: "var(--bg-segment)",
-        borderRadius: 12,
+        borderRadius: R.pill,
         overflowX: "auto",
       }}
     >
@@ -242,15 +307,14 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
           <button
             key={t.key}
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={function () { setTab(t.key); }}
             style={{
               ...BTN.base,
+              ...BTN_SIZE.md,
               flex: 1,
               minWidth: 90,
-              padding: "8px 12px",
-              fontSize: 13,
-              borderRadius: 8,
+              borderRadius: R.pill,
               background: on ? "var(--bg-tab-active)" : "transparent",
               color: on ? "var(--accent)" : "var(--text-secondary)",
               border: "1px solid transparent",
@@ -264,6 +328,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
     </div>
   );
 
+
   // ── Tab body ───────────────────────────────────────────────────────────
   let body;
   if (tab === "schedule") {
@@ -276,6 +341,7 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         settings={data.settings}
         configRevisions={data.configRevisions}
         actions={actions}
+        writeWarning={writeWarning}
         isMobile={isMobile}
       />
     );
@@ -322,13 +388,17 @@ export default function AppShell({ user, signOut, isMobile, appVersion }) {
         {header}
         {warningBanner}
         {tabNav}
-        {body}
+        <SlideView key={slide.key} dir={slide.dir}>{body}</SlideView>
       </div>
-      <ShortcutsModal
-        open={showShortcuts}
-        isMobile={isMobile}
-        onClose={function () { setShowShortcuts(false); }}
-      />
+      <ModalPresence show={showShortcuts}>
+        {showShortcuts ? (
+          <ShortcutsModal
+            open
+            isMobile={isMobile}
+            onClose={function () { setShowShortcuts(false); }}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

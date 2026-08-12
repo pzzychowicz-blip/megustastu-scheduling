@@ -183,12 +183,11 @@ separate Firebase project, same UI conventions).
   default boundary cells to *off* (false) — conservative direction
   here is the OPPOSITE of `hasConsecutiveDaysOff` (avoid
   over-reporting long runs when we lack data).
-- **Conflict semantics (revised v0.8.0):**
-  - **Same-date double-booking is a HARD block.** A single employee
-    cannot hold two shifts on the same date (covers day + evening on
-    the same Tuesday). Enforced by both the picker filter (the
-    employee is hidden from the dropdown) and the save handler
-    (refuses with a red banner if state desyncs).
+- **Conflict semantics (revised v0.8.0; same-date rule superseded v16.0.0):**
+  - **~~Same-date double-booking is a HARD block.~~** *(v0.8.0–v15.4.1.
+    Superseded by the v16.0.0 split-shift decision below — a single
+    employee MAY now hold two shifts on one date, manually. The
+    auto-generator's HARD same-day filter is unchanged.)*
   - **Day-off / holiday request conflicts hide-by-default.** Anyone
     with a covering request is hidden from the picker. A toggle in
     the modal ("Show staff on day off / holiday") restores them and
@@ -305,7 +304,10 @@ separate Firebase project, same UI conventions).
   `workingDaysPerWeek` and floors at 0. Quota=0 employees collapse
   to ratio=1 for the under-utilization sort so they don't dominate
   the leftmost slots.
-- **Move / Swap mechanic (v1.7.0):** manual cell edits now have a
+- **Move / Swap mechanic (v1.7.0; RESTYLED + extended v16.0.0 phase 37 —
+  the yellow palette, the phase banners and the pulsing source are gone,
+  and drag-and-drop was added; see "Swap selection is solid `--accent`"):**
+  manual cell edits now have a
   one-flow path for relocating an assignment. Two entry points feed the
   same mechanic:
   - **In-modal "Move / Swap…"** — opens for any filled cell. Closes
@@ -714,7 +716,10 @@ separate Firebase project, same UI conventions).
     when nothing is open — only partial closure benefits from the
     new visibility. Brings desktop/mobile/PDF (v1.9.0) to a single
     visual model for closed cells.
-- **Generator result details (v1.4.0, jump-to-cell v1.9.3, always-on v1.9.4):** the
+- **Generator result details (v1.4.0, jump-to-cell v1.9.3, always-on v1.9.4;
+  REMOVED v16.0.0 phase 38 — the banner, the Details button, the results
+  modal and the jump-to-cell highlight are all gone; see "No agentic
+  narration"):** the
   result banner gains a "Details" button. Originally hidden when both
   `unfilledCells` and `clearedReasons` were empty (v1.4.0 minimalism);
   **v1.9.4 makes the button always visible on Generate/Regenerate
@@ -785,7 +790,9 @@ separate Firebase project, same UI conventions).
   wrapper). Summary line + Close button stay outside the scroller,
   anchored at the modal bottom.
 
-- **Generator-results banner config (v1.9.4):** the auto-dismiss
+- **Generator-results banner config (v1.9.4; REMOVED v16.0.0 phase 38 —
+  both /settings fields and their Settings rows are gone with the banner):**
+  the auto-dismiss
   banner that appears above the schedule grid after a Generate /
   Regenerate / Clear run is now configurable in
   Settings → Auto-generator. Two new fields on `/settings`:
@@ -1189,7 +1196,8 @@ separate Firebase project, same UI conventions).
   handling identical: only `type === "holiday"` requests subtract
   from the target (v1.9.0 rule).
 
-- **Reasoning toggle on `<EmployeeFairnessModal>` (v1.14.0):** the
+- **Reasoning toggle on `<EmployeeFairnessModal>` (v1.14.0; REMOVED v16.0.0
+  phase 39 — see "No agentic narration"):** the
   drill-down modal gained a left-aligned "Reasoning" button in its
   footer (sibling to the right-aligned Close). Clicking it flips a
   local `view` state from `"data"` (the original three stat
@@ -1246,7 +1254,8 @@ separate Firebase project, same UI conventions).
   HARD-block the date at assignment time but the employee remains
   available for the full quota across remaining open dates.
 
-- **Result-banner buttons hover-scale (v1.14.0):** the Generate /
+- **Result-banner buttons hover-scale (v1.14.0; MOOT since v16.0.0 phase 38 —
+  the banner and both buttons are gone):** the Generate /
   Regenerate / Clear result banner above the schedule grid renders a
   "Details" button (when the banner has a `mode`) and a dismiss `×`
   button. Both now carry `className="mgt-hover-scale"` matching every
@@ -1391,6 +1400,36 @@ separate Firebase project, same UI conventions).
   `pastWeeksLocked`, and moves the picker back to next Monday —
   leaving revisions would make the reset a visible no-op for weeks
   at/after the earliest revision.
+  **Pending-delete ledger (v16.0.0):** inside `Settings.jsx` NOTHING
+  reads the `configRevisions` prop directly any more — every read goes
+  through `visibleRevisions` (the prop minus a `pendingDeletedIds`
+  state list). The prop keeps a removed record until Firebase echoes,
+  so a component that seeds its forms from a post-delete view while
+  computing its dirty baseline from the pre-delete prop reads dirty for
+  the length of the round trip, and the 800 ms auto-save then re-writes
+  the record it just deleted (same id when the picker sits on that
+  Monday, a phantom new revision at the picker week otherwise) — the
+  v16.0.0 "removed change comes back a second later" bug. Keep the
+  single-map rule when adding any new read: form seeds, `seedFormsFor`,
+  `findRevisionIdForMonday`, `upsertRevisionAxis`, `resolvedAtPicker`,
+  `revisionList`, and both save effects' dep arrays. The ledger is
+  optimistic and MUST release when the delete settles either way —
+  `deleteFromCollection` returns `Promise<boolean>` for exactly this, so
+  a rules-rejected delete (rolled back by the SDK) makes the row
+  reappear instead of hiding a record Firebase still holds.
+  **Scheduled-changes rows are a second path to the picker (v16.0.0):**
+  clicking a row sets `effectiveFromIso` to that revision's Monday, so
+  editing an existing change no longer means retyping its date; the row
+  matching the picker carries an `--accent-tint-strong` border, because
+  the header's "editing an existing change" doesn't say WHICH one once
+  several exist. The clickable target is a content-sized `<button>`
+  around the label + axis badges with Remove as a SIBLING — never
+  nested, matching `<MonthlyFairnessPanel>`'s row and the
+  `<WeeklyRequestsPreview>` pill. Note the pre-existing v15.1.0
+  semantic this inherits: changing the picker drops any edit still
+  inside the 800 ms debounce window (the save effects carry
+  `effectiveFromIso` in their deps), and a row click is now the
+  cheapest way to trigger that.
 
 - **Per-open-mode ("solo") shift times (v15.1.0):** a template block
   may carry an optional `soloTimes: [{start,end}, ...]` axis (same
@@ -1518,6 +1557,19 @@ separate Firebase project, same UI conventions).
     (`TABS[n-1].key`); `?` → open `<ShortcutsModal>` (a read-only,
     `Overlay`-wrapped cheatsheet using a new `Kbd` keycap atom; it owns
     its own Esc-to-close since the Overlay atom has none).
+    **`Shift`+`D` → flip the theme (v16.0.0)** — the app's only chord.
+    It writes `darkMode: !isDark` through `saveSettings`, i.e. the exact
+    write the Display toggle makes, so the flip is persisted and a
+    manager who was following the system pref stops following it. Two
+    rules the chord must keep: (a) match on `e.shiftKey && e.key === D|d`
+    rather than gating the handler on `e.shiftKey` — `?` is Shift+/ and
+    AZERTY-style layouts deliver DIGITS with shift set, so a blanket
+    shift guard silently kills those shortcuts; (b) the write needs live
+    `isDark` + `settings`, so it goes through a ref that a separate
+    effect keeps current — the listener itself stays mounted once with
+    an empty dep array rather than re-subscribing on every settings
+    echo. `ShortcutRow` gained a `joiner` prop ("+" for chords, default
+    "/" for alternatives) so the cheatsheet reads "Shift + D".
   - **ScheduleGrid** extends its existing Esc effect: `←`/`→` →
     `goPrev`/`goNext`, `T` → `goToday`; `G`/`S`/`U`/`C`/`E` →
     Generate / Swap / Undo / Clear / Export. The five action keys are
@@ -1671,6 +1723,506 @@ separate Firebase project, same UI conventions).
     base 6.143 and shorter 4.714 for a 3-base+1-shorter window) plus live DEV
     grid/fairness regression check.
 
+- **MGT Bookings visual + motion parity (v16.0.0):** the two sister apps
+  now share one design and motion vocabulary. Ported from Bookings:
+  - **Radii scale `R`** (`--r-pill/-auth/-sheet/-card/-inset`, exported
+    from `constants.js`). **Assign by ROLE, never by matching the old
+    number.** Values are IDENTICAL to Bookings v17.7.0 — 999 / 40 / 20 /
+    14 / 10. CONTROLS (every button, input, select, chip, badge, segmented
+    track and its segments) are pills; the schedule grid cells are a
+    CANVAS EXCEPTION and stay `inset`, exactly as Bookings excepts its
+    timeline blocks. Scheduling's interim `--r-tight` was retired when its
+    17 sites were re-read as 14 controls and 3 surfaces. Deliberately absent from the dark block —
+    radii are theme-agnostic. Exceptions that stay numeric: `50%` circles,
+    the `Kbd` keycap (6), the MonthlyFairnessPanel delta-bar geometry
+    (5/5/1/4), the EmployeeFairnessModal sparkline pair (6), ScheduleGrid's
+    role chip / section band / closed tag, and the mobile Overlay sheet's
+    full-bleed 0. `pdf-export.js` is out of scope — it never reads CSS vars.
+  - **`--font-app`** plus a global `input, textarea, select, button
+    { font-family: inherit }` rule (controls don't inherit per spec).
+  - **Motion vocabulary in `index.html`:** the modal set
+    (`mgt-scrim/card/sheet-in|out`), `mgt-toast-in|out`, directional
+    `mgt-view-in-left|right`, `mgt-fade-in`, and `.mgt-press`. Press uses
+    `filter: brightness()` NOT a transform, specifically so it never fights
+    `.mgt-hover-scale`'s hover transform.
+  - **Animation atoms in `atoms.jsx`:** `Presence`,
+    `ModalPresence` + `PresenceContext` / `usePresence`, and `SlideView`,
+    sharing one `usePresenceLifecycle`. Bookings' `Toast`, `Reveal`,
+    `AutoHeight` and `useFlip` are NOT here — no Scheduling surface calls
+    them, and the same "dead tokens are worse than no tokens" rule that
+    kept out the extra `BTN` variants applies to ~120 lines of
+    never-executed atom. ROADMAP.md tracks all four; port each WITH its
+    first consumer so its first execution isn't its first test.
+  - **Reduced motion:** two independent kill switches — the OS
+    `prefers-reduced-motion` query and a per-device Settings → Display
+    toggle writing `localStorage["mgt-reduce-motion"]`, stamped onto
+    `<html data-motion="reduce">` by the no-flash inline script before
+    React mounts. Per-device (localStorage), NOT `/settings` — a weak
+    tablet and a fast laptop should be able to disagree. Any future WAAPI
+    animation must check `dataset.motion` in JS; CSS can't reach WAAPI.
+  - **`:focus-visible`** ring (2px accent, 2px offset). NEITHER app had any
+    focus affordance — the clearest a11y gap in both. Required removing
+    `outline: "none"` from `S.inputBase`, an inline style that beat the
+    global rule. *(A ROADMAP item tracks porting this back to Bookings.)*
+  - **The `.mgt-hover-scale:hover` radius is DELETED**, matching Bookings —
+    it would otherwise square off every pill on hover. Deleted rather than
+    set to `inherit`, which resolves against the PARENT and so goes square
+    inside a square parent anyway. Scheduling briefly diverged here (it had
+    three bare surfaces relying on the rule for their hover-card shape);
+    the pill pass gave the Toggle row, the Collapsible header and
+    `S.fldRow` their own `R.card`, so the divergence is closed.
+  - **NOT ported:** Bookings' ten domain-named `BTN` variants (Scheduling's
+    five semantic ones cover every call site; dead tokens are worse than no
+    tokens), the four consumer-less animation atoms above, its
+    devices-presence list (Scheduling is single-manager), and
+    its two-row header chrome (booking-domain-specific; Scheduling's week
+    nav belongs inside ScheduleGrid).
+
+- **Overlay is animated and can pin a footer (v16.0.0):** `Overlay` reads
+  `{leaving}` from `PresenceContext` and swaps to the `*-out` keyframes
+  before unmounting. **Every modal mount is wrapped as
+  `<ModalPresence show={cond}>{cond ? <Modal open … /> : null}</ModalPresence>`**
+  — Scheduling's modals are always mounted with an `open` prop while their
+  data goes null on close, so a modal cannot animate its own exit;
+  ModalPresence caches the last truthy child ELEMENT (whose props still
+  hold the old data) and re-renders it for the exit. Consequence: the
+  cached element keeps `open={true}` for those 200 ms, so any modal binding
+  global keyboard handlers must gate on `!leaving` (the four
+  `useEnterSubmit` modals do; `useEscClose` is left ungated because closing
+  an already-closing modal is idempotent).
+  The optional **`footer` slot** makes the sheet a flex column with a
+  bounded scrolling body and a pinned footer — the supported fix for tall
+  modals spilling past the sheet, replacing the ad-hoc inner scrollers
+  `GenerateResultsModal` and `EmployeeFairnessModal` had grown. Modals
+  WITHOUT a footer keep the v1.9.0 `overflow: visible` so hover-scaled
+  inputs still lift past the border. The desktop sheet is now
+  `box-sizing: border-box` — it was content-box, so `maxHeight: 80vh`
+  excluded 40px padding + 2px border and the sheet rendered ~6% taller than
+  its own cap.
+
+- **ConnectionStatus: three states + measured anchoring (v16.0.0):**
+  `useFirebaseConnection` returns `{connected, hasConnected}`, latching
+  `hasConnected` on the first successful connect. `connected === false` used
+  to mean both "not confirmed yet" and "dropped", so the dot flashed RED on
+  every page load. Now: `!hasConnected && !connected` → amber "Connecting…",
+  `connected` → green, `hasConnected && !connected` → red.
+  The popover's anchor side is **measured at open time**, not guessed from
+  `isMobile` — Bookings' source carried a note that Scheduling had the same
+  latent bug. The dot's x position depends on header flex-wrap, not viewport
+  width; measured at 599px the old `left: 0` put a 246px popover at
+  [458, 704] on a 599px viewport, ~105px off-screen.
+
+- **Split shifts are manual-only (v16.0.0):** the same employee MAY work
+  day AND evening on one date. Enforcement by surface:
+  - **Manual picker (`ShiftFormModal`) — SOFT.** Same-day staff are hidden
+    by DEFAULT behind a "Show staff already working this date" toggle
+    (mirroring the day-off / holiday toggle); revealing and picking one
+    raises a yellow banner naming the existing shift and its times. The
+    save proceeds. The toggle auto-flips ON when the edited cell is already
+    half of a split, so it opens in the honest state.
+    **The invariant "the `<select>`'s value is always in its options" is
+    NOT maintained by that flip** — the flip only fires at open, and both
+    soft filters are reversible at any time afterwards. It is maintained by
+    the `eligible` memo, which never filters out the currently-selected
+    employee (`return e.id === selectedEmployeeId` in filters (b) and (c)).
+    They still count toward the hidden totals, so the toggle helper text
+    stays truthful. Without the pin, revealing hidden staff → picking one →
+    flipping the toggle back leaves the select blank while `form.employeeId`
+    still holds the id, and Save writes an assignment the UI denied showing.
+  - **Swap / Move — SOFT, but CONFIRMED.** `<SplitConfirmModal>` opens
+    first. Swap commits on the second cell click with no Save step, so an
+    inline warning has nothing to attach to; without the dialog two
+    ordinary grid clicks could silently produce a 12-hour day. `attemptSwap`
+    was split into validation + `commitSwap` so the confirm resumes the
+    exact pending operation. Same-date day→evening MOVES were always
+    allowed (relocation, not duplication) and are untouched.
+  - **Auto-generator — HARD, unchanged.** `buildCandidates` step (4) keeps
+    its same-day filter; `generator.js` was not modified at all. A 12-hour
+    straight day must be a deliberate manager decision.
+  - **Counting: DATES, not records.** `workingDaysPerWeek` is literally a
+    count of days, so a split consumes ONE day of quota, and every fairness
+    target agrees. Hours (summed per record) already reflect the longer
+    day, so the hours axis self-corrects. Because that makes a split
+    invisible on the pill, `<WeeklyShiftSummary>` counts the surplus
+    separately (`buildSplitDayCountByEmployee`) and shows a small amber
+    "split" marker. **No quota maths changed.**
+
+- **Per-weekday shift-template overrides (v16.0.0):** each (section,
+  dayPart) block may carry an optional sparse `weekdays` map — see the data
+  model below. Absent = pre-v16.0.0 behaviour exactly.
+  - **UNION LADDER, not per-date.** `slotsForDay` is a thin wrapper over
+    `slotsForWeek(template, dayRequiredRoles, weekdayKeys)`, which returns
+    the widest ladder any visible weekday needs; dates where a row doesn't
+    run render an inert `—` via `renderUnscheduledSlotCell`. A per-date
+    ladder was rejected: the desktop grid is one CSS grid with a shared
+    label column and `display: contents` rows, and the PDF is one autotable
+    row per slot — neither can be ragged. The union also keeps `slotsByKey`,
+    ClearConfirmModal's by-row scope, GenerateResultsModal's labels and the
+    generator's stale-record lookup working unchanged.
+  - **Precedence: per-weekday override → soloTimes → flat defaults.** A
+    weekday carrying an override ignores soloTimes even on a solo day — the
+    more specific setting wins. `slotTimesForDate`'s SIGNATURE IS UNCHANGED,
+    which is why `renderCell`, both generator call sites, `ShiftFormModal`
+    and the swap payload all inherit per-weekday times with zero edits.
+  - **`isWeekComplete` / `countEmptyCells` MUST gate on
+    `isSlotScheduledOnDate`.** Without it every extra union row reads as
+    unfilled on every non-overriding weekday → Export PDF disabled forever.
+  - **`humanLabel` uses the LADDER length**, not the block's count, or a
+    base-1 block with a weekday override of 2 yields two rows both named
+    "Kitchen Day".
+  - **Extra rows inherit times from the first weekday override** that
+    defines the index — they have no entry in the flat `times` array, so
+    they'd otherwise advertise the OPERATING_HOURS fallback.
+  - **Orphan predicate widened to the union** via the shared
+    `isLiveShiftForTemplate`, so "renders ⟺ counts" stays exactly true.
+    Removed two duplicated copies inside `WeeklyShiftSummary`.
+  - **`avgShiftHours` is a per-weekday loop** now. Its drop guard stays
+    TWO-PASS: skip a slot only when EVERY candidate duration is
+    non-positive. A naive per-weekday skip is NOT equivalent and this feeds
+    the generator's fairness ranking.
+  - **Settings UI:** per-weekday pills (`—` / `×N` / `off`) + an
+    above-anchored popover with a bounded scrolling times list. Composite
+    string popover key; ONE `useRef` attached conditionally to the owning
+    block (`renderBlock` is a plain function called four times and can't
+    call `useRef`). `blockDirty` must normalize `{}` ↔ absent or the
+    debounce re-writes the revision on every Firebase echo.
+
+- **Control / badge size scales (v16.0.0, phases 22–28):** the app had
+  THIRTEEN distinct control sizes across ~40 hand-rolled
+  `<button style={{ ...BTN.base, padding, fontSize }}>` sites, each tuned
+  by eye, so controls sitting side by side disagreed by a pixel or two.
+  Two scales in `constants.js` now carry SIZE, while `BTN` keeps carrying
+  COLOUR — compose them: `{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }`.
+  - **`BTN_SIZE = {lg, md, sm, xs}`.** Assign by ROLE, same discipline as
+    `R`. `lg` modal primary actions (= `BTN.base`'s own padding, so a bare
+    `mkBtn` is already `lg`); `md` anything aimed at directly (week nav,
+    segmented controls, form pills, scope pickers); `sm` controls nested
+    INSIDE another surface (list "Show", summary pills, Settings pills);
+    `xs` markers and dismissers riding on one line of text.
+  - **`BADGE_SIZE = {base, cell}`.** `base` is deliberately identical to
+    `BTN_SIZE.xs` — a standalone badge and the smallest button are the
+    same physical size, which is what lets a "split" marker sit on a
+    summary pill without looking mis-scaled. `TBadge` spreads it. `cell`
+    is the grid exception: a ~110px cell already carries a time range and
+    a name, and `base` metrics push the assignee onto a second line.
+  - **GLYPH EXCEPTION:** a button whose whole label is a glyph (`×`, `‹ ›`)
+    may raise `fontSize` while keeping its tier's padding — an 11px `×` is
+    an unhittable speck. Keep the padding so row heights still agree.
+  - **Three buttons stay off the scale**, documented at `BTN_SIZE`: the
+    ConnectionStatus dot and the fairness delta bar are geometry, not text
+    controls; the fairness NAME button keeps `4px 8px` because v1.13.0
+    round 5 tried exactly `sm` on it and Patryk rejected it. **Do not
+    re-align that one without asking.**
+  - **`pillTone(on)` / `segmentTone(on)`** return style FRAGMENTS to
+    spread (contrast `mkBtn` / `mkInp`, which return JSX). ON is solid
+    `--accent` in both; they differ in OFF. `pillTone` is a free-standing
+    pill whose OFF must stay visible (`--bg-pill` + border); `segmentTone`
+    sits in a `--bg-segment-strong` track that already draws the control,
+    so OFF is transparent and borderless. Three ON-states stay bespoke:
+    role pills (ON is the role's `ROLE_COLORS` identity), Active/Archived
+    (a record STATUS, keeping the green it shares with the grid highlight
+    axis), and the tab nav.
+
+- **One `transition` declaration for `.mgt-hover-scale` + `.mgt-press`
+  (v16.0.0 phase 27) — LOAD-BEARING:** `transition` is a shorthand, so two
+  equal-specificity rules do NOT merge; the later one replaces the earlier
+  outright. Both are single-class selectors, and `.mgt-press` sat ~100
+  lines below listing only `filter` / `background-color` — so every element
+  carrying both classes silently lost its `transform` transition and its
+  hover SNAPPED. Unnoticed while 11 buttons had both; phase 22 put
+  `.mgt-press` on all 48 and it became app-wide. `index.html` now declares
+  the transition ONCE for both selectors. **Never split it back into
+  per-class rules** — adding a property means adding it to that one list.
+  `outline-color` / `outline-offset` are in the list so the `:focus-visible`
+  ring fades rather than snapping.
+
+- **No-layout-jump rules (v16.0.0 phase 28):**
+  - **`S.card` carries `minWidth: 0`.** `S.appShell` is `display: flex`, so
+    the card is a flex item, and a flex item's default `min-width: auto`
+    refuses to shrink below its content's min-content width. The schedule
+    grid's explicit `minWidth` (944px for a 7-day week) inside its
+    `overflowX: auto` wrapper propagated up and beat `width: 100%` —
+    measured at 942px wide at `left: -5` on a 932px viewport, i.e. the
+    whole PAGE scrolled sideways. Removing `minWidth: 0` reintroduces it.
+  - **`html { scrollbar-gutter: stable }`.** The four tabs have very
+    different heights; without a reserved gutter the vertical scrollbar
+    appears and disappears and the centred column jumps sideways by its
+    width. Invisible with macOS overlay scrollbars, obvious everywhere
+    else.
+  - **Motion is transform/opacity or an eased grid track — never a hard
+    mount.** `.mgt-hover-scale` uses `transform` (no reflow); `SlideView`
+    clips `overflow` while animating so `translateX` can't spawn a
+    transient horizontal scrollbar; `Reveal` eases height via `0fr↔1fr`.
+    The toast keyframes are transform + opacity ONLY and cannot move
+    layout, which is why the result banner composes `Reveal` (height) with
+    `Toast` (slide + exit) rather than using either alone.
+  - **Known remaining shift:** `AppShell.jsx:360` sets the card's
+    `maxWidth` to 1100 on Schedule and 820 elsewhere, so its edges move
+    ~19px on a tab switch. Deliberate — the grid needs the room. Tracked
+    in ROADMAP.md.
+
+- **A rejected Firebase write must reach the UI (v16.0.0 phase 30):**
+  `usePersistence`'s three async `.catch()` handlers report through the
+  same `writeWarning` banner the pre-write guards use, via the shared
+  `reportWriteError`. This is not cosmetic. RTDB applies `set()` to its
+  local cache and fires `onValue` BEFORE the server answers, so a refused
+  write shows up as the UI changing and then silently reverting about a
+  second later — which is exactly how a Database Rules problem was
+  reported as "a bug where Settings toggles come back on their own."
+  `isSilent` is honoured, so auto-effects (the eager shiftTemplate
+  migration) still cannot raise a banner.
+  **Diagnostic note for next time:** DEV is `megustastu-bookings-dev`,
+  SHARED with the Bookings app. Its rules were written for Bookings'
+  paths (`/bookings`, `/tableBlocks`, `/tableBlocksRev`), so Scheduling
+  paths can read but not necessarily write. If writes fail on DEV, check
+  the Rules before suspecting the code.
+
+- **Where a hard mount is acceptable (v16.0.0 phase 31):** anything whose
+  appearance is triggered by a click and changes HEIGHT gets a `Reveal` —
+  form fields that depend on another field, warning banners, "Show more"
+  lists. A stack of independently-toggling banners gets one `Reveal`
+  EACH, never one around the group: they toggle separately, and a single
+  wrapper still snaps when one banner replaces another inside it. A
+  surface that merely changes COLOUR needs a `transition` instead, and if
+  it is a plain `<div>` it will not inherit one — the shared declaration
+  is on `.mgt-hover-scale` / `.mgt-press`, which are often on a child
+  rather than the element that actually changes (this is what made the
+  fairness row snap).
+
+- **`Reveal`'s 60ms fallback is a safety net, not a nicety
+  (v16.0.0 phase 31):** its closed state is `0fr` + `opacity: 0`, so the
+  content is INVISIBLE rather than merely un-animated. If the double rAF
+  that opens it never runs — an unpainted tab, a throttled frame budget —
+  the user loses the content itself, not just the transition. The
+  `setTimeout` races the rAF and `setOpen(true)` is idempotent, so the
+  smooth path still wins in the normal case. **Scheduling diverges from
+  Bookings here**; port it back if `Reveal` gains real consumers there.
+
+- **ROADMAP.md is Scheduling-only (v16.0.0 phase 32):** the two apps share
+  a design and motion vocabulary, so fixes here routinely need porting to
+  Bookings — but those notes belong in
+  `megustastu-bookings/ROADMAP.md`, because a session working in Bookings
+  reads Bookings' ROADMAP and will never see anything filed here. When
+  writing a cross-repo entry, RE-VERIFY it against the target repo's own
+  source; this repo's experience does not automatically transfer (the
+  `outline: "none"` prerequisite that blocked the focus ring here has no
+  equivalent there).
+
+- **`Reveal` (v16.0.0 phase 26; `Toast` removed phase 40):** ported from
+  Bookings WITH their consumers, per the ROADMAP rule that an atom's first
+  execution must not be its first test. `Reveal` → the `Collapsible` body
+  (Settings sections used to rotate a chevron over 150ms while the body it
+  points at appeared instantly). `Toast` → the result banner, and when
+  phase 40 removed that banner the atom, its two keyframe pairs in
+  index.html, and `REVEAL_OUT_MS`'s export went with it — same
+  "dead tokens are worse than no tokens" rule that kept Bookings' extra
+  BTN variants out. `REVEAL_OUT_MS` survives as a module constant that
+  `Reveal` still reads. Three `Reveal` details
+  are load-bearing: the **double rAF** (mount and the `0fr→1fr` flip must
+  land in separate frames or React batches them and nothing transitions),
+  the **cached children** (callers drop content in the same render that
+  flips `show` false, so the collapse would animate an empty box), and the
+  **delayed `overflow: visible` flip** — non-negotiable here because the
+  per-weekday and open-days POPOVERS are absolutely positioned above their
+  pill row and a permanently-clipping ancestor cuts them off mid-air.
+
+- **No agentic narration (v16.0.0 phases 37-40).** A design rule, and it
+  supersedes several earlier decisions rather than extending them. The app
+  had grown a register in which it described its own state in prose,
+  announced its own results, hedged about its own strictness, and offered
+  to explain its own reasoning — to a single manager who is also its sole
+  developer and the author of every rule being explained. The test applied
+  throughout: **does the artifact already show this?** If the grid shows
+  it, the app does not say it.
+
+  What that removed, and what each was replaced by:
+
+  - *Swap mode's phase banners* (phase 37). "Pick a filled cell as the
+    source." / "Pick the target cell to move or swap. Click the source
+    again to cancel.", plus a nav button relabelling itself "Swap: cancel"
+    and a Cancel pill inside the banner. Replaced by the armed button's
+    state and per-cell CURSORS (`grab` on a filled cell, `not-allowed` on
+    an empty one during source-select) — guidance at the point of contact,
+    before the click, rather than a sentence after it.
+  - *Swap's success banner* (phase 37) and *the generate / clear / undo
+    result banner* (phase 38). Both described what had just visibly
+    happened. Deleted. The ONLY survivor is a run that changed NOTHING,
+    where the screen is identical and silence reads as a dead button.
+  - *`GenerateResultsModal`* — the "Why didn't X fill?" list — and
+    *`EmployeeFairnessModal`'s Reasoning view*, which restated each figure
+    as a worked formula with values substituted in (phases 38-39). Both
+    are a system showing its working. Removed on request, accepting that
+    the generator's per-cell reasons went unsurfaced. **Phase 42 brought
+    the REASONS back but not the modal — see "Generator reasons belong on
+    the cell" below.** `EmployeeFairnessModal`'s Reasoning view stays
+    deleted.
+  - *Instructional and reassuring copy* (phase 40): the grid's six-line
+    footer manual, the Settings tab intro, `SplitConfirmModal`'s closing
+    reassurance, the fairness sparkline legend, and the five
+    `ShiftFormModal` warnings that each ended "You can still save; this is
+    just a warning."
+
+  **Copy rule going forward:** UI strings are noun phrases. No trailing
+  period, no em dash, no second-person framing, no warning glyphs, no
+  restating a rule at the moment of applying it. An enabled button is
+  already the statement that the action is allowed.
+
+  **Feedback that survives is a `statusChip`,** not a banner: auto-width,
+  `R.pill`, `BADGE_SIZE.status`, CENTRED, neutral / warning / danger tone,
+  no dismiss control, self-expiring at 2600ms. One helper in `ScheduleGrid`
+  serves every remaining case (a refused swap, a no-change run, an unfilled
+  count, the past-week marker). A refusal also shakes the offending cell
+  (`@keyframes mgt-cell-react`), so which and why arrive together.
+
+  *Phase 42 sizing:* the chip was `BADGE_SIZE.base` (11px) and left-aligned
+  until phase 42. Left-aligned it sat in the same column as the nav bar's
+  Prev button and read as a fourth control; at 11px it was legible but
+  easy to miss above a grid of 13px assignee names. Now centred, and
+  `BADGE_SIZE.status` (14px / 5×14, roughly +30%) — a hair above
+  `BTN_SIZE.lg`, deliberately, because it is the one label competing with
+  a whole data grid for attention.
+
+- **Swap selection is solid `--accent`, and drag-and-drop is a second path
+  (v16.0.0 phase 37).** Two related reversals of v1.7.0.
+
+  *Colour.* Swap mode painted the yellow WARNING tint — the button, the
+  banner, and an infinitely pulsing source-cell outline — on the reasoning
+  that it needed an identity "distinct from accent-blue / green". Wrong in
+  context: yellow already means a conflict, a breached rest rule, or a
+  shift on a closed day-part, so an armed tool wearing it read as a
+  problem. Selection is now solid `--accent` (phase 23's ON language),
+  shared by the armed `SwapButton` and the picked cell, with NO animation.
+  **Solid, not tinted, is load-bearing:** an assigned cell's resting
+  background is already the accent at 22%, so a selection in
+  `--accent-tint-soft` (18%) is FAINTER than the cell it highlights. The
+  first attempt shipped exactly that and was invisible — caught by reading
+  computed styles in the browser, not by looking. Any future restyling of
+  this state must clear the 22% floor.
+
+  *Drag-and-drop.* Added alongside the two-click flow, not replacing it.
+  A filled cell is `draggable`; dropping calls `attemptSwap` with the same
+  source/target pair the two-click path builds, so validation, the
+  split-shift confirm and the undo op are shared and cannot drift. Both
+  stay because they answer different questions: dragging is faster when
+  both cells are on screen, while two-click survives a scroll between
+  them, is reachable from the `S` shortcut and `ShiftFormModal`'s
+  "Move / Swap", and is the only one that works without a pointer. The
+  drop handlers attach UNCONDITIONALLY and guard on `dragSource` inside —
+  gating the props themselves left cells with no handler in any frame
+  where the state had been cleared.
+
+- **Generator reasons belong on the cell (v16.0.0 phase 42).** Partly
+  reverses phase 38, and the distinction it draws is the useful part.
+  Phase 38 deleted `GenerateResultsModal` along with `GENERATOR_REASONS`,
+  treating both as the app reporting on its own work. That was right about
+  the MODAL and wrong about the DATA: "this cell is empty" is visible on
+  the grid, but "and nothing could legally go in it" is not deducible from
+  anything on screen, so a cell the generator skipped became
+  indistinguishable from one it never considered.
+
+  `GENERATOR_REASONS` is back in `constants.js` in a new
+  `{ tag, detail }` shape — `tag` is a terse uppercase badge (`at quota`,
+  `booked`, `rest rule`), `detail` the one-clause `title` tooltip. After a
+  run, `handleGenerateResult` builds
+  `unfilledByCell = { "<dateIso>|<slotKey>": reasonCode }` from
+  `summary.unfilledCells`, and `renderCell` hangs the badge beside the word
+  "Open" — the line it qualifies. **The modal did not come back.** The
+  reason now answers a question the artifact raises, in the place it is
+  raised, instead of describing the run.
+
+  *The chip and the badges have different lifetimes, deliberately.* The
+  chip ("3 unfilled") is an announcement and expires with every other chip
+  at 2600ms; the badges are an annotation on the schedule and persist until
+  the manager navigates to another week or runs the generator again. Count
+  is news, reasons are reference. Both are in-memory only, so leaving the
+  Schedule tab clears them — the same scope as the undo stack, for the same
+  reason.
+
+  The reason vocabulary is shared with `ShiftFormModal`'s manual warnings
+  ("Rest rule — …", "Consecutive cap — …"), so a constraint reads the same
+  whether the manager hit it by hand or the auto-run hit it for them.
+  `"regenerated"` is deliberately absent from the map: it tags CLEARED
+  records, and no surface shows those.
+
+- **A committed swap flashes green (v16.0.0 phase 42).** Narrower than the
+  success banner phase 37 deleted, and not a reinstatement of it. The
+  banner was a sentence elsewhere on the page describing what the grid
+  already showed; this points AT the cells that changed, which is the one
+  thing the grid does not make obvious — a swap moves two names between
+  cells that may sit a column and three rows apart, and afterwards both
+  look like every other filled cell.
+
+  `swapSuccess = { cellKeys: [...] }` paints `--bg-active-on` plus one
+  `mgt-cell-react` shake, clearing at 1100ms (shorter than a refusal's
+  2600ms — there is no text to read). **Swap flashes BOTH cells; Move
+  flashes only the destination** — a green arrival flash on the emptied
+  source would say the opposite of what happened there. No chip either
+  way.
+
+  The flash paints identically to the sticky pill highlight, with the
+  shake as the only difference — the same arrangement v1.9.3 used for the
+  jump target, so "this cell is the focus" looks one way however the
+  manager got there. The pill highlight is a standing filter and does not
+  animate; this is an event and does.
+
+- **One tinted message block: the `Notice` atom (v16.0.0 phase 42).** Three
+  hand-rolled versions of the same box existed in three files, drifted on
+  padding (6×10 / 8×10 / 10×12), on whether the lead was bold, and on
+  whether the copy closed with a reassurance. `Notice` in `atoms.jsx`
+  replaces all of them: `AppShell`'s write-error banner, `ShiftFormModal`'s
+  five picker warnings, and `SplitConfirmModal`'s clash list.
+
+  *Structure is title + detail, always in that order* — the fact at 13/700
+  in the tone's colour, the specifics at 12.5/500 in the same hue at 82%.
+  Two weights of one colour, not two colours, so the block stays one
+  object. The split did real work on the copy: it forced WHAT failed apart
+  from WHAT IT MEANS, which is what retired the write error's third
+  sentence ("This is a Firebase Database Rules problem, not a problem with
+  what you entered") — the app reassuring the manager about its own
+  failure. "Database rules rejected the write" states the same fact
+  without the bedside manner.
+
+  *The action is a SOLID pill,* not the ghost button the write banner
+  carried. Phase 23 settled this everywhere else: an actionable control is
+  filled. An outlined Dismiss inside a red panel, two rows below solid
+  Regenerate and Export pills, read as decoration.
+
+  *No glyph.* The tint is the severity signal and a ⚠ in front of amber
+  text says it twice; semantics go to `role` (`alert` for something that
+  just failed, `note` for a standing caution) where a screen reader can
+  reach them.
+
+  `usePersistence`'s `writeWarning` is now `{ title, detail }` rather than
+  one long string, and `PATH_LABELS` maps the RTDB node to something a
+  manager recognises — "Couldn't save shiftTemplate" named a database key,
+  not a thing they had just edited.
+
+- **The select chevron is drawn, not native (v16.0.0 phase 42).** Chrome
+  paints the native `<select>` arrow against the BORDER-BOX edge and no
+  amount of `padding-right` moves it — verified with two otherwise
+  identical selects at 28px and 44px whose arrows landed on the same pixel.
+  Since v16.0.0 gave every control `R.pill`, that arrow sat inside the
+  curve of the right cap. `.mgt-select` in `index.html` sets
+  `appearance: none` and draws a chevron as a `background-image`.
+
+  Two things about it are load-bearing and easy to undo by accident:
+
+  1. **`S.selectBase`, not `S.inputBase`.** It differs only in using
+     `backgroundColor` instead of the `background` SHORTHAND — the
+     shorthand resets `background-image` to `none`, and inline beats a
+     class, which silently deleted the chevron and left the control with no
+     affordance at all.
+  2. **The right padding lives in `S.selectBase`, not in the CSS class,**
+     for the same precedence reason: an inline `padding` shorthand would
+     overwrite a `padding-right` declared in the class. The 34px padding
+     and the chevron's `right 14px` are picked together; move one, move
+     the other.
+
+  The stroke colour is baked into the data URI (an SVG in a
+  `background-image` is a separate document and cannot read this page's
+  custom properties), so the light/dark split is two rules that must stay
+  identical apart from `stroke=`.
+
 ### Architectural
 - React 19 + Vite (NOT CRA, NOT Next), Firebase RTDB + Auth, Vercel
   auto-deploy from `main`.
@@ -1689,6 +2241,2062 @@ separate Firebase project, same UI conventions).
 
 ## File structure
 
+```
+megustastu-scheduling/
+├── CLAUDE.md                       this file
+├── REFACTOR_LOG.md                 version history + decisions
+├── ROADMAP.md                      v16.0.0: pending work ONLY — deferred
+│                                   features, follow-ups, ideas. No shipped
+│                                   history (that's REFACTOR_LOG.md), no
+│                                   design rationale (that's this file).
+│                                   Delete an entry in the same commit that
+│                                   resolves it.
+├── LICENSE                         v1.14.0: proprietary licence file at
+│                                   repo root. Verbatim copy of the MGT
+│                                   Bookings LICENSE — "© 2026 Patryk
+│                                   Zychowicz. All rights reserved",
+│                                   licensed exclusively to the
+│                                   restaurant for internal use.
+├── package.json                    React 19, Vite, Firebase, jsPDF
+├── vite.config.js                  @vitejs/plugin-react (automatic JSX)
+├── index.html                      Vite entry. Hosts the theme token
+│                                   block + the no-flash inline script.
+│                                   vPre-1.0: see Pre-v1.0 archive below.
+│                                   v15.1.1: .mgt-hover-scale:hover rule
+│                                   wrapped in @media (hover: hover) and
+│                                   (pointer: fine) — iOS sticky-hover
+│                                   guard ported from Bookings v15.1.0.
+│                                   v15.2.0: + --status-online /
+│                                   --status-offline tokens (light + dark)
+│                                   for the header ConnectionStatus dot.
+└── src/
+    ├── main.jsx                    mounts <App />
+    ├── App.jsx                     orchestration: auth-gate → AppShell.
+    │                                 v1.5.0: __APP_SIGNATURE__ → 1.5.0,
+    │                                 sha "session-persistence-
+    │                                 most-constrained".
+    │                                 v1.6.0: → 1.6.0, sha
+    │                                 "weekly-requests-effective-
+    │                                 quota-settings-section".
+    │                                 v1.6.1: → 1.6.1, sha
+    │                                 "generator-effective-quota".
+    │                                 v1.7.0: → 1.7.0, sha
+    │                                 "swap-highlight-regen-priority".
+    │                                 v1.8.0: → 1.8.0, sha
+    │                                 "cross-week-consec-and-max-cap".
+    │                                 v1.8.1: → 1.8.1, sha
+    │                                 "preserve-overrides-on-regenerate".
+    │                                 v1.8.2: → 1.8.2, sha
+    │                                 "recurring-shift-preference".
+    │                                 v1.9.0: → 1.9.0, sha
+    │                                 "selects-scale-modal-overflow".
+    │                                 v1.9.1: → 1.9.1, sha
+    │                                 "force-prod-build-env" (hotfix —
+    │                                 pinned NODE_ENV=production in the
+    │                                 npm build script so Vercel's
+    │                                 NODE_ENV defaulting can't flip the
+    │                                 bundle back to DEV Firebase).
+    │                                 v1.9.2: → 1.9.2, sha
+    │                                 "mobile-today-card-tint".
+    │                                 v1.9.3: → 1.9.3, sha
+    │                                 "jump-to-cell-from-results".
+    │                                 v1.9.4: → 1.9.4, sha
+    │                                 "details-bullet-scroll-banner-config".
+    │                                 v1.9.5: → 1.9.5, sha
+    │                                 "mobile-closed-placeholder".
+    │                                 v1.10.0: → 1.10.0, sha
+    │                                 "undo-stack-and-login-hover-scale".
+    │                                 v1.10.1: → 1.10.1, sha
+    │                                 "eager-shift-template-migration".
+    │                                 v1.11.0: → 1.11.0, sha
+    │                                 "configurable-scheduling-rules".
+    │                                 v1.12.0: → 1.12.0, sha
+    │                                 "past-week-lock-fairness-autosave".
+    │                                 v1.13.0: → 1.13.0, sha
+    │                                 "fairness-panel-highlight-deltabar-
+    │                                 drilldown".
+    │                                 v1.14.0: → 1.14.0, sha
+    │                                 "calendar-month-fairness-ip-layer".
+    │                                 IP-layer additions: source-header
+    │                                 JSDoc block above the existing
+    │                                 file comment with copyright +
+    │                                 author + LICENSE pointer.
+    │                                 __APP_SIGNATURE__ gained `app` /
+    │                                 `author` / `contact` / `copyright` /
+    │                                 `license` fields. logBootBanner
+    │                                 extended with two extra console.log
+    │                                 lines (copyright + unauthorized-use
+    │                                 notice). Mirrors MGT Bookings'
+    │                                 App.jsx top-of-file structure.
+    │                                 v1.15.0: → 1.15.0, sha
+    │                                 "per-employee-avg-shift-hours-
+    │                                 modal-scroll".
+    │                                 v15.1.0: → 15.1.0, sha
+    │                                 "config-revisions-solo-times-
+    │                                 past-week-lock". Versioning scheme
+    │                                 realigned to MGT Bookings' pattern
+    │                                 (1.15.0 → 15.1.0 jump).
+    │                                 v15.1.1: → 15.1.1, sha
+    │                                 "ios-sticky-hover-media-guard".
+    │                                 v15.2.0: → 15.2.0, sha
+    │                                 "incomplete-export-past-revisions-
+    │                                 employee-tenure".
+    │                                 v15.3.0: → 15.3.0, sha
+    │                                 "keyboard-closed-shift-tenure-
+    │                                 fairness-esc" (one version covering the
+    │                                 keyboard shortcuts, closed-shift
+    │                                 visibility, tenure-aware fairness
+    │                                 targets, and global Esc-to-cancel).
+    │                                 v15.4.0: → 15.4.0, sha
+    │                                 "orphan-ignore-perweek-config-
+    │                                 slottime-cleanup" (slotTimeFor legacy
+    │                                 fallback removed; orphan shifts ignored
+    │                                 in fairness counts; per-week config
+    │                                 resolution inside fairness windows).
+    │                                 v15.4.1: → 15.4.1, sha
+    │                                 "doc-accuracy-tenure-perweek" (doc-only
+    │                                 patch: corrected stale tenure / per-week-
+    │                                 config comments after a pre-onboarding
+    │                                 audit found no behavioural defects).
+    │                                 v16.0.0: → 16.0.0, sha
+    │                                 "bookings-parity-split-shifts-
+    │                                 perweekday-template". Three independent
+    │                                 areas in one version: MGT Bookings
+    │                                 visual/motion parity, manual-only split
+    │                                 shifts, and per-weekday shift-template
+    │                                 overrides (times AND headcount).
+    ├── firebase.js                 dev/prod switch + coloured boot banner
+    ├── hooks/
+    │   ├── useAuth.js              Firebase Auth state + signIn / signOut
+    │   ├── usePersistence.js       Firebase RTDB reads + write-guarded CRUD.
+    │   │                           v15.1.0: + /configRevisions as a 6th
+    │   │                           path (4th collection). New state slice,
+    │   │                           loaded ref, subscription, ready-gate
+    │   │                           inclusion, and upsertConfigRevision /
+    │   │                           deleteConfigRevision actions via the
+    │   │                           existing collection CRUD machinery.
+    │   ├── useThemeMode.js         dark/light resolver. Takes explicit
+    │   │                           boolean (or undefined → follow system
+    │   │                           pref live). Writes `data-theme` on
+    │   │                           <html>; returns isDark.
+    │   │                           vPre-1.0: see Pre-v1.0 archive below.
+    │   ├── useUndoStack.js         v1.10.0: bounded FIFO undo stack
+    │   │                           (depth 5). { stack, push, pop, clear }.
+    │   │                           In-memory only — survives Vite HMR,
+    │   │                           resets on hard refresh / tab close.
+    │   │                           Stores op shape { id, label,
+    │   │                           timestamp, restoreShifts, removeIds }
+    │   │                           captured by ClearButton, GenerateButton,
+    │   │                           and ScheduleGrid's swap/move handler.
+    │   ├── useWinW.js              viewport-width listener
+    │   ├── useEnterSubmit.js       v15.3.0: NEW. While a modal is open, a
+    │   │                           bare Enter (not in a textarea/button/
+    │   │                           select) fires its primary action when a
+    │   │                           caller-supplied `canSubmit` is true.
+    │   │                           Document-level listener so it works
+    │   │                           regardless of focus. Used by the four
+    │   │                           single-primary form modals (Shift /
+    │   │                           Employee / Request / ExportWarning).
+    │   ├── useEscClose.js          v15.3.0: NEW. Mirror of useEnterSubmit —
+    │   │                           while a modal is open, a bare Escape
+    │   │                           calls onClose. Document-level. Applied to
+    │   │                           every Overlay modal so Esc cancels
+    │   │                           globally; busy confirms no-op via onClose.
+    │   └── useFirebaseConnection.js v15.2.0: NEW. Subscribes to RTDB
+    │                               `.info/connected`; returns a boolean.
+    │                               Drives the header <ConnectionStatus>
+    │                               dot (green connected / red lost).
+    ├── lib/
+    │   ├── constants.js            S, BTN, ROLES, SECTIONS, STATUS_COLORS,
+    │   │                           ROLE_COLORS, REQUEST_TYPES,
+    │   │                           DEFAULT_SHIFT_TEMPLATE,
+    │   │                           OPERATING_HOURS, WEEKDAYS, DAY_PARTS.
+    │   │                           vPre-1.0: see Pre-v1.0 archive below.
+    │   │                           v1.0.0: + DEFAULT_GENERATOR_STRICT_PREFERENCE
+    │   │                           = false — fallback for
+    │   │                           /settings.generatorStrictPreference.
+    │   │                           v1.1.0: + SECTIONS.kitchen.dayRequiredRoles
+    │   │                           = ["Chef"]. Optional field; FoH has
+    │   │                           none. slotsForDay copies it onto each
+    │   │                           day slot's `requiredRoles`.
+    │   │                           v1.2.0: + REQUEST_TYPES gets a third
+    │   │                           entry "shift-preference" with a
+    │   │                           dayPart sub-choice on the request
+    │   │                           record (preferredDayPart).
+    │   │                           v1.3.0: DEFAULT_OPENING_DAYS shape
+    │   │                           switched from `{mon: bool, …}` to
+    │   │                           `{mon: {day: bool, evening: bool}, …}`.
+    │   │                           Legacy boolean docs auto-migrate via
+    │   │                           normalizeOpeningDays in schedule-logic.
+    │   │                           v1.4.0: + GENERATOR_REASONS map —
+    │   │                           reason-code → human-readable label
+    │   │                           lookup consumed by the new
+    │   │                           GenerateResultsModal.
+    │   │                           v1.7.0: GENERATOR_REASONS audit —
+    │   │                           Regenerate became wipe-and-refill,
+    │   │                           so the clearInvalidShifts-only
+    │   │                           codes (closed-day, closed-day-part,
+    │   │                           unassigned, slot-removed, no-employee,
+    │   │                           archived, on-request, shift-preference,
+    │   │                           fixed-days, same-day-dup, over-quota)
+    │   │                           were removed. + "regenerated" entry
+    │   │                           labelled "Cleared for regeneration".
+    │   │                           v1.8.0: + "max-consecutive" entry
+    │   │                           emitted when every candidate would
+    │   │                           exceed the 5-day cap of the new
+    │   │                           withinMaxConsecutiveWorkingDays
+    │   │                           filter at buildCandidates step 6.5.
+    │   │                           v1.9.4: + DEFAULT_GENERATOR_BANNER_AUTO_DISMISS
+    │   │                           (true) + DEFAULT_GENERATOR_BANNER_DURATION_SEC
+    │   │                           (5) + GENERATOR_BANNER_DURATION_MIN/MAX
+    │   │                           (1/60). Drive the result-banner
+    │   │                           configurability in Settings → Auto-
+    │   │                           generator and ScheduleGrid's auto-
+    │   │                           dismiss effect.
+    │   │                           v1.11.0: + DEFAULT_MIN_CONSECUTIVE_DAYS_OFF
+    │   │                           (2) + MIN_CONSECUTIVE_DAYS_OFF_MIN/MAX (1/3).
+    │   │                           + DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS (5)
+    │   │                           + MAX_CONSECUTIVE_WORKING_DAYS_MIN/MAX (3/14).
+    │   │                           + DEFAULT_DAY_REQUIRED_ROLES =
+    │   │                           Object.freeze({foh: [], kitchen: ["Chef"]})
+    │   │                           — per-section override. SECTIONS.kitchen.
+    │   │                           dayRequiredRoles STAYS as system fallback
+    │   │                           when slotsForDay is called bare (tests,
+    │   │                           future call sites). All three drive
+    │   │                           Settings → "Scheduling rules" accordion
+    │   │                           section + ScheduleGrid defensive reads +
+    │   │                           generator thread-through.
+    │   │                           v1.12.0: DEFAULT_DAY_REQUIRED_ROLES shape
+    │   │                           flipped from per-section array of role
+    │   │                           names to per-section per-role boolean object
+    │   │                           ({foh: {Bar: false, Floor: false},
+    │   │                           kitchen: {Chef: true, Plating: false,
+    │   │                           Pot: false}}). Firebase RTDB strips empty
+    │   │                           arrays to null on write — the array shape
+    │   │                           broke the "manager configured Kitchen as
+    │   │                           permissive" state (Chef pill kept springing
+    │   │                           back). Booleans including false ARE
+    │   │                           preserved. Lazy reader for v1.11.0 array
+    │   │                           shape lives in resolveDayRequiredRoles
+    │   │                           (schedule-logic.js). Also: SECTIONS.kitchen.
+    │   │                           dayRequiredRoles DELETED — the fallback
+    │   │                           path now goes through DEFAULT_DAY_REQUIRED_
+    │   │                           ROLES; SECTIONS just lists per-section role
+    │   │                           membership.
+    │   │                           v15.1.0: + DEFAULT_PAST_WEEKS_LOCKED
+    │   │                           (true) — fallback for
+    │   │                           /settings.pastWeeksLocked.
+    │   ├── schedule-logic.js       week math + slot enumeration (Kitchen
+    │   │                           first) + cell-state derivation +
+    │   │                           findRequestConflict + findSameDayShift
+    │   │                           + isWeekComplete. Pure JS, no React.
+    │   │                           vPre-1.0: see Pre-v1.0 archive below.
+    │   │                           v1.2.0: findRequestConflict guarded to
+    │   │                           dayoff/holiday types only. New
+    │   │                           findShiftPreferenceMismatch(...,
+    │   │                           dayPart) and hasConsecutiveDaysOff(...,
+    │   │                           weekStart, shiftsMap, minN=2).
+    │   │                           v1.3.0: + normalizeOpeningDays(raw),
+    │   │                           + isDateOpen(openingDays, date),
+    │   │                           + isSlotOpenOnDate(date, slot,
+    │   │                           openingDays). visibleWeekDates +
+    │   │                           isWeekComplete now go through the
+    │   │                           per-day-part path (legacy boolean
+    │   │                           openingDays still accepted).
+    │   │                           v1.6.1: + daysOffInWeekByEmployee(
+    │   │                           requestsMap, dates) →
+    │   │                           {[empId]: count}. Lifted from
+    │   │                           WeeklyShiftSummary's local helper so
+    │   │                           the v1.6.0 effective-quota math is
+    │   │                           shared with the auto-generator's
+    │   │                           quota gate.
+    │   │                           v1.7.0: + roleMatchesSlot(emp, slot)
+    │   │                           lifted from generator.js. Day slots
+    │   │                           honour requiredRoles / coversRoles;
+    │   │                           evening slots honour defaultRole /
+    │   │                           eligibleRoles. Shared by the
+    │   │                           generator's eligibility filter and
+    │   │                           the v1.7.0 Swap mechanic in
+    │   │                           ScheduleGrid.
+    │   │                           v1.8.0: hasConsecutiveDaysOff gains
+    │   │                           a 5th `options` argument
+    │   │                           {priorWeekShifts, nextWeekShifts}.
+    │   │                           Internal window grows from 7 cells
+    │   │                           (Mon..Sun) to 9 cells
+    │   │                           ([priorSun, Mon..Sun, nextMon]);
+    │   │                           runs only count if they overlap
+    │   │                           indices 1..7 (the focus week).
+    │   │                           Missing options default the
+    │   │                           boundary days to "worked" — safe
+    │   │                           fallback that degrades to the
+    │   │                           pre-v1.8.0 Mon..Sun-only scan.
+    │   │                           v1.8.0 (companion):
+    │   │                           + withinMaxConsecutiveWorkingDays(
+    │   │                           empId, weekStart, shiftsMap, max=5,
+    │   │                           options). Scans a 21-day window
+    │   │                           [prior, focus, next]; rejects when
+    │   │                           any run of working days > max
+    │   │                           overlaps the focus week. Missing
+    │   │                           prior/next maps default to OFF
+    │   │                           (false) — opposite conservative
+    │   │                           direction from
+    │   │                           hasConsecutiveDaysOff.
+    │   │                           v1.8.2: findShiftPreferenceMismatch
+    │   │                           reads request.recurringDaysOfWeek
+    │   │                           when present. Non-empty array
+    │   │                           narrows the date range to specific
+    │   │                           weekdays (weekdayKeyForDate +
+    │   │                           parseIsoDate, lazy lookup). Empty /
+    │   │                           missing list keeps pre-v1.8.2
+    │   │                           "every date in range" behaviour.
+    │   │                           Signature unchanged. Both the
+    │   │                           generator HARD filter and the
+    │   │                           picker SOFT warning inherit the
+    │   │                           new check automatically.
+    │   │                           v1.9.0: daysOffInWeekByEmployee
+    │   │                           renamed to holidayDaysInWeekByEmployee
+    │   │                           and the type filter narrowed from
+    │   │                           "dayoff OR holiday" to "holiday only".
+    │   │                           Day-OFF requests no longer contribute
+    │   │                           to the effective-quota subtraction in
+    │   │                           WeeklyShiftSummary's pill OR in the
+    │   │                           generator's quota gate. HARD per-date
+    │   │                           blocking for dayoff is unchanged
+    │   │                           (findRequestConflict still includes
+    │   │                           both types in BLOCKING_REQUEST_TYPES).
+    │   │                           v1.10.1: + materializeShiftTemplateBlock
+    │   │                           (per-block) + materializeShiftTemplate
+    │   │                           (whole template) + isShiftTemplateMigrated
+    │   │                           (predicate). Lifted from Settings.jsx's
+    │   │                           local materializeBlock so the new
+    │   │                           AppShell eager-migration effect and
+    │   │                           Settings can share one shape source. The
+    │   │                           predicate also flags lingering legacy
+    │   │                           fields (start/end/secondPersonStart) on
+    │   │                           an otherwise-valid block so partial
+    │   │                           docs still trigger cleanup. Imports
+    │   │                           OPERATING_HOURS for the per-block
+    │   │                           defaults.
+    │   │                           v1.11.0: slotsForDay gains an optional
+    │   │                           2nd arg `dayRequiredRolesOverride` —
+    │   │                           per-section map `{foh: [...], kitchen:
+    │   │                           [...]}` that wins over SECTIONS defaults
+    │   │                           when supplied (even an explicit empty
+    │   │                           array; that's a manager-set "permissive"
+    │   │                           choice). Bare-call behaviour preserved
+    │   │                           — falls back to SECTIONS[section].
+    │   │                           dayRequiredRoles when override missing.
+    │   │                           hasConsecutiveDaysOff +
+    │   │                           withinMaxConsecutiveWorkingDays bodies
+    │   │                           unchanged — they already took n/max as
+    │   │                           positional args with defaults; v1.11.0
+    │   │                           just stops passing `undefined` at the
+    │   │                           call sites in generator.js and
+    │   │                           ShiftFormModal.jsx.
+    │   │                           v1.12.0: + isPastWeek(weekStart, todayIso)
+    │   │                           — true iff the focus week's Sunday is
+    │   │                           before today. Drives the read-only gate
+    │   │                           in ScheduleGrid. + resolveDayRequiredRoles
+    │   │                           (settingsValue, sectionKey) — reads both
+    │   │                           the v1.12.0 boolean-object shape AND the
+    │   │                           legacy v1.11.0 array shape and returns
+    │   │                           the canonical role-name array in SECTIONS
+    │   │                           source order. slotsForDay's internal
+    │   │                           resolveDayRequired was deleted; both
+    │   │                           slotsForDay and Settings.jsx now go
+    │   │                           through this single helper, so the
+    │   │                           v1.12.0 shape detection lives in one
+    │   │                           place. + avgShiftHours(preference,
+    │   │                           shiftTemplate) — average per-shift hours
+    │   │                           weighted by preference. + build28Day
+    │   │                           Aggregates({shifts, employees, weekStart,
+    │   │                           requests, shiftTemplate}) — returns
+    │   │                           {[empId]: {shiftsCount, hoursTotal,
+    │   │                           shiftsTarget, hoursTarget, shiftsDeficit,
+    │   │                           hoursDeficit}} over the 28-day window
+    │   │                           [weekStart - 21d, ..., weekStart + 6d].
+    │   │                           Used by both the generator's rankCandidates
+    │   │                           (hours+shifts deficit primary sort) and
+    │   │                           <MonthlyFairnessPanel> (chip-row UI).
+    │   │                           holidayDaysInWeekByEmployee unchanged —
+    │   │                           it already accepts any date array, so
+    │   │                           28-day callers pass a 28-element list
+    │   │                           without a signature change.
+    │   │                           v1.13.0: + buildEmployeeFairnessDetail
+    │   │                           ({shifts, employee, weekStart, requests,
+    │   │                           shiftTemplate}) — single-employee drill-
+    │   │                           down for <EmployeeFairnessModal>. Returns
+    │   │                           {rolling28, calendarMonth, perWeek}.
+    │   │                           rolling28 mirrors build28DayAggregates'
+    │   │                           per-employee shape (shifts/target,
+    │   │                           hours/target) but also exposes holiday
+    │   │                           days + window date bounds. calendarMonth
+    │   │                           uses the focus week's Monday's month;
+    │   │                           target is pro-rated wpw × monthLen/7
+    │   │                           minus holiday days in the month.
+    │   │                           perWeek is 4 buckets [wk-3, wk-2, wk-1,
+    │   │                           this wk], each 7 days ending at the
+    │   │                           focus week's Sunday, raw wpw target per
+    │   │                           bucket (no pro-rating — buckets are full
+    │   │                           weeks). + private helpers wpwOf,
+    │   │                           holidayDayCountForEmployeeInRange,
+    │   │                           aggregateShiftsInRange. Helper is
+    │   │                           informational only — never feeds the
+    │   │                           generator.
+    │   │                           v1.14.0: + buildCalendarMonthAggregates
+    │   │                           ({shifts, employees, weekStart, requests,
+    │   │                           shiftTemplate}) — sibling to
+    │   │                           build28DayAggregates but anchored to
+    │   │                           the calendar month containing
+    │   │                           weekStart's Monday. Same shape per
+    │   │                           employee: {shiftsCount, hoursTotal,
+    │   │                           shiftsTarget, hoursTarget,
+    │   │                           shiftsDeficit, hoursDeficit}. Target =
+    │   │                           max(0, round(wpw × monthLen/7) −
+    │   │                           holidays) (same formula buildEmployee
+    │   │                           FairnessDetail's calendarMonth path
+    │   │                           uses, so drill-down stats and
+    │   │                           generator input stay in lockstep).
+    │   │                           Holiday handling identical to the
+    │   │                           rolling-28 path — only type==="holiday"
+    │   │                           requests subtract (v1.9.0 rule).
+    │   │                           Consumed by generator.js's
+    │   │                           rankCandidates alongside the rolling-
+    │   │                           28 map; both windows' deficits are
+    │   │                           SUMMED before the deficit DESC sort.
+    │   │                           Also: buildEmployeeFairnessDetail's
+    │   │                           perWeek buckets now expose
+    │   │                           holidayDays so the v1.14.0 Reasoning
+    │   │                           view can show the per-bucket wpw −
+    │   │                           holiday = target subtraction (the
+    │   │                           shiftsTarget alone is lossy when
+    │   │                           holidays exceed wpw).
+    │   │                           v1.15.0: avgShiftHours signature
+    │   │                           changed (preference, shiftTemplate) →
+    │   │                           (emp, shiftTemplate, dayRequiredRoles).
+    │   │                           Now filters the slotsForDay list by
+    │   │                           roleMatchesSlot(emp, slot) + the
+    │   │                           employee's preference and averages
+    │   │                           ONLY the eligible slots' durations —
+    │   │                           not a flat all-slots average. Fixes
+    │   │                           biased hours-targets for employees
+    │   │                           whose role-set is narrower than the
+    │   │                           section. Returns 0 when no eligible
+    │   │                           slots. All three aggregate helpers
+    │   │                           (build28DayAggregates,
+    │   │                           buildCalendarMonthAggregates,
+    │   │                           buildEmployeeFairnessDetail) gained
+    │   │                           an optional args.dayRequiredRoles
+    │   │                           forwarded into avgShiftHours.
+    │   │                           v1.15.0(2): avgShiftHours gained a
+    │   │                           5th-position arg openingDays — the
+    │   │                           mean is now WEIGHTED by how many
+    │   │                           weekdays each slot's day-part is open
+    │   │                           (normalizeOpeningDays + WEEKDAY_KEYS).
+    │   │                           undefined openingDays → all weights 7
+    │   │                           → flat mean (backward-compat); fully-
+    │   │                           closed day-part → weight 0 → slots
+    │   │                           drop out. The 3 aggregate helpers
+    │   │                           thread args.openingDays in too.
+    │   │                           v15.1.0: + resolveConfigForWeek(
+    │   │                           configRevisions, settings,
+    │   │                           shiftTemplate, weekStart) — per-axis
+    │   │                           revision resolution with the live
+    │   │                           singletons as the frozen base.
+    │   │                           + slotTimesForDate(slot, date,
+    │   │                           openingDays) — per-date {start,end};
+    │   │                           solo times win when the slot's
+    │   │                           day-part is the only open one that
+    │   │                           weekday. slotsForDay attaches
+    │   │                           soloStart/soloEnd per slot from
+    │   │                           block.soloTimes[i].
+    │   │                           materializeShiftTemplateBlock
+    │   │                           preserves valid soloTimes (length-
+    │   │                           synced) and omits the key otherwise;
+    │   │                           isBlockMigrated flags only present-
+    │   │                           but-malformed soloTimes (absent or
+    │   │                           valid stays migrated — eager-
+    │   │                           migration loop guard). avgShiftHours
+    │   │                           weighting split per day-part into
+    │   │                           both-open vs solo weekday counts
+    │   │                           (hNormal×cBoth + hSolo×cSolo);
+    │   │                           no-solo templates byte-identical.
+    │   │                           v15.3.0: + dateHasAnyShift(weekShifts,
+    │   │                           dateIso) and weekDatesWithShifts(
+    │   │                           weekStart, openingDays, weekShifts) —
+    │   │                           the latter keeps any closed weekday
+    │   │                           that still carries a real shift so a
+    │   │                           past/orphan assignment never drops its
+    │   │                           column. Collapses to visibleWeekDates
+    │   │                           when nothing closed has shifts.
+    │   ├── keyboard.js             v15.3.0: NEW. Shared keyboard-shortcut
+    │   │                           predicates (pure JS): isTypingTarget,
+    │   │                           isAnyOverlayOpen (probes the
+    │   │                           data-mgt-overlay sentinel on the Overlay
+    │   │                           backdrop), shouldSubmitOnEnter. Read by
+    │   │                           AppShell's global handler, ScheduleGrid's
+    │   │                           Esc/shortcut handler, and useEnterSubmit.
+    │   ├── pdf-export.js           landscape-A4 weekly rota → file download
+    │   │                           via jsPDF + jspdf-autotable. Pure JS.
+    │   │                           FoH/Kitchen section divider rows.
+    │   │                           vPre-1.0: see Pre-v1.0 archive below.
+    │   │                           v1.3.0: cells where the slot's dayPart
+    │   │                           is closed on that date render as empty
+    │   │                           strings via isSlotOpenOnDate (legacy
+    │   │                           boolean openingDays still accepted).
+    │   │                           v1.9.0: closed-cell empty string
+    │   │                           replaced by a muted-italic "Closed"
+    │   │                           placeholder (literal RGB triplet
+    │   │                           [136,136,136] + fontStyle italic +
+    │   │                           fontSize 8). Filled cells whose
+    │   │                           start/end differs from the slot
+    │   │                           template defaults render two-line —
+    │   │                           name on top, override range below
+    │   │                           in fontSize 8 — so the printed rota
+    │   │                           shows both the template reference
+    │   │                           (left column) and the per-cell
+    │   │                           exception. Same predicate
+    │   │                           ScheduleGrid uses for the "*" marker.
+    │   │                           v15.1.0 (comment-only): the two-line
+    │   │                           predicate DELIBERATELY stays on the
+    │   │                           flat template defaults (ScheduleGrid's
+    │   │                           "*" switched to per-date solo-aware
+    │   │                           comparison) — solo-day cells print
+    │   │                           their actual hours against the
+    │   │                           normal-times row header.
+    │   └── generator.js            v1.0.0: NEW. Pure greedy auto-generator.
+    │                               generateWeek({weekStart, weekShifts,
+    │                               employees, requests, shiftTemplate,
+    │                               openingDays, strictPreference}) →
+    │                               {newShifts: [...], summary: {filled,
+    │                               unfilled, total, unfilledCells}}.
+    │                               No React, no Firebase — caller loops
+    │                               upsertShift. Constraint chain mirrors
+    │                               ShiftFormModal's picker.
+    │                               v1.1.0: + `mode: "fill-empty" |
+    │                               "regenerate"`. Regenerate runs a
+    │                               pre-pass (clearInvalidShifts) that
+    │                               clears stale assignments (failed role
+    │                               match, new request, fixedDays change,
+    │                               quota over-cap, etc.), returning
+    │                               clearedShiftIds. roleMatches now
+    │                               honours slotDef.requiredRoles. +
+    │                               `priorWeekShifts` arg: rankCandidates
+    │                               uses combined (current+prior) load
+    │                               for fairness across weeks.
+    │                               v1.2.0: + HARD shift-preference
+    │                               filter (uses
+    │                               findShiftPreferenceMismatch) and
+    │                               consecutive-2-off filter (uses
+    │                               hasConsecutiveDaysOff). Both extend
+    │                               clearInvalidShifts so Regenerate
+    │                               clears stale shifts that violate the
+    │                               new rules.
+    │                               v1.3.0: rankCandidates gains a new
+    │                               primary sort key (schedulingPriority
+    │                               true → wins). Worklist build skips
+    │                               cells where the slot's dayPart is
+    │                               closed on that date (via
+    │                               isSlotOpenOnDate). clearInvalidShifts
+    │                               gains a closed-day-part pass
+    │                               (reason "closed-day-part").
+    │                               v1.4.0: clearInvalidShifts.clear(id,
+    │                               reason) enriched — each cleared
+    │                               record now captures date, employeeId,
+    │                               section, dayPart, slotIndex, slotKey
+    │                               from the pre-clear shift. Consumed
+    │                               by the new GenerateResultsModal so
+    │                               cleared rows can display the
+    │                               employee name and date/slot even
+    │                               after the record is gone from
+    │                               Firebase. Pure data enrichment;
+    │                               algorithm unchanged.
+    │                               v1.5.0: worklist primary sort key
+    │                               switched from static role-rarity to
+    │                               eligible-candidate-count ascending
+    │                               (most-constrained-cell first). Each
+    │                               worklist entry now carries
+    │                               `eligibleCount` from a one-time
+    │                               buildCandidates() call at build
+    │                               time. compareWorklistEntries
+    │                               documents the new ordering;
+    │                               role-rarity stays as a stable
+    │                               tiebreak. clearInvalidShifts and
+    │                               rankCandidates are unchanged.
+    │                               v1.6.1: + daysOffByEmp arg threaded
+    │                               into buildCandidates and
+    │                               clearInvalidShifts. generateWeek
+    │                               builds the per-employee dayoff/
+    │                               holiday count once (via the lifted
+    │                               daysOffInWeekByEmployee helper) and
+    │                               passes it down. Step (5) of
+    │                               buildCandidates and step 10 of
+    │                               clearInvalidShifts now use the
+    │                               effective cap
+    │                               max(0, workingDaysPerWeek - off)
+    │                               — same cap the v1.6.0 UI pill
+    │                               advertises. Reason code stays
+    │                               "over-quota"; algorithm otherwise
+    │                               byte-identical to v1.6.0.
+    │                               v1.7.0: Regenerate became
+    │                               wipe-and-refill. clearInvalidShifts
+    │                               (≈190 lines of per-constraint
+    │                               repair logic) deleted entirely; the
+    │                               new wipeAllShifts helper empties
+    │                               every record with reason
+    │                               "regenerated" before the fill-empty
+    │                               pass runs. Local `roleMatches` was
+    │                               lifted into schedule-logic.js as
+    │                               `roleMatchesSlot` (shared with the
+    │                               Swap mechanic in ScheduleGrid).
+    │                               Imports of parseIsoDate and the
+    │                               now-unused slotsByKey /
+    │                               visibleDateSet locals were pruned.
+    │                               v1.8.0: + nextWeekShifts arg on
+    │                               generateWeek (parallel to
+    │                               priorWeekShifts). Both are bundled
+    │                               into a `crossWeekShifts` bag
+    │                               threaded into buildCandidates and
+    │                               forwarded to hasConsecutiveDaysOff
+    │                               at step (6). The consecutive-off
+    │                               filter now sees prior Sun + next
+    │                               Mon so Sun ↔ next-Mon straddles
+    │                               count as 2-off. Algorithm
+    │                               otherwise byte-identical;
+    │                               buildCandidates gains one positional
+    │                               arg at the tail.
+    │                               v1.8.0 (companion): + new step 6.5
+    │                               filter calling
+    │                               withinMaxConsecutiveWorkingDays
+    │                               with the same crossWeekShifts bag.
+    │                               Reason code "max-consecutive" for
+    │                               cells where every candidate would
+    │                               exceed the 5-day cap. Step 7's
+    │                               preference filter now reads from
+    │                               cappedOk (the new gate's output)
+    │                               instead of restedOk.
+    │                               v1.8.1: wipeAllShifts replaced
+    │                               with wipeShiftsWithPolicy(working,
+    │                               slotsByKey, policy). Policy ={
+    │                               preserveTimes, preserveAssignments}.
+    │                               Per-axis: a cell's assignment can
+    │                               stay while its times reset, or
+    │                               vice versa. Returns {cleared,
+    │                               modified, pendingOverrides}.
+    │                               + helpers hasTimeOrRoleOverride
+    │                               and buildClearedRecord.
+    │                               generateWeek accepts preserveTimes
+    │                               + preserveAssignments (both
+    │                               default true), builds slotsByKey
+    │                               up-front, threads pendingOverrides
+    │                               into the fill-empty payload (so
+    │                               re-filled cells inherit any
+    │                               preserved time/role override), and
+    │                               returns modifiedShifts in the
+    │                               result for GenerateButton to
+    │                               upsert.
+    │                               v1.9.0: daysOffByEmp renamed
+    │                               holidayDaysByEmp; import switched
+    │                               to holidayDaysInWeekByEmployee
+    │                               from schedule-logic. Step (5) of
+    │                               buildCandidates now subtracts only
+    │                               holiday days from the cap (was
+    │                               dayoff + holiday). Algorithm
+    │                               otherwise byte-identical; reason
+    │                               codes unchanged. Net effect: a
+    │                               5-day employee with one Day-OFF
+    │                               in the week can be assigned to up
+    │                               to 5 OTHER dates (the Day-OFF
+    │                               date is still skipped at step (2)
+    │                               via findRequestConflict).
+    │                               v1.11.0: + three new generateWeek
+    │                               args — `minConsecutiveDaysOff`
+    │                               (1..3, default 2),
+    │                               `maxConsecutiveWorkingDays` (3..14,
+    │                               default 5), `dayRequiredRoles` (per-
+    │                               section map). All extracted with
+    │                               `Number.isFinite ? value : default`
+    │                               guards so legacy callers get
+    │                               pre-v1.11.0 behaviour byte-identical.
+    │                               buildCandidates signature grew two
+    │                               trailing positional args
+    │                               (minConsecutiveDaysOff +
+    │                               maxConsecutiveWorkingDays) — passed
+    │                               into hasConsecutiveDaysOff (step 6,
+    │                               was `undefined`) and
+    │                               withinMaxConsecutiveWorkingDays
+    │                               (step 6.5, was `undefined`).
+    │                               Internal slotsForDay call now passes
+    │                               `dayRequiredRoles` so slotDef.
+    │                               requiredRoles reflects the per-
+    │                               section configuration; roleMatchesSlot
+    │                               (step 1) needed no change because it
+    │                               reads requiredRoles off the slotDef.
+    │                               v1.12.0: two independent fairness
+    │                               changes plus a new arg.
+    │                               (a) buildCandidates signature grew
+    │                               a trailing `priorActualByEmp` arg.
+    │                               Step (5) cap now subtracts
+    │                               max(0, priorActual - rawCap) so an
+    │                               employee who actually worked over
+    │                               their workingDaysPerWeek last week
+    │                               carries the surplus forward as a
+    │                               this-week deficit. Reuses the
+    │                               existing "over-quota" reason code.
+    │                               generateWeek builds priorActualByEmp
+    │                               from priorWeekShifts (countAssignedDates
+    │                               per employee) once before the worklist
+    │                               loop. (b) rankCandidates REWRITTEN.
+    │                               Sort key (lowest wins):
+    │                               schedulingPriority → hoursDeficit DESC
+    │                               (NEW PRIMARY) → shiftsDeficit DESC
+    │                               (NEW TIEBREAK) → specialists →
+    │                               prevAssigneeId (v1.8.1) → name.
+    │                               Replaces the v1.1.0 combined-load
+    │                               (this week + prior week) tiebreaker
+    │                               — the 28-day window is a wider take
+    │                               on the same fairness idea. New
+    │                               generateWeek arg `monthlyAggregates`
+    │                               feeds the deficits — caller (Schedule
+    │                               Grid) pre-builds it via build28Day
+    │                               Aggregates and shares with Monthly
+    │                               FairnessPanel. Missing aggregates →
+    │                               sort degrades to specialists + name
+    │                               (legacy callers without monthly
+    │                               context still work).
+    │                               v1.14.0: + generateWeek arg
+    │                               `calendarMonthAggregates` (sibling
+    │                               to `monthlyAggregates`, same shape).
+    │                               Threaded into rankCandidates as a
+    │                               5th positional arg. The deficitsFor
+    │                               helper now reads from BOTH maps and
+    │                               sums hoursDeficit / shiftsDeficit
+    │                               across rolling-28 and calendar-month
+    │                               before the existing deficit DESC
+    │                               sort. Missing calendar-month map →
+    │                               that side contributes 0 (legacy
+    │                               callers behave identically to
+    │                               v1.13.0). Rationale: rolling 28-day
+    │                               smooths recency but doesn't respect
+    │                               payroll-month boundaries; summing
+    │                               both windows lets the picker
+    │                               balance staff against both lenses
+    │                               at once. Recent days appear in both
+    │                               windows so recency naturally weights
+    │                               more heavily.
+    │                               v15.1.0: per-date times. New-shift
+    │                               payloads default to slotTimesForDate(
+    │                               slot, date, openingDays) instead of
+    │                               slot.defaultStart/End. wipeShiftsWith
+    │                               Policy gained an openingDays param;
+    │                               hasTimeOrRoleOverride(shift, slot,
+    │                               effTimes) now compares against the
+    │                               per-date effective times, and the
+    │                               policy reset targets use them too —
+    │                               solo-day shifts at solo times are no
+    │                               longer false-positive "overrides".
+    └── components/
+        ├── atoms.jsx               Overlay, Fld, Section, Collapsible (v0.10.0),
+        │                           Toggle (v0.10.0), TBadge, mkInp, mkBtn.
+        │                           v16.0.0: + the animation primitives ported
+        │                           from MGT Bookings — Presence,
+        │                           ModalPresence + PresenceContext /
+        │                           usePresence, SlideView, all sharing one
+        │                           usePresenceLifecycle. These pair with the
+        │                           @keyframes in index.html; neither half is
+        │                           useful alone. Toast / Reveal / AutoHeight /
+        │                           useFlip deliberately NOT ported — no
+        │                           consumer; see ROADMAP.md.
+        │                           Overlay reworked: reads {leaving} from
+        │                           PresenceContext for its exit animation,
+        │                           gained an optional `footer` slot (bounded
+        │                           scrolling body + pinned footer), a mobile
+        │                           body-scroll lock, safe-area insets, and
+        │                           box-sizing: border-box (maxHeight:80vh was
+        │                           excluding padding + border). mkBtn now
+        │                           applies .mgt-press centrally.
+        ├── SplitConfirmModal.jsx   v16.0.0: NEW. Confirm dialog for a Swap /
+        │                           Move that would create a split shift.
+        │                           Exists as a dialog rather than an inline
+        │                           warning because Swap commits on the second
+        │                           cell click — there is no Save step to hang
+        │                           a banner on. Lists each employee who would
+        │                           be doubled and the shift they already hold.
+        │                           Deliberately NOT wired to Enter: it exists
+        │                           to interrupt a two-click flow, so it should
+        │                           cost a deliberate click. Esc cancels.
+        │                           v15.3.0: + Kbd keycap atom (ported from
+        │                           Bookings; uses --bg-kbd / --border-kbd).
+        │                           Overlay backdrop gained a data-mgt-overlay
+        │                           attribute — the "a modal is open" sentinel
+        │                           probed by src/lib/keyboard.js so the
+        │                           keyboard shortcuts bail while a dialog is up.
+        ├── LoginScreen.jsx         email/password sign-in form.
+        │                           v1.10.0: email + password mkInp calls
+        │                           and the Sign-in mkBtn call all carry
+        │                           `className: "mgt-hover-scale"` so the
+        │                           login surface matches the in-app hover
+        │                           treatment (1.08 scale + opaque bg +
+        │                           soft shadow + 12px border-radius). The
+        │                           global rule's `:not(:disabled)` guard
+        │                           keeps the Sign-in button flat when
+        │                           required fields are empty or auth is
+        │                           busy. Both atoms already pass
+        │                           `className` through via {...rest}.
+        ├── AppShell.jsx            authenticated shell + tab nav.
+        │                           v1.5.0: tab state persists across
+        │                           refresh / Vite HMR within the same
+        │                           browser tab via sessionStorage
+        │                           (key "mgt-sched.tab"). Lazy
+        │                           useState initializer reads + validates
+        │                           against TABS; useEffect writes on
+        │                           change. Closing the tab clears it.
+        │                           try/catch around storage calls so
+        │                           Safari private mode degrades
+        │                           gracefully.
+        │                           v1.10.1: + eager-migration useEffect
+        │                           for /shiftTemplate. Ref-guarded
+        │                           (migrationAttemptedRef) so it fires
+        │                           once per session. Runs when ready &&
+        │                           data.shiftTemplate is non-null; if
+        │                           isShiftTemplateMigrated returns false,
+        │                           materializeShiftTemplate's canonical
+        │                           output is written back via
+        │                           actions.saveShiftTemplate(_, true).
+        │                           Logs a coloured "[shiftTemplate]
+        │                           Eager migration writing canonical
+        │                           per-slot shape." banner on the
+        │                           migration path so the user can see in
+        │                           DevTools that the upgrade ran. The
+        │                           isSilent=true flag suppresses any
+        │                           refusal banner (this is an auto-
+        │                           effect, not user-initiated).
+        │                           v15.1.0: threads data.configRevisions
+        │                           to <ScheduleGrid>, and configRevisions
+        │                           + upsertConfigRevision +
+        │                           deleteConfigRevision to <Settings>.
+        │                           Eager-migration effect unchanged —
+        │                           it only ever touches the base
+        │                           /shiftTemplate singleton.
+        │                           v15.2.0: header reworked. The
+        │                           "v{version} · {email}" line is removed;
+        │                           a <ConnectionStatus> dot (fed by
+        │                           useFirebaseConnection) sits next to
+        │                           Sign out. The user email moved into
+        │                           that dot's popover; version stays on
+        │                           the Settings footer. `appVersion` prop
+        │                           is now unused (kept on the signature).
+        ├── ConnectionStatus.jsx    v15.2.0: NEW. Round Firebase-connection
+        │                           dot for the header — green when
+        │                           connected, red when lost (via the
+        │                           `connected` prop). Click toggles a
+        │                           popover (outside-click + Esc to close)
+        │                           showing the status + the signed-in
+        │                           user's email. Uses --status-online /
+        │                           --status-offline + --bg-overlay-sheet.
+        ├── EmployeesList.jsx       roster list + Add button.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
+        │                           v1.3.0: + small "Priority" badge
+        │                           alongside the role chips when
+        │                           emp.schedulingPriority === true.
+        │                           v1.7.0: Priority badge moved out of
+        │                           the top-right cluster into its own
+        │                           bottom-right sibling row at the foot
+        │                           of each roster row. Hidden entirely
+        │                           when schedulingPriority is false so
+        │                           the row height doesn't shift.
+        ├── EmployeeFormModal.jsx   add/edit employee modal.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
+        │                           v1.3.0: + "Auto-generator priority"
+        │                           pill (schedulingPriority bool).
+        │                           Default false. Helper text explains
+        │                           the generator behaviour.
+        ├── RequestsList.jsx        upcoming/past requests + Add button.
+        │                           v1.2.0: row renders a secondary line
+        │                           "Day shifts only" / "Evening shifts
+        │                           only" for shift-preference requests.
+        │                           v1.8.2: when a shift-preference row
+        │                           has a non-empty recurringDaysOfWeek,
+        │                           the secondary line appends "· Sat,
+        │                           Sun" (or whichever days, in WEEKDAYS
+        │                           source order, comma-separated).
+        │                           Legacy rows without the field render
+        │                           unchanged.
+        ├── RequestFormModal.jsx    add/edit day-off / holiday modal.
+        │                           v1.2.0: + Day/Evening segmented
+        │                           sub-choice (preferredDayPart) when
+        │                           type === "shift-preference".
+        │                           Validation requires a dayPart for
+        │                           the new type. Other types ignore
+        │                           the field on save.
+        │                           v1.8.2: + "Repeat on weekdays
+        │                           (optional)" 7-pill multi-select
+        │                           rendered conditionally beneath the
+        │                           Day/Evening control, only for
+        │                           type === "shift-preference". State
+        │                           tracks recurringDaysOfWeek as an
+        │                           array; toggle handler re-sorts to
+        │                           WEEKDAYS source order on every flip
+        │                           so the stored value is canonical
+        │                           Mon..Sun. Save: empty list → field
+        │                           saved as null (Firebase removes it);
+        │                           non-empty → filtered array. Only
+        │                           shift-preference carries the field
+        │                           on save; other types drop it.
+        ├── ScheduleGrid.jsx        weekly grid (desktop) / day-card stack (mobile).
+        │                           vPre-1.0: see Pre-v1.0 archive below.
+        │                           v1.0.0: + GenerateButton in nav bar
+        │                           (between week-range and Export). +
+        │                           auto-dismissing result banner above
+        │                           the grid showing "Filled X, Y left
+        │                           empty" after a generator run.
+        │                           v1.1.0: + ClearButton in nav bar
+        │                           (between Generate and Export).
+        │                           Unified result-banner state handles
+        │                           generator + clear summaries; copy
+        │                           branches on shape ({mode}=generator,
+        │                           {kind}=clear). + priorWeekShifts
+        │                           memo (shiftsForWeek of the prior 7
+        │                           days) threaded into GenerateButton
+        │                           for cross-week fairness.
+        │                           v1.2.0: + WeeklyShiftSummary rendered
+        │                           under the helper caption, showing
+        │                           "Name · N / quota" pills per active
+        │                           employee.
+        │                           v1.3.0: cells whose slot's dayPart is
+        │                           closed on that date render as an
+        │                           inert "Closed" placeholder on desktop
+        │                           and are filtered out of the mobile
+        │                           day-card slot list. Empty-state
+        │                           pointer updated to "Settings →
+        │                           Operating time".
+        │                           v1.4.0: + today-column tint underlay
+        │                           (single absolutely-positioned div
+        │                           at gridColumn todayIndex+2, top/bottom
+        │                           0, accent-tint-soft; pointerEvents
+        │                           none; under section banner via
+        │                           zIndex stacking). + slotsByKey memo
+        │                           + showResultsModal state + "Details"
+        │                           button on the result banner +
+        │                           GenerateResultsModal mount. Banner
+        │                           auto-dismiss now holds while the
+        │                           details modal is open.
+        │                           v1.5.0: weekStart state persists
+        │                           across refresh / Vite HMR within the
+        │                           same browser tab via sessionStorage
+        │                           (key "mgt-sched.weekStart", stored
+        │                           as ISO Monday date). Lazy useState
+        │                           initializer reads + re-normalizes
+        │                           through startOfWeek so drift
+        │                           self-heals. useEffect writes on
+        │                           change. Closing the tab clears it.
+        │                           parseIsoDate added to the import
+        │                           list.
+        │                           v1.6.0: + WeeklyRequestsPreview
+        │                           mounted directly below
+        │                           WeeklyShiftSummary, both fed from
+        │                           the displayed-week `dates` array.
+        │                           WeeklyShiftSummary now also receives
+        │                           `requests` for the effective-quota
+        │                           computation.
+        │                           v1.7.0: + swapMode +
+        │                           highlightedEmployeeId state +
+        │                           cellClick router. + SwapButton
+        │                           mount between Generate and Clear in
+        │                           the nav bar. + inline @keyframes
+        │                           mgt-swap-pulse style block for the
+        │                           source-cell animation. + swapBanner
+        │                           (info / success / error) above the
+        │                           grid. + Esc keydown handler
+        │                           (cancels swap mode first, then
+        │                           clears the pill highlight). Cells
+        │                           paint with accent-tint background
+        │                           when their assignee matches the lit
+        │                           pill. enterSwapTargetFromModal
+        │                           forwarded to ShiftFormModal as
+        │                           onStartSwap.
+        │                           v1.8.0: + nextWeekShifts memo via
+        │                           shiftsForWeek(shifts, addDays(
+        │                           weekStart, 7)), mirroring the
+        │                           existing priorWeekShifts memo.
+        │                           Both flow into <GenerateButton>
+        │                           (→ generateWeek's cross-week
+        │                           consecutive-off filter) and into
+        │                           <ShiftFormModal> (→ the manual
+        │                           picker's yellow rest-warning).
+        │                           v1.9.2: mobile counterpart to the
+        │                           v1.4.0 desktop today-column tint.
+        │                           Inside the mobileStack day-card loop,
+        │                           an isToday boolean derived from
+        │                           todayIso (existing line-118 memo)
+        │                           drives a conditional override on the
+        │                           card style: background flips to
+        │                           var(--accent-tint-soft) + border to
+        │                           1px solid var(--accent-tint-strong)
+        │                           when isToday. The inline date-header
+        │                           div's color token flips to
+        │                           var(--accent-on-tint). Same three
+        │                           tokens the desktop column underlay
+        │                           + desktop date pill already use, so
+        │                           the "today" visual identity reads
+        │                           the same across breakpoints. No new
+        │                           state, no new memo, no layout change
+        │                           — just the inline style overrides.
+        │                           v1.9.3: + highlightedCellKey state
+        │                           (composite "${dateIso}|${slotKey}").
+        │                           Auto-clears 1.7s after set via a
+        │                           useEffect watcher. Esc handler
+        │                           priority extended: swap-mode →
+        │                           jump-target → pill-highlight. + new
+        │                           jumpToCell(dateIso, slotKey) helper:
+        │                           navigates weekStart if the target
+        │                           date isn't visible, closes the
+        │                           results modal, sets the cell-key
+        │                           highlight. Threaded into
+        │                           GenerateResultsModal as onJumpToCell.
+        │                           renderCell gains an isJumpTarget
+        │                           check; isAnyHighlight (isHighlighted
+        │                           || isJumpTarget) drives the shared
+        │                           green ring tokens. cellAnimation
+        │                           gains the one-shot
+        │                           "mgt-jump-pulse 1.6s ease-out 1"
+        │                           branch (transform scale bounce, runs
+        │                           once). Inline <style> block at the
+        │                           component root extended with
+        │                           @keyframes mgt-jump-pulse.
+        │                           v1.9.4: result-banner auto-dismiss
+        │                           effect now reads
+        │                           settings.generatorBannerAutoDismiss
+        │                           (when false, no setTimeout — banner
+        │                           stays) and
+        │                           settings.generatorBannerDurationSec
+        │                           (clamped to GENERATOR_BANNER_DURATION_
+        │                           MIN/MAX; multiplied by 1000 at the
+        │                           setTimeout call). Both values read
+        │                           via the existing defensive-fallback
+        │                           pattern; effect deps array grew to
+        │                           include both.
+        │                           v1.9.5: mobile day-card slot list
+        │                           switched from filter to render-as-
+        │                           Closed conditional. mobileStack's
+        │                           `slots.map((slot,i) => ...)` no
+        │                           longer pre-filters via
+        │                           `slots.filter(isSlotOpenOnDate)`;
+        │                           per-slot it checks `slotOpen` and
+        │                           renders either `renderCell(d,slot)`
+        │                           or the shared `renderClosedCell(d,
+        │                           slot)`. Section-header logic
+        │                           (`prev = slots[i-1]`, `showHeader`)
+        │                           reads from the full slots array so
+        │                           partial-closure days keep the
+        │                           canonical section ladder above
+        │                           Closed placeholders. Symmetric with
+        │                           the desktop pattern at lines
+        │                           899–906 and the PDF export (v1.9.0).
+        │                           v1.10.0: + useUndoStack mount at
+        │                           the top of the component. The hook
+        │                           returns { stack, push, pop, clear };
+        │                           push is exposed to ClearButton +
+        │                           GenerateButton via a recordUndoableOp
+        │                           wrapper passed as onUndoableOp.
+        │                           attemptSwap captures pre-mutation
+        │                           snapshots of source.shift and (when
+        │                           present) target.shift via JSON deep-
+        │                           clone before each commit branch
+        │                           fires, then pushes a { label: "Swap"
+        │                           | "Move", restoreShifts, removeIds }
+        │                           op directly. Move branch with no
+        │                           prior target record captures the
+        │                           freshly-minted id from upsertShift's
+        │                           return into removeIds; placeholder-
+        │                           or-swap paths leave removeIds empty
+        │                           (ids stay the same). + handleUndo
+        │                           helper that pops the latest op,
+        │                           loops actions.upsertShift over
+        │                           restoreShifts, then actions.deleteShift
+        │                           over removeIds, then sets a result
+        │                           banner { kind: "undo", label,
+        │                           restored, removed }. + UndoButton
+        │                           mount in the schedule nav-bar
+        │                           between SwapButton and ClearButton.
+        │                           Result-banner copy gained an "undo"
+        │                           kind that reads "Undid: <label>.";
+        │                           the existing v1.9.4 auto-dismiss /
+        │                           duration settings apply to it for
+        │                           uniformity.
+        │                           v1.11.0: + three new derived consts
+        │                           (minConsecutiveDaysOff,
+        │                           maxConsecutiveWorkingDays,
+        │                           dayRequiredRoles) using the same
+        │                           defensive-read + clamp pattern as the
+        │                           v1.9.4 banner config. slotsForDay
+        │                           memo now receives dayRequiredRoles
+        │                           as its 2nd arg and includes it in
+        │                           the dep array — slot definitions
+        │                           rebuild when the manager changes the
+        │                           per-section required-role list, so
+        │                           the picker dropdown updates
+        │                           immediately. All three new values
+        │                           thread into <GenerateButton> via
+        │                           new props; minConsecutiveDaysOff +
+        │                           maxConsecutiveWorkingDays also pass
+        │                           to <ShiftFormModal> (dayRequiredRoles
+        │                           flows in through slotDef so the
+        │                           modal needs no prop for it).
+        │                           v1.12.0: + isReadOnly derived next
+        │                           to todayIso via isPastWeek(weekStart,
+        │                           todayIso). Threaded as `disabled` to
+        │                           GenerateButton / SwapButton /
+        │                           UndoButton / ClearButton (all four
+        │                           now accept the prop and OR it with
+        │                           their self-disabled conditions) and
+        │                           as `readOnly` to ShiftFormModal.
+        │                           cellClick short-circuits the swap
+        │                           branches when isReadOnly so even
+        │                           stale swapMode state can't trigger
+        │                           a mutation. + useEffect that drops
+        │                           swapMode when isReadOnly flips true
+        │                           (catches the "navigate backward
+        │                           mid-swap" edge). + persistent
+        │                           muted-amber read-only banner above
+        │                           the grid: "🔒 This week is in the
+        │                           past. Cells are read-only…". Sits
+        │                           between navBar and swapBanner /
+        │                           generateBanner. + monthlyAggregates
+        │                           memo via build28DayAggregates(...)
+        │                           — single computation shared with
+        │                           <GenerateButton> (forwarded into
+        │                           generateWeek for the rankCandidates
+        │                           deficit sort) and <MonthlyFairnessPanel>
+        │                           (mounted directly below
+        │                           <WeeklyRequestsPreview>). The
+        │                           defensive-read for dayRequiredRoles
+        │                           unchanged — settings.dayRequiredRoles
+        │                           is now the per-role boolean object
+        │                           shape, but slotsForDay / resolveDay
+        │                           RequiredRoles handle either shape
+        │                           transparently.
+        │                           v1.13.0: <MonthlyFairnessPanel> mount
+        │                           grew five extra props — shifts,
+        │                           requests, weekStart, shiftTemplate
+        │                           (all needed by the new drill-down
+        │                           helper buildEmployeeFairnessDetail),
+        │                           plus highlightedEmployeeId + onHighlight
+        │                           (the same axis already threaded to
+        │                           <WeeklyShiftSummary> since v1.7.0).
+        │                           No new state in ScheduleGrid — the
+        │                           pill-highlight axis just gained a
+        │                           second consumer. Forward order matches
+        │                           the existing <WeeklyShiftSummary>
+        │                           pattern so future read-only consumers
+        │                           drop in symmetrically.
+        │                           v1.13.0 polish: + jumpToWeek(weekStartIso)
+        │                           helper next to jumpToCell. Parses the
+        │                           ISO string, re-normalizes via
+        │                           startOfWeek (defensive), and flips
+        │                           weekStart unless it's already the
+        │                           focus week. Forwarded to
+        │                           <MonthlyFairnessPanel> as onJumpToWeek
+        │                           — drives the new clickable per-week
+        │                           sparkline in <EmployeeFairnessModal>.
+        │                           No effect on the existing jumpToCell
+        │                           or pill-highlight axes — orthogonal.
+        │                           v1.14.0: + calendarMonthAggregates
+        │                           memo via buildCalendarMonthAggregates
+        │                           (sibling to the existing 28-day
+        │                           monthlyAggregates memo). Forwarded
+        │                           only to <GenerateButton> as a new
+        │                           prop; <MonthlyFairnessPanel> stays
+        │                           visually 28-day-rolling. Same dep
+        │                           array as the rolling-28 memo (shifts,
+        │                           employees, weekStart, requests,
+        │                           shiftTemplate) so both invalidate
+        │                           together when data flips. + Result-
+        │                           banner Details + dismiss × buttons
+        │                           gained className="mgt-hover-scale"
+        │                           (closes a v1.9.0 hover-utility gap).
+        │                           v1.15.0: both aggregate memos
+        │                           (build28DayAggregates +
+        │                           buildCalendarMonthAggregates) now
+        │                           pass dayRequiredRoles (settings-
+        │                           derived const) so per-employee
+        │                           avgShiftHours filters slots
+        │                           consistently with the generator.
+        │                           dayRequiredRoles added to both memo
+        │                           dep arrays + forwarded to
+        │                           <MonthlyFairnessPanel> as a prop.
+        │                           v1.15.0(2): both aggregate memos also
+        │                           pass openingDays (+ dep arrays) so
+        │                           avgShiftHours weights slots by day-
+        │                           part open frequency; openingDays
+        │                           forwarded to <MonthlyFairnessPanel>.
+        │                           + slots passed to <ClearButton> for
+        │                           the modal's "By shift row" group.
+        │                           v15.1.0: + configRevisions prop. New
+        │                           resolvedConfig memo (resolveConfigFor
+        │                           Week on [configRevisions, settings,
+        │                           shiftTemplate, weekStart]) — template
+        │                           + openingDays consts and the slots /
+        │                           slotsByKey memos moved BELOW the
+        │                           weekStart state so the resolution can
+        │                           key on the focus week. GenerateButton
+        │                           + MonthlyFairnessPanel + both
+        │                           aggregate memos receive the resolved
+        │                           (possibly-null) template; aggregates
+        │                           use the focus week's config across
+        │                           their whole window (documented
+        │                           simplification). isReadOnly gained
+        │                           the pastWeeksLocked gate. renderCell
+        │                           builds a per-date effective slot via
+        │                           slotTimesForDate (display, "*"
+        │                           marker, cellClick → modal + swap/move
+        │                           payloads all inherit); the desktop
+        │                           left-label chip keeps flat template
+        │                           times (reference column).
+        ├── ShiftFormModal.jsx      assign employee + edit slot time / role.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
+        │                           v1.1.0: picker honours
+        │                           slotDef.requiredRoles for day slots
+        │                           — when set, employee must hold AT
+        │                           LEAST ONE required role. Empty list
+        │                           falls back to the permissive "any of
+        │                           coversRoles" rule.
+        │                           v1.2.0: warning banner now also fires
+        │                           on shift-preference mismatch (yellow,
+        │                           non-blocking) and on a
+        │                           consecutive-2-off rule break for the
+        │                           proposed assignment. Banners stack.
+        │                           v1.7.0: + "Move / Swap…" secondary
+        │                           button rendered only when the cell
+        │                           has an assignment. Click fires the
+        │                           new onStartSwap prop with the source
+        │                           shape; ScheduleGrid closes the modal
+        │                           and enters swap-target-select mode.
+        │                           v1.8.0: + priorWeekShifts +
+        │                           nextWeekShifts props (optional).
+        │                           Passed into hasConsecutiveDaysOff
+        │                           via the v1.8.0 options bag so the
+        │                           yellow rest-warning fires/clears on
+        │                           cross-week 2-off straddles
+        │                           (Sun ↔ next-Mon). + companion
+        │                           maxConsecutiveBanner — yellow
+        │                           warning stacked after the 2-off
+        │                           banner when the proposed assignment
+        │                           would create > 5 consecutive
+        │                           working days (across the 21-day
+        │                           [prior, focus, next] window).
+        │                           v1.11.0: + minConsecutiveDaysOff +
+        │                           maxConsecutiveWorkingDays props
+        │                           (both optional; fall back to the
+        │                           helper defaults — 2 and 5 — when
+        │                           missing so pre-v1.11.0 callers
+        │                           behave identically). Both are
+        │                           passed into hasConsecutiveDaysOff
+        │                           + withinMaxConsecutiveWorkingDays
+        │                           respectively (replacing the
+        │                           `undefined` 4th arg the calls used
+        │                           before). Yellow restWarningBanner +
+        │                           maxConsecutiveBanner copy adapts to
+        │                           the configured value ("less than N
+        │                           consecutive day(s) off", "more than
+        │                           N consecutive working days") via
+        │                           inline minOffForCopy /
+        │                           maxConsecForCopy fallbacks. The
+        │                           picker's role-match filter at lines
+        │                           142–156 needed no change because it
+        │                           already reads slotDef.requiredRoles
+        │                           — per-section required-role config
+        │                           flows in through slotsForDay's new
+        │                           override arg (handled by
+        │                           ScheduleGrid).
+        │                           v1.12.0: + readOnly prop (default
+        │                           false). When true, hides the Save /
+        │                           Move-Swap / Clear footer buttons +
+        │                           the Reset-times-and-role secondary
+        │                           button, replaces the whole action
+        │                           row with a single right-aligned
+        │                           Close button, disables the assignee
+        │                           <select>, disables the time inputs
+        │                           (mkInp passes `disabled` through),
+        │                           disables the role-picker pills (no
+        │                           onClick, hover-scale stripped, dim
+        │                           opacity on non-selected pills), and
+        │                           hides the "Show staff on day off /
+        │                           holiday" toggle (no point flipping
+        │                           it when the assignee can't change).
+        │                           Warning banners (rest / max-consec /
+        │                           preference / conflict) stay visible
+        │                           — historical context worth showing.
+        │                           ScheduleGrid passes readOnly when
+        │                           the focus week is in the past.
+        ├── Settings.jsx            operating-hours editor + shift template
+        │                           editor (counts, times, FoH evening
+        │                           secondPersonStart). Template times
+        │                           validated against operating window.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
+        │                           v1.0.0: + Auto-generator accordion
+        │                           section (between Display and FoH).
+        │                           Single Toggle for "Strict
+        │                           shift-preference matching" — auto-
+        │                           saves on flip (no Save click). Reset
+        │                           to defaults clears it back to false.
+        │                           v1.3.0: top section renamed "Operating
+        │                           hours" → "Operating time". Open-days
+        │                           picker now stores per-day-part
+        │                           `{day,evening}`; each weekday pill
+        │                           shows a state indicator (D·E / D / E
+        │                           / —) and opens a small inline popover
+        │                           with two Toggle rows. Validation
+        │                           requires ≥1 day part open across the
+        │                           week. Legacy boolean docs auto-migrate
+        │                           through normalizeOpeningDays.
+        │                           v1.6.0: openSection state persists
+        │                           across refresh / Vite HMR within the
+        │                           same browser tab via sessionStorage
+        │                           ("mgt-sched.settingsSection"). Stores
+        │                           the section key or the literal "null"
+        │                           for all-collapsed. Defensive read
+        │                           validates against the known section
+        │                           set; falls back to "hours".
+        │                           v1.9.4: Auto-generator section gains
+        │                           a second Toggle ("Auto-dismiss
+        │                           results banner") and a conditional
+        │                           Fld-wrapped number input ("Banner
+        │                           duration (1–60 seconds)"). Both
+        │                           auto-save on flip / valid edit;
+        │                           duration onChange ignores empty /
+        │                           NaN / out-of-range so the saved
+        │                           value remains the last valid number
+        │                           while the manager edits. Reset to
+        │                           defaults now includes
+        │                           generatorBannerAutoDismiss (true)
+        │                           and generatorBannerDurationSec (5).
+        │                           v1.10.1: local materializeBlock
+        │                           deleted; the function was lifted into
+        │                           schedule-logic.js as
+        │                           materializeShiftTemplateBlock so the
+        │                           new AppShell eager-migration effect
+        │                           can share the same shape logic.
+        │                           Settings imports it aliased as
+        │                           materializeBlock (so internal call
+        │                           sites — cloneTemplate, blockDirty,
+        │                           the renderBlock count-onChange path
+        │                           — keep their pre-v1.10.1 naming).
+        │                           cloneTemplate now delegates to
+        │                           materializeShiftTemplate with a
+        │                           defensive default-shape fallback for
+        │                           null input.
+        │                           v1.11.0: + new "Scheduling rules"
+        │                           Collapsible accordion section
+        │                           inserted between Display and
+        │                           Auto-generator. Three rows:
+        │                           (1) segmented 1/2/3 for
+        │                           minConsecutiveDaysOff, (2) number
+        │                           input 3..14 for
+        │                           maxConsecutiveWorkingDays, (3) per-
+        │                           section pill multi-select (FoH:
+        │                           Bar/Floor; Kitchen: Chef/Plating/Pot)
+        │                           for dayRequiredRoles. All auto-save
+        │                           on change — no Save button, matching
+        │                           the Auto-generator section's pattern.
+        │                           The required-role pill writer
+        │                           always builds the full per-section
+        │                           dayRequiredRoles object (both
+        │                           sections) before saving, even when
+        │                           the manager only touched one section
+        │                           — keeps the doc canonical. Empty per-
+        │                           section list = "permissive — any
+        │                           role in {section}", with a muted
+        │                           helper line confirming that. Reset
+        │                           to defaults writes the three new
+        │                           defaults alongside the existing
+        │                           ones (deep-cloned so the saved doc
+        │                           isn't a frozen object). openSection
+        │                           valid set in the sessionStorage
+        │                           read (v1.6.0) expanded with
+        │                           "rules" so the new section's
+        │                           open/closed state persists across
+        │                           refresh.
+        │                           v1.12.0: TWO big shape changes plus
+        │                           the Save-button removal.
+        │                           (a) handleSave + the Save changes
+        │                           button + the force-open-first-error-
+        │                           section logic + saveDisabled /
+        │                           anyDirty / hasErrors derivations
+        │                           DELETED. Replaced by two debounced
+        │                           (800 ms) + validity-gated useEffects:
+        │                           one for operating-time (hours +
+        │                           opening days), one for the FoH+Kitchen
+        │                           template. Partial inputs ("1" before
+        │                           "11:00") don't fire the save until
+        │                           the value becomes valid. Per-section
+        │                           dirty dots stay (surface pending-
+        │                           debounce + invalid-state windows).
+        │                           Inline per-row error captions stay
+        │                           (replace force-open-first-error
+        │                           affordance). Reset to defaults stays.
+        │                           (b) onDayRequiredRoleToggle rewritten
+        │                           to build per-section per-role boolean
+        │                           objects ({foh: {Bar: false, Floor: false},
+        │                           kitchen: {Chef: false, ...}}) and
+        │                           never write empty arrays — Firebase
+        │                           preserves false but strips empty arrays
+        │                           to null (the v1.11.0 Chef-pill bug).
+        │                           resolveDayRequiredFor now delegates
+        │                           to the lifted resolveDayRequiredRoles
+        │                           helper in schedule-logic.js.
+        │                           handleReset also updated to deep-clone
+        │                           the new boolean-object shape (not
+        │                           array.slice()).
+        │                           v1.14.0: + centred footer at the
+        │                           bottom of the Settings tab (outside
+        │                           the accordion / Collapsibles).
+        │                           Renders "version {sig.version}" +
+        │                           "© 2026 Patryk Zychowicz — MGT
+        │                           Staff Scheduling" using
+        │                           var(--text-muted) so the colour
+        │                           adapts to light + dark themes
+        │                           (v0.11.0 theming model). Imports
+        │                           __APP_SIGNATURE__ from App.jsx as
+        │                           the single source of truth for the
+        │                           version label — a version bump in
+        │                           App.jsx propagates here automatically.
+        │                           Mirrors MGT Bookings' Settings →
+        │                           General tab footer placement.
+        │                           v15.1.0: effective-dated config. +
+        │                           configRevisions / upsertConfigRevision
+        │                           / deleteConfigRevision props. New
+        │                           "Changes take effect from" picker card
+        │                           ABOVE the accordion (date input
+        │                           normalized to Monday, clamped to ≥
+        │                           current Monday, default next Monday)
+        │                           + Scheduled-changes list (axis badges
+        │                           + Remove with confirm; Remove re-seeds
+        │                           forms from a locally-filtered map so
+        │                           the debounce can't resurrect the
+        │                           revision). openingDays + template
+        │                           forms seed from resolveConfigForWeek
+        │                           at the picker week and re-seed on
+        │                           picker change (mount-skip +
+        │                           reset-skip refs); dirty baselines
+        │                           compare against the resolved-at-
+        │                           picker config. Auto-save split:
+        │                           hours-only → live /settings (spread
+        │                           preserves the frozen openingDays
+        │                           base); openingDays + template →
+        │                           upsertRevisionAxis (merge per
+        │                           Monday). + solo-times UI per FoH /
+        │                           Kitchen block (Toggle + per-slot
+        │                           "(solo)" rows; blockError /
+        │                           blockDirty / onCountChange extended;
+        │                           serializeTemplateForSave omits the
+        │                           key when off). + "Lock past weeks"
+        │                           Toggle in Scheduling rules
+        │                           (pastWeeksLocked, auto-save).
+        │                           handleReset = factory reset: deletes
+        │                           all revisions (silent), resets
+        │                           pastWeeksLocked + picker.
+        ├── MonthlyFairnessPanel.jsx v1.12.0: NEW. Rolling 28-day fairness
+        │                           summary, rendered below
+        │                           <WeeklyRequestsPreview>. One row per
+        │                           active employee: name + count/target
+        │                           shifts + Nh/target hours + 120-px
+        │                           centre-anchored delta bar (red leftward
+        │                           when under-target, green rightward when
+        │                           over). Sort: hoursDeficit DESC →
+        │                           shiftsDeficit DESC → name (matches
+        │                           the generator's rankCandidates order).
+        │                           Always visible — hard panel, no chrome
+        │                           hidden when employees are at target.
+        │                           Reads pre-built monthlyAggregates from
+        │                           ScheduleGrid (same memo the generator
+        │                           consumes — panel & generator stay in
+        │                           lockstep).
+        │                           v1.13.0: three changes. (1) Highlight
+        │                           sync — accepts highlightedEmployeeId +
+        │                           onHighlight from ScheduleGrid (the
+        │                           same axis already wired to
+        │                           <WeeklyShiftSummary> since v1.7.0).
+        │                           The name+counts area of each row is a
+        │                           `<button>` that toggles the shared
+        │                           highlight; selected rows paint with
+        │                           the iOS-green tokens (`--bg-active-on`,
+        │                           `--border-active-on`) + a 2-px box-
+        │                           shadow ring matching the pill. Click
+        │                           a pill OR a row — both flip the same
+        │                           state. (2) Delta-bar overhaul —
+        │                           geometry grew from 120×6 → 160×10 px,
+        │                           border-radius 3 → 5, centre divider
+        │                           replaced with a vertically-centred 2-
+        │                           px notch (top:2 bottom:2 opacity .55),
+        │                           fills gained inset 1-px micro-borders
+        │                           (`btn-danger-fg` / `border-active-on`)
+        │                           for definition, and a min-2-px floor
+        │                           on non-zero fill prevents small
+        │                           deficits collapsing to "looks at-
+        │                           target." (3) Drill-down popover —
+        │                           delta bar wrapped in its own
+        │                           `<button>` (sibling to the highlight
+        │                           button; nested buttons are invalid
+        │                           HTML) that opens
+        │                           <EmployeeFairnessModal>. Local state
+        │                           `[detailEmployeeId]` owns the modal;
+        │                           ScheduleGrid doesn't need to know.
+        │                           New props: shifts, requests,
+        │                           weekStart, shiftTemplate (forwarded
+        │                           into the modal so the helper can
+        │                           compute on open). Modal is read-only —
+        │                           past-week navigation does NOT gate it
+        │                           (informational only).
+        │                           v1.13.0 polish (in-DEV review,
+        │                           seven iteration rounds — final
+        │                           state described here):
+        │                           (a) Row layout. Wrapper padding
+        │                           6×8 px + selected green tint at
+        │                           full row width. Name button is
+        │                           CONTENT-sized (NOT `flex: 1`)
+        │                           with 4×8 px inner padding so the
+        │                           `.mgt-hover-scale` hover card
+        │                           fits snugly around just name+
+        │                           counts. Delta bar pushed right
+        │                           via `marginLeft: auto`.
+        │                           (b) Font size. wrapStyle sets
+        │                           `fontSize: 12, color: var(--text-
+        │                           primary)`. Without these the
+        │                           name span (which doesn't set
+        │                           its own fontSize) inherits the
+        │                           body's default 16 px while
+        │                           shifts/hours stay at explicit
+        │                           12 px — making the name visibly
+        │                           larger than the muted columns.
+        │                           Lost in intermediate refactors;
+        │                           restored to match the first
+        │                           commit's baseRowStyle.
+        │                           (c) Hover bg is the theme-aware
+        │                           `--bg-hover-card` (fully opaque —
+        │                           #ffffff light / rgb(50,50,53) dark)
+        │                           defined in index.html.
+        │                           (b) + onJumpToWeek prop. When set,
+        │                           forwards a wrapped handler to
+        │                           <EmployeeFairnessModal> that calls
+        │                           ScheduleGrid's jumpToWeek AND auto-
+        │                           closes the modal — the manager wants
+        │                           to *see* the chosen week. Falsy when
+        │                           ScheduleGrid omits the prop → the
+        │                           modal's per-week bars render as
+        │                           plain text.
+        │                           (c) Active-only. Row-build loop
+        │                           skips emp.active === false entirely
+        │                           (was: skip-archived-with-zero-
+        │                           shifts). Orphan-shift visibility
+        │                           lives on <WeeklyShiftSummary> right
+        │                           above; this surface is for active-
+        │                           roster balancing.
+        │                           v1.15.0: + dayRequiredRoles prop
+        │                           (from ScheduleGrid) forwarded into
+        │                           <EmployeeFairnessModal> so the
+        │                           drill-down's per-employee
+        │                           avgShiftHours matches the generator.
+        │                           v1.15.0(2): + openingDays prop
+        │                           (from ScheduleGrid) forwarded into
+        │                           <EmployeeFairnessModal> so the
+        │                           drill-down's avgShiftHours weights
+        │                           slots by day-part open frequency.
+        ├── EmployeeFairnessModal.jsx v1.13.0: NEW. Read-only drill-down
+        │                           popover opened from a MonthlyFairness
+        │                           Panel row's delta-bar click. Overlay-
+        │                           wrapped, three Section blocks:
+        │                           (1) 28-day rolling — shifts + hours
+        │                           vs target with signed deltas + holiday
+        │                           days subtracted + window date bounds.
+        │                           (2) Calendar month — month containing
+        │                           the focus week's Monday. Same trio
+        │                           plus a pro-rated target derived from
+        │                           wpw × monthLength/7 − holidays.
+        │                           (3) Per-week sparkline — 4 horizontal
+        │                           bars [wk-3, wk-2, wk-1, this wk],
+        │                           tinted red (under) / neutral (at) /
+        │                           green (at-or-over) target. Each bar
+        │                           shows "N / target" to the right.
+        │                           Single Close button (ghost variant).
+        │                           Calls buildEmployeeFairnessDetail on
+        │                           open — single employee, cheap. No
+        │                           edit affordance; mirrors the
+        │                           <RequestPreviewModal> v1.9.0 pattern.
+        │                           v1.13.0 polish: + optional
+        │                           onJumpToWeek(weekStartIso) prop. When
+        │                           set, each WeekBar becomes a
+        │                           `<button>` (`.mgt-hover-scale` —
+        │                           gets the v1.13.0 round-3 80%
+        │                           color-mix hover bg defined globally
+        │                           in index.html, no per-element
+        │                           variant needed) that fires the
+        │                           handler with its weekStartIso. When
+        │                           unset, bars render as plain
+        │                           `<div>`s (the original v1.13.0
+        │                           layout). The helper text below the
+        │                           sparkline conditionally appends
+        │                           "Click a bar to open that week in
+        │                           the schedule." so the affordance is
+        │                           discoverable.
+        │                           v1.14.0: + `view` local state
+        │                           ("data" | "reasoning") that toggles
+        │                           in-place between the three original
+        │                           stat Sections and three matching
+        │                           Reasoning Sections that show the
+        │                           formulas with the employee's
+        │                           actual plugged-in values. Footer
+        │                           reworked to space-between flex row:
+        │                           left-aligned Reasoning ghost button
+        │                           (label flips between "Reasoning" and
+        │                           "Show data"), right-aligned Close
+        │                           button. + small inline helpers `Num`
+        │                           (bolded values inside formula prose)
+        │                           and `FormulaRow` (label + formula
+        │                           pair on one wrapping flex row). +
+        │                           `avgShiftHours` imported from
+        │                           schedule-logic to compute the
+        │                           preference-weighted average inline
+        │                           in the reasoning copy. No new prop
+        │                           on the component — toggle is purely
+        │                           internal. Hook-rules note: useState
+        │                           sits ABOVE the "!open || !employee
+        │                           || !weekStart" early-return guard
+        │                           since hooks must run unconditionally
+        │                           every render.
+        │                           v1.15.0: + dayRequiredRoles prop,
+        │                           threaded into buildEmployeeFairnessDetail
+        │                           + the inline avgShiftHours(employee,
+        │                           shiftTemplate, dayRequiredRoles) call
+        │                           so the Reasoning view matches the
+        │                           generator. Reasoning copy updated to
+        │                           describe the per-employee eligible-
+        │                           slot scope (Chef-only → Kitchen
+        │                           Evening Chef slot only; Bar-only →
+        │                           FoH Evening slots only). The
+        │                           data/reasoning render block wrapped
+        │                           in a maxHeight + overflowY:auto inner
+        │                           scroll container (min(60vh,480px)
+        │                           desktop / 55vh mobile, with the
+        │                           negative-margin clip-breathing-room
+        │                           trick) so the taller Reasoning view
+        │                           scrolls internally instead of
+        │                           spilling past the overflow:visible
+        │                           Overlay sheet (the footer buttons
+        │                           were being pushed off the backdrop).
+        │                           empArchived note + footer + footnote
+        │                           stay outside the scroller.
+        │                           v1.15.0(2): + openingDays prop,
+        │                           threaded into buildEmployeeFairnessDetail
+        │                           + the inline avgShiftHours call so the
+        │                           Reasoning view's hours reflect the
+        │                           day-part open-frequency weighting.
+        │                           Reasoning copy notes the weighting
+        │                           ("a shift that runs every day counts
+        │                           more than one that runs twice a week").
+        ├── ExportButton.jsx        Export-PDF button in the week-nav bar;
+        │                           disabled until every cell on every
+        │                           open day is filled.
+        │                           vPre-1.0: see Pre-v1.0 archive below.
+        │                           v15.2.0: + allowIncompleteExport +
+        │                           isMobile props. When the setting is on,
+        │                           the button stays clickable on an
+        │                           incomplete week; a click opens
+        │                           <ExportWarningModal> (count via
+        │                           countEmptyCells) before running the
+        │                           lazy exportWeekPdf path. canClick =
+        │                           ready || allowIncompleteExport; title
+        │                           adapts.
+        ├── ExportWarningModal.jsx  v15.2.0: NEW. Overlay confirm shown when
+        │                           Export PDF is clicked on an incomplete
+        │                           week (allowIncompleteExport on). Props:
+        │                           open, emptyCount, isMobile, onClose,
+        │                           onConfirm. Cancel (ghost) + "Export
+        │                           anyway" (primary). Dumb — the export
+        │                           runs in ExportButton's onConfirm.
+        ├── GenerateButton.jsx      v1.0.0: NEW. Schedule-grid entry point
+        │                           for the auto-generator. Owns the
+        │                           confirm modal + the upsertShift loop.
+        │                           Disabled when shiftTemplate is null
+        │                           or there are zero employees. Fires
+        │                           onResult(summary) so the parent grid
+        │                           can render the inline result banner.
+        │                           v1.1.0: handleConfirm now takes
+        │                           mode ("fill-empty" | "regenerate").
+        │                           Regenerate mode also runs a
+        │                           deleteShift loop for clearedShiftIds
+        │                           before upserting new shifts.
+        │                           v1.8.0: + nextWeekShifts prop,
+        │                           forwarded into generateWeek
+        │                           alongside priorWeekShifts. Drives
+        │                           the cross-week consecutive-off
+        │                           filter inside buildCandidates.
+        │                           v1.8.1: handleConfirm signature
+        │                           grows a second `policy` arg
+        │                           ({preserveTimes, preserveAssignments}).
+        │                           Forwarded into generateWeek({
+        │                           preserveTimes, preserveAssignments}).
+        │                           Persistence loop expanded — now
+        │                           also iterates result.modifiedShifts
+        │                           and upserts each (records that the
+        │                           wipe-pass partially updated, e.g.
+        │                           employee kept while times reset).
+        │                           Order: delete cleared → upsert
+        │                           modified → upsert newShifts.
+        │                           v1.10.0: + optional onUndoableOp
+        │                           prop. handleConfirm snapshots cleared
+        │                           (deletion targets) and modified
+        │                           (partial-update targets) PRE-mutation
+        │                           records from weekShifts via JSON
+        │                           deep-clone BEFORE the three mutation
+        │                           loops. Each new shift's resolved id
+        │                           is captured off `upsertShift`'s
+        │                           return value (already returned by
+        │                           usePersistence since v0.6.0; no
+        │                           change needed there). After the
+        │                           loops, fires onUndoableOp({ label:
+        │                           "Regenerate" | "Fill empty",
+        │                           restoreShifts: cleared+modified,
+        │                           removeIds: newIds }). Skips firing
+        │                           on zero-delta runs (e.g. fill-empty
+        │                           on a full week). Fill-
+        │                           empty mode ignores the policy
+        │                           (only Regenerate consults it).
+        │                           v1.11.0: + three new props
+        │                           (minConsecutiveDaysOff,
+        │                           maxConsecutiveWorkingDays,
+        │                           dayRequiredRoles) forwarded
+        │                           verbatim into the generateWeek({...})
+        │                           call. All three are optional in
+        │                           generateWeek — when ScheduleGrid's
+        │                           defensive read defaults to the
+        │                           DEFAULT_* constants and forwards
+        │                           those, the generator's own arg
+        │                           extraction matches them against
+        │                           the pre-v1.11.0 hard-coded values
+        │                           (2 / 5 / null) → byte-identical
+        │                           behaviour for legacy /settings docs.
+        │                           v1.12.0: + monthlyAggregates prop
+        │                           (pre-built by ScheduleGrid via
+        │                           build28DayAggregates) forwarded
+        │                           into generateWeek — drives the
+        │                           new hours+shifts-deficit sort in
+        │                           rankCandidates. + disabled prop
+        │                           ORs with the existing self-disabled
+        │                           (!shiftTemplate || employeeCount === 0)
+        │                           conditions; tooltip switches to
+        │                           "Past weeks are read-only" when set.
+        │                           v1.14.0: + calendarMonthAggregates
+        │                           prop (sibling to monthlyAggregates,
+        │                           same shape; pre-built by ScheduleGrid
+        │                           via buildCalendarMonthAggregates).
+        │                           Forwarded verbatim into the
+        │                           generateWeek({...}) call alongside
+        │                           monthlyAggregates. Drives the
+        │                           v1.14.0 calendar-month-deficit
+        │                           addition in rankCandidates. Missing
+        │                           on legacy callers → that side
+        │                           contributes 0 to the rank (byte-
+        │                           identical to v1.13.0).
+        │                           v15.2.0: ScheduleGrid now passes the
+        │                           EFFECTIVE template (resolvedShiftTemplate
+        │                           || DEFAULT_SHIFT_TEMPLATE), not the raw
+        │                           resolvedShiftTemplate. Fixes Generate
+        │                           self-disabling ("template not loaded")
+        │                           when a focus week has no shift-template
+        │                           revision and the frozen-base singleton
+        │                           is null — the grid/picker/export already
+        │                           ran on the DEFAULT fallback, so Generate
+        │                           was the lone dead control. employeeCount
+        │                           === 0 still gates the real load window.
+        ├── GenerateConfirmModal.jsx v1.0.0: NEW. Confirm dialog using
+        │                           Overlay. Shows the bullet list of
+        │                           what the generator will do +
+        │                           current preference mode (Soft/Hard).
+        │                           v1.1.0: two action buttons in the
+        │                           bottom row — "Fill empty" (primary)
+        │                           and "Regenerate" (secondary). Both
+        │                           call onConfirm(mode). Explainer
+        │                           card above the buttons clarifies the
+        │                           difference. Cancel disabled while
+        │                           busy.
+        │                           v1.7.0: Regenerate is now
+        │                           destructive (wipe-and-refill). The
+        │                           button switched to the danger
+        │                           variant (red) and the explainer
+        │                           card leads with "clears every shift
+        │                           in this week" + bolded red label so
+        │                           the manager can't miss the
+        │                           destructive nature.
+        │                           v1.8.1: + two Toggle atoms inside
+        │                           a third surfaceSoft card —
+        │                           "Preserve manual time/role edits"
+        │                           + "Preserve existing assignments",
+        │                           both default ON. Resets to defaults
+        │                           on every open() (useEffect on the
+        │                           open prop). Regenerate button's
+        │                           variant + explainer copy adapt
+        │                           live: `danger` (red) when either
+        │                           preserve flag is OFF, `primary`
+        │                           (blue) when both ON. onConfirm
+        │                           signature gains a 2nd arg for the
+        │                           Regenerate path: ("regenerate",
+        │                           {preserveTimes, preserveAssignments}).
+        │                           Fill-empty path unchanged.
+        │                           v1.9.0: preserveAssignments default
+        │                           flipped to OFF (was ON);
+        │                           preserveTimes stays ON. The modal
+        │                           now opens with the danger-red
+        │                           Regenerate variant by default,
+        │                           matching the intent "reshuffle
+        │                           staff but keep my time edits".
+        │                           Both Toggle atoms and all three
+        │                           bottom-row mkBtn calls (Cancel,
+        │                           Regenerate, Fill empty) opted into
+        │                           `.mgt-hover-scale` (4th v1.9.0
+        │                           commit).
+        ├── SwapButton.jsx          v1.7.0: NEW. Schedule nav-bar
+        │                           toggle between Generate and Clear.
+        │                           Owns no swap state — reads `active`
+        │                           from the ScheduleGrid parent and
+        │                           fires onToggle on click. Label
+        │                           switches between "Swap…" and
+        │                           "Swap: cancel" depending on `active`.
+        │                           v1.10.0: physical neighbour changed —
+        │                           SwapButton is now followed by the
+        │                           new UndoButton, then ClearButton.
+        │                           v1.12.0: + disabled prop. When set,
+        │                           the click is a no-op, the button
+        │                           paints 0.5 opacity with not-allowed
+        │                           cursor, and the tooltip switches to
+        │                           "Past weeks are read-only" (overrides
+        │                           the active / inactive tooltips).
+        ├── UndoButton.jsx          v1.10.0: NEW. Schedule nav-bar undo
+        │                           affordance. Placed between SwapButton
+        │                           and ClearButton. Props: stack (from
+        │                           useUndoStack), onUndo, isMobile. No
+        │                           internal state — fully driven by the
+        │                           parent. Disabled when stack is
+        │                           empty. Label adapts: "Undo" (empty)
+        │                           vs "Undo: {top.label}" (e.g.
+        │                           "Undo: Regenerate"). The label tells
+        │                           the manager what they're about to
+        │                           undo before they click; tooltip
+        │                           carries the same info for clarity.
+        │                           v1.12.0: + disabled prop. ORs with
+        │                           the existing empty-stack disable;
+        │                           tooltip switches to "Past weeks are
+        │                           read-only" when externally disabled.
+        ├── ClearButton.jsx         v1.1.0: NEW. "Clear…" entry point
+        │                           in the Schedule nav bar between
+        │                           Generate and Export. Owns the
+        │                           ClearConfirmModal state + the
+        │                           deleteShift loop. Fires onResult
+        │                           ({cleared, kind}) so the grid
+        │                           banner can report "Cleared N
+        │                           shifts."
+        │                           v1.10.0: + optional onUndoableOp
+        │                           prop. handleConfirm snapshots every
+        │                           record about to be deleted (deep-
+        │                           cloned via JSON round-trip) BEFORE
+        │                           the delete loop, then fires
+        │                           onUndoableOp({ label: "Clear week"
+        │                           | "Clear day", restoreShifts,
+        │                           removeIds: [] }) AFTER. Skips firing
+        │                           when restoreShifts came out empty
+        │                           (defensive — modal blocks the
+        │                           zero-id path).
+        │                           v1.12.0: + disabled prop. When set,
+        │                           the click is a no-op, the button
+        │                           paints disabled, and the tooltip
+        │                           switches to "Past weeks are read-only".
+        │                           v1.15.0(2): + slots prop (forwarded
+        │                           from ScheduleGrid's slots memo to
+        │                           the modal). handleConfirm gained a
+        │                           kind:"slot" branch — id filter by
+        │                           section/dayPart/(slotIndex||0) across
+        │                           all open days. Undo label =
+        │                           "Clear " + slot.humanLabel (e.g.
+        │                           "Clear FoH Evening 1").
+        ├── ClearConfirmModal.jsx   v1.1.0: NEW. Scope picker + confirm.
+        │                           Buttons for Whole week / one per
+        │                           open day, each showing the live
+        │                           shift count. Confirm is BTN.danger
+        │                           labelled "Clear N shifts" once a
+        │                           scope is picked. Closed days are
+        │                           not offered as scope options.
+        │                           v1.15.0(2): + "By shift row" scope
+        │                           group (third cluster, under Whole
+        │                           week + By day). Iterates the slots
+        │                           prop (slotsForDay ladder); one button
+        │                           per slot labelled slot.humanLabel
+        │                           with the live count of week shifts
+        │                           matching that (section, dayPart,
+        │                           slotIndex) row. New shiftsForSlot
+        │                           helper + scope { kind:"slot",
+        │                           section, dayPart, slotIndex, label };
+        │                           willClear extended. Small muted
+        │                           group sub-labels ("By day", "By
+        │                           shift row") separate the clusters.
+        ├── WeeklyShiftSummary.jsx  v1.2.0: NEW. Footer panel under the
+        │                           Schedule grid. One "Name · N / quota"
+        │                           pill per active employee (plus any
+        │                           archived employee still on the
+        │                           week). Sort: under-utilization ratio
+        │                           asc, then name. Visual tints for
+        │                           zero / under / at-quota.
+        │                           v1.6.0: + `requests` + `dates` props.
+        │                           Quota displayed is now effective =
+        │                           max(0, workingDaysPerWeek − distinct
+        │                           visible-week dates covered by
+        │                           day-off/holiday requests). Shift-
+        │                           preference requests do not subtract.
+        │                           Closed days never count (already
+        │                           excluded from `dates`). buildDaysOff-
+        │                           ByEmployee helper added. Quota=0
+        │                           employees get ratio=1 to keep the
+        │                           under-utilization sort sane.
+        │                           v1.6.1: buildDaysOffByEmployee
+        │                           lifted to schedule-logic.js as
+        │                           daysOffInWeekByEmployee — shared
+        │                           with the auto-generator's quota
+        │                           gate. Pill behaviour unchanged.
+        │                           v1.7.0: pill `<span>` became a
+        │                           `<button>` with onClick. + new
+        │                           `highlightedEmployeeId` +
+        │                           `onHighlight` props from
+        │                           ScheduleGrid. Selected pill gains
+        │                           accent fill + accent border + 2px
+        │                           accent ring via box-shadow.
+        │                           v1.9.0: import renamed
+        │                           daysOffInWeekByEmployee →
+        │                           holidayDaysInWeekByEmployee. Local
+        │                           variables daysOff / off renamed
+        │                           holidayDays / holiday in lockstep.
+        │                           Pill denominator no longer shrinks
+        │                           for Day-OFF requests — only Holiday
+        │                           subtracts from workingDaysPerWeek.
+        │                           Math + visual otherwise identical.
+        ├── WeeklyRequestsPreview.jsx v1.6.0: NEW. Footer panel under
+        │                           WeeklyShiftSummary on the Schedule
+        │                           grid. Lists every request whose date
+        │                           range overlaps the displayed week
+        │                           (`dateFrom..dateTo` ∩ Mon..Sun ≠ ∅).
+        │                           Row: name + colored type pill +
+        │                           formatted range. Sort: dateFrom asc.
+        │                           Notes are intentionally omitted —
+        │                           manager opens Requests tab for the
+        │                           full record. Returns null when no
+        │                           requests overlap (no empty chrome).
+        │                           formatRange duplicated from
+        │                           RequestsList.jsx (small enough; lift
+        │                           to schedule-logic if a third caller
+        │                           appears).
+        │                           v1.9.0: row container is back to
+        │                           an inert `<div>` (no row-level
+        │                           click target / hover border). Only
+        │                           the colored type pill `<span>`
+        │                           became a `<button type="button">`.
+        │                           First v1.9.0 used a local class
+        │                           `mgt-req-pill` with an inline
+        │                           `<style>` block; the third v1.9.0
+        │                           commit consolidates the pill into
+        │                           the shared `.mgt-hover-scale`
+        │                           utility defined in `index.html` —
+        │                           local class + inline `<style>`
+        │                           block both removed. + local state
+        │                           `[previewRequest, setPreviewRequest]`
+        │                           owns the read-only preview modal —
+        │                           `<RequestPreviewModal>` mounted at
+        │                           the bottom of the component's JSX.
+        │                           Edit access is intentionally NOT
+        │                           wired up here; it stays on the
+        │                           Requests tab via `<RequestsList>`
+        │                           + `<RequestFormModal>`.
+        ├── RequestPreviewModal.jsx v1.9.0: NEW. Read-only preview of
+        │                           a single request, rendered inside
+        │                           Overlay. Opened from the
+        │                           WeeklyRequestsPreview chip pill click.
+        │                           Mirrors RequestFormModal's vertical
+        │                           Fld stack so the preview feels like
+        │                           "read mode" of the same form.
+        │                           Fields rendered: employee (with
+        │                           archived line-through), type pill
+        │                           (palette inherited from
+        │                           REQUEST_TYPES), full date range
+        │                           ("12 May – 18 May 2026"). For
+        │                           shift-preference requests also:
+        │                           preferred dayPart label and
+        │                           recurringDaysOfWeek (Mon..Sun
+        │                           source-order). Notes shown when
+        │                           non-empty. Footer is a single
+        │                           Close button (ghost variant).
+        │                           No Save, no Delete — edit access
+        │                           stays on the Requests tab.
+        ├── GenerateResultsModal.jsx v1.4.0: NEW. "Details" modal opened
+                                    from the generator result banner.
+                                    Lists `summary.unfilledCells` and
+                                    (for Regenerate) `summary.clearedReasons`
+                                    grouped by reason with human-readable
+                                    labels from constants.GENERATOR_REASONS.
+                                    Uses Overlay + Section + TBadge —
+                                    no new blur surfaces (Overlay holds
+                                    the only blur). Cleared rows show
+                                    employee + date + slot; unfilled
+                                    rows show date + slot. Closes via
+                                    Close button or backdrop click;
+                                    closing resumes the banner's auto-
+                                    dismiss countdown.
+                                    v1.7.0: Regenerate's clearedReasons
+                                    all carry the single reason
+                                    "regenerated"; the existing reason-
+                                    grouping logic collapses to one
+                                    bucket naturally — only the
+                                    file-header comment was updated.
+                                    v1.9.3: + optional onJumpToCell
+                                    prop. When provided, ReasonGroup
+                                    renders each row as a button
+                                    (.mgt-hover-scale) instead of plain
+                                    text; click fires the handler with
+                                    (dateIso, slotKey) so ScheduleGrid
+                                    can navigate + flash the cell.
+                                    Unfilled rows use item.dateIso,
+                                    cleared rows use item.date — both
+                                    carry slotKey. When the prop is
+                                    omitted the rows fall back to
+                                    plain text (read-only). Pure prop
+                                    extension; no state added here.
+                                    v1.9.4: bullet integrated into the
+                                    row (rendered as a `<span aria-
+                                    hidden>` INSIDE the button or the
+                                    flex `<li>`, not on the `<li>` via
+                                    list-style:disc). `<ul>` lost
+                                    list-style; padding moved off the
+                                    `<li>` onto the button (4px 8px,
+                                    bumped from 2px 6px). Section
+                                    blocks now wrapped in an inner
+                                    scroll container (maxHeight 55vh
+                                    mobile / min(60vh, 480px) desktop,
+                                    overflowY:auto, negative-margin +
+                                    matching-padding pattern for
+                                    hover-scale clipping breathing
+                                    room) so long lists scroll
+                                    internally instead of spilling off
+                                    the Overlay sheet. Summary line +
+                                    Close button stay outside the
+                                    scroller. Close button gained
+                                    `.mgt-hover-scale` (missed in the
+                                    v1.9.0 second wave).
+        └── ShortcutsModal.jsx       v15.3.0: NEW. Read-only keyboard-
+                                    shortcuts cheatsheet opened with `?`
+                                    (handler in AppShell). Overlay-wrapped;
+                                    sectioned list (Navigation / Schedule
+                                    actions / Universal) built with the Kbd
+                                    atom. Single source of truth for the
+                                    shortcut docs — add a key = add a row
+                                    here AND wire the handler. Owns its own
+                                    Esc-to-close (the Overlay atom has none).
+```
 Run `find src -type f` for the current layout — it is authoritative and
 never goes stale. Per-file version history lives in `REFACTOR_LOG.md`.
 
@@ -1743,6 +4351,19 @@ Placement rules (these are NOT derivable from the tree):
    // v15.1.0: optional soloTimes (same length as count) — alternate
    // times used on weekdays where this day-part is the ONLY open one.
    // Absent = feature off (the writer omits the key; never []).
+   //
+   // v16.0.0: optional per-weekday overrides. SPARSE — only the weekdays
+   // that actually differ appear. Absent = the block applies every day.
+   //   weekdays?: {
+   //     mon: { count: 1, times: [{start,end}] },   // fewer people
+   //     sat: { count: 4, times: [{start,end} x4] },// more, own times
+   //     sun: { count: 0 }                          // doesn't run at all
+   //   }
+   // count 0 carries NO `times` key ([] is unrepresentable in RTDB), and
+   // an empty map omits `weekdays` entirely — never {} or null (v1.12.0
+   // Chef-pill lesson). Precedence: per-weekday → soloTimes → flat times.
+   // The grid/PDF render the UNION ladder across the visible weekdays and
+   // show "—" where a row doesn't run; see the locked decision above.
    // v15.1.0: this singleton is the FROZEN BASE — edits in Settings
    // write /configRevisions records instead. Only Reset-to-defaults
    // and the v1.10.1 eager migration still write here.
@@ -1775,6 +4396,19 @@ Placement rules (these are NOT derivable from the tree):
                                               // Empty / null = every date
                                               // in [dateFrom..dateTo].
       notes? }
+
+/settingsRev                                                // v16.0.0
+/shiftTemplateRev                                           // v16.0.0
+  → integer. Revision counter beside each whole-node singleton, written
+    atomically WITH it in one root update() (src/lib/revGuard.js). The
+    database rule accepts a write only when the rev is exactly stored + 1,
+    so a stale device's whole-object overwrite is rejected instead of
+    silently winning. Never read into app state — usePersistence keeps the
+    last server value in a ref and bumps it optimistically on write.
+    The keyed collections (/employees, /shifts, /requests,
+    /configRevisions) are deliberately NOT guarded: they are written one
+    child at a time, so two writers touching different records write
+    disjoint paths and the database merges them. See database.rules.json.
 
 /settings
   → { operatingStart: "11:00", operatingEnd: "23:00",
@@ -1969,6 +4603,39 @@ returned. Do **not** repeat. Build this pattern in from the first commit.
 
 Both configs are hardcoded in `firebase.js`. Firebase web API keys are
 NOT secrets — Database Rules are the actual security layer.
+
+**DEV is `megustastu-scheduling-dev` (v16.0.0 phase 43). It used to be
+`megustastu-bookings-dev` — the BOOKINGS DEV database — and that was a bug,
+not a choice.** The config was copied wholesale when this repo was
+scaffolded from its sister app, so both apps' data sat in one database:
+`/bookings`, `/tableBlocks`, `/recurring`, `/conversations`, `/messages`,
+`/templates` (Bookings) alongside `/shifts`, `/employees`, `/requests`,
+`/configRevisions` (Scheduling). Worse, **`/settings` was a single node
+holding both apps' keys** — Bookings' `layout`, `optimizer`,
+`bookingDefaults`, `general`, `dayShifts`, `operatingHours`, `whatsapp`,
+`users/{uid}/prefs` interleaved with Scheduling's `openingDays`,
+`darkMode`, `operatingStart`/`End`.
+
+That is why **every Scheduling settings save failed with PERMISSION_DENIED**
+while shifts and employees wrote fine. `usePersistence` reads the whole
+`/settings` node, so `Settings.jsx`'s `saveSettings({...settings, …})`
+spread Bookings' children back into its own write. Bookings' rules guard
+each of those with a rev-CAS pair requiring `stored + 1`; rewriting them at
+their existing values failed that check and the whole write was rejected.
+**The rules were working correctly — this app was the thing at fault.** If a
+symptom like this ever returns, do NOT reach for relaxing the other app's
+rules: that would let this app rewrite Bookings' config on every settings
+save. Check which database it is talking to first.
+
+Diagnostic worth keeping: the tell was that ONLY `/settings` failed. The
+keyed collections have no rules under them, so they wrote fine and hid the
+collision for weeks.
+
+**The DEV project has its own Auth user pool and its own Database Rules —
+neither is inherited from Bookings DEV.** Before a visual session works
+there, Email/Password sign-in must be enabled and the manager user created
+under Authentication → Users, and `database.rules.json` must be published
+(a fresh RTDB defaults to locked, which blocks reads as well as writes).
 
 ### Single central save path
 - Any code path that modifies shifts should pass through a single helper

@@ -13,8 +13,8 @@
 //   isMobile   (bool)
 
 import { useMemo, useState } from "react";
-import { S, BTN, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
-import { mkBtn, TBadge } from "./atoms.jsx";
+import { R, S, BTN, BTN_SIZE, REQUEST_TYPES, WEEKDAYS } from "../lib/constants.js";
+import { mkBtn, TBadge, ModalPresence, Reveal } from "./atoms.jsx";
 import { isoDate, parseIsoDate } from "../lib/schedule-logic.js";
 import RequestFormModal from "./RequestFormModal.jsx";
 
@@ -23,7 +23,9 @@ function typeMeta(key) {
   for (let i = 0; i < REQUEST_TYPES.length; i++) {
     if (REQUEST_TYPES[i].key === key) return REQUEST_TYPES[i];
   }
-  return { key: key, label: key, palette: { bg: "var(--status-open-bg)", text: "var(--status-open-text)", border: "var(--status-open-border)" } };
+  // v16.0.0: unknown-type fallback uses the SOLID grey, matching the
+  // known types below — a label renders solid everywhere.
+  return { key: key, label: key, solidPalette: { bg: "var(--status-open-solid)", text: "var(--text-on-accent)", border: "var(--border-overlay-sheet)" } };
 }
 
 // Pretty range: "12 May 2026" or "12–14 May 2026" or "29 Apr–2 May 2026".
@@ -106,7 +108,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
       <button
         key={req.id}
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={function () { openEdit(req); }}
         style={{
           display: "block",
@@ -114,7 +116,7 @@ export default function RequestsList({ requests, employees, actions, isMobile })
           textAlign: "left",
           background: isPast ? "var(--bg-row-soft)" : "var(--bg-pill)",
           border: "1px solid var(--hairline-strong)",
-          borderRadius: 12,
+          borderRadius: R.card,
           padding: 12,
           marginBottom: 8,
           cursor: "pointer",
@@ -133,16 +135,14 @@ export default function RequestsList({ requests, employees, actions, isMobile })
         >
           <div
             style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: "var(--text-primary)",
+              ...S.rowTitle,
               textDecoration: empArchived ? "line-through" : "none",
               opacity: empArchived ? 0.6 : 1,
             }}
           >
             {empName}
           </div>
-          <TBadge palette={meta.palette}>{meta.label}</TBadge>
+          <TBadge palette={meta.solidPalette}>{meta.label}</TBadge>
         </div>
         <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
           {formatRange(req.dateFrom, req.dateTo)}
@@ -207,9 +207,9 @@ export default function RequestsList({ requests, employees, actions, isMobile })
         </span>
         <button
           type="button"
-          className="mgt-hover-scale"
+          className="mgt-hover-scale mgt-press"
           onClick={function () { setShowPast(function (v) { return !v; }); }}
-          style={{ ...BTN.base, ...BTN.ghost, padding: "4px 10px", fontSize: 12 }}
+          style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }}
         >
           {showPast ? "Hide" : "Show"}
         </button>
@@ -217,9 +217,13 @@ export default function RequestsList({ requests, employees, actions, isMobile })
     )
     : null;
 
-  const pastSection = (past.length > 0 && showPast)
-    ? <div>{past.map(renderRow)}</div>
-    : null;
+  // v16.0.0 (phase 31): mirrors the archived list in EmployeesList — the
+  // past-requests list eases open instead of appearing in one frame.
+  const pastSection = past.length > 0 ? (
+    <Reveal show={showPast}>
+      {showPast ? <div>{past.map(renderRow)}</div> : null}
+    </Reveal>
+  ) : null;
 
   const headerRow = total > 0
     ? (
@@ -254,15 +258,19 @@ export default function RequestsList({ requests, employees, actions, isMobile })
       {pastHeader}
       {pastSection}
 
-      <RequestFormModal
-        open={modalOpen}
-        request={editing}
-        employees={employees}
-        isMobile={isMobile}
-        onClose={closeModal}
-        onSave={handleSave}
-        onDelete={handleDelete}
-      />
+      <ModalPresence show={modalOpen}>
+        {modalOpen ? (
+          <RequestFormModal
+            open
+            request={editing}
+            employees={employees}
+            isMobile={isMobile}
+            onClose={closeModal}
+            onSave={handleSave}
+            onDelete={handleDelete}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

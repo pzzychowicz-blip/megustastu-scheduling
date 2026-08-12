@@ -58,26 +58,34 @@
 //     for NEW shifts. Existing shift records keep their stored role (even
 //     if empty — manager may have deliberately cleared it).
 //   - v0.8.0: the assignee dropdown applies three stacked filters:
-//       (a) role match — when the slot has a role, only employees with
-//           that role appear. Day slots match against the section's role
-//           list (any one of the section's roles suffices).
-//       (b) same-date exclusion (STRICT) — anyone already on another
-//           shift this date is hidden. Picker filter + save-time guard.
-//       (c) request conflict — anyone with a day-off/holiday request
+//       (a) role match (HARD) — when the slot has a role, only employees
+//           with that role appear. Day slots match against the section's
+//           role list (any one of the section's roles suffices). Also
+//           HARD-hides archived and out-of-tenure staff.
+//       (b) same-date (SOFT since v16.0.0) — anyone already working this
+//           date is hidden BY DEFAULT, revealed by the "Show staff already
+//           working this date" toggle, and picking one raises the yellow
+//           split-shift banner. Until v15.4.1 this was a hard exclusion
+//           plus a save-time refusal; split shifts are now a legitimate
+//           manual action, so the refusal is gone and only the warning
+//           remains. The auto-generator keeps its own HARD same-day filter.
+//       (c) request conflict (SOFT) — anyone with a day-off/holiday request
 //           covering the date is hidden by default. A "Show staff on day
 //           off / holiday" toggle restores them and brings back the yellow
-//           warning banner. Toggle only renders when at least one
-//           employee is currently hidden by this filter.
+//           warning banner.
+//     Both SOFT toggles only render when they actually have something to
+//     reveal (or are already on because the current assignee needs them).
 
-import { useEffect, useMemo, useState } from "react";
-import { S, BTN, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
-import { Overlay, Fld, Toggle, mkInp, mkBtn } from "./atoms.jsx";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { R, S, BTN, BTN_SIZE, SECTIONS, ROLE_COLORS, REQUEST_TYPES } from "../lib/constants.js";
+import { Overlay, Fld, Toggle, Notice, mkInp, mkBtn, usePresence, Reveal } from "./atoms.jsx";
 import {
   formatDayHeader,
   parseIsoDate,
   startOfWeek,
   findRequestConflict,
   findSameDayShift,
+  findSameDayShifts,
   findShiftPreferenceMismatch,
   hasConsecutiveDaysOff,
   withinMaxConsecutiveWorkingDays,
@@ -124,10 +132,17 @@ export default function ShiftFormModal({
   // the manager can deliberately override. Resets to OFF whenever the
   // modal is re-targeted.
   const [showRequestBlocked, setShowRequestBlocked] = useState(false);
-  // v0.8.0: terminal banner shown when the save-time same-day guard fires.
-  // (The picker filter normally prevents this — the guard is belt + braces
-  // against a stale dropdown state.)
-  const [saveError, setSaveError] = useState("");
+  // v16.0.0: same idea for staff already working this date. Split shifts
+  // are legal now, but they should take two deliberate steps — reveal, then
+  // pick — rather than being one mis-click away in a long dropdown.
+  const [showSameDayStaff, setShowSameDayStaff] = useState(false);
+  // v16.0.0: the `saveError` state and its red banner are GONE. Their only
+  // ever trigger was the v0.8.0 same-day save refusal, which this version
+  // deleted when split shifts became legal — leaving a state slot that was
+  // initialised to "", reset to "" on open, and never assigned anything
+  // else, plus ~20 lines of unreachable banner markup. If a save-time
+  // refusal is ever needed again it should be added with its trigger, not
+  // kept warm without one.
 
   // Re-init when the modal opens (or the target cell changes).
   //
@@ -136,16 +151,38 @@ export default function ShiftFormModal({
   // dropdown. Without this the select would render with a value that
   // isn't in its option list — broken state. Manager can untoggle to
   // hide them again.
+  //
+  // v16.0.0: the identical problem exists for the new same-day toggle. If
+  // this cell is already half of a split shift, its assignee has another
+  // shift that date and would be filtered out of the dropdown, so the toggle
+  // is auto-flipped ON here too. (The dropdown ALSO never filters out the
+  // currently-selected employee — see the eligible memo below — so this is
+  // now about showing the toggle in the honest state, not about correctness.)
+  //
+  // `requests` and `weekShifts` are read through a ref rather than listed as
+  // dependencies, and that is load-bearing. This effect calls
+  // `setForm(initialForm(...))`, so re-running it DISCARDS whatever the
+  // manager has typed. `weekShifts` gets a fresh identity on every write to
+  // /shifts — an undo, a second device, the manager's own Firebase echo — so
+  // depending on it would silently revert an in-progress edit mid-typing.
+  // Both values are only ever needed for the one-shot read at open.
+  const latestData = useRef({ requests: requests, weekShifts: weekShifts });
+  latestData.current = { requests: requests, weekShifts: weekShifts };
   useEffect(function () {
     if (open && slotDef) {
+      const snap = latestData.current;
       setForm(initialForm(slotDef, shift));
       const existingConflict = shift && shift.employeeId
-        ? findRequestConflict(requests, shift.employeeId, dateIso)
+        ? findRequestConflict(snap.requests, shift.employeeId, dateIso)
         : null;
       setShowRequestBlocked(!!existingConflict);
-      setSaveError("");
+      const existingSameDay = shift && shift.employeeId
+        ? findSameDayShift(snap.weekShifts, shift.employeeId, dateIso, shift.id)
+        : null;
+      setShowSameDayStaff(!!existingSameDay);
     }
-  }, [open, slotDef, shift, requests, dateIso]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- requests / weekShifts are read via latestData on purpose; see above
+  }, [open, slotDef, shift, dateIso]);
 
   // ── Eligible employees for this slot ───────────────────────────────────
   // v0.8.0: a single derived list applies three stacked filters in one
@@ -156,8 +193,18 @@ export default function ShiftFormModal({
   // The same-day filter excludes the shift currently being edited (by id),
   // so the assignment doesn't conflict with itself.
   const currentShiftId = shift && shift.id ? shift.id : null;
+  // v16.0.0: whoever is selected RIGHT NOW is never filtered out. Both soft
+  // filters below are toggle-reversible, and a manager who reveals hidden
+  // staff, picks one, then flips the toggle back would otherwise leave the
+  // <select> holding a value with no matching <option> — it renders blank,
+  // reading as "Unassigned", while `form.employeeId` still carries the id, so
+  // Save writes an assignment the UI said wasn't there. Pinning the selection
+  // keeps "the select's value is always in its options" true by construction,
+  // for both toggles, in every order of operations. The auto-flip in the open
+  // effect above handles the initial state; this handles everything after.
+  const selectedEmployeeId = form.employeeId || null;
   const eligible = useMemo(function () {
-    if (!slotDef) return { list: [], requestHiddenCount: 0 };
+    if (!slotDef) return { list: [], requestHiddenCount: 0, sameDayHiddenCount: 0 };
     const all = Object.values(employees || {});
     // v1.1.0: day slots may declare `requiredRoles` — when present, the
     // employee must hold AT LEAST ONE of them (stricter than the
@@ -182,10 +229,24 @@ export default function ShiftFormModal({
       return roles.some(function (r) { return eligibleRoles.indexOf(r) !== -1; });
     });
 
-    // (b) STRICT same-date exclusion. Exclude the current shift's own id
-    //     so "edit assignee on slot X" doesn't fight itself.
+    // (b) v16.0.0: same-date staff are HIDDEN BY DEFAULT, not excluded.
+    //     Split shifts (day + evening on one date) are legal now, but only
+    //     as a deliberate act — so this mirrors the day-off / holiday
+    //     treatment in (c): hide by default, reveal behind a toggle, warn
+    //     when one is actually picked. Under the strict rule (v0.8.0) this
+    //     was an unconditional exclusion.
+    //     Exclude the current shift's own id so "edit assignee on slot X"
+    //     doesn't fight itself.
+    let sameDayHiddenCount = 0;
     const sameDayOk = roleOk.filter(function (e) {
-      return !findSameDayShift(weekShifts, e.id, dateIso, currentShiftId);
+      const clash = findSameDayShift(weekShifts, e.id, dateIso, currentShiftId);
+      if (clash && !showSameDayStaff) {
+        sameDayHiddenCount++;
+        // Counted as hidden (the toggle's helper text should still say so)
+        // but kept in the list when they're the current selection.
+        return e.id === selectedEmployeeId;
+      }
+      return true;
     });
 
     // (c) request conflict — hidden by default; toggle restores them.
@@ -194,7 +255,7 @@ export default function ShiftFormModal({
       const conflict = findRequestConflict(requests, e.id, dateIso);
       if (conflict && !showRequestBlocked) {
         requestHiddenCount++;
-        return false;
+        return e.id === selectedEmployeeId;
       }
       return true;
     });
@@ -215,8 +276,12 @@ export default function ShiftFormModal({
       return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
     });
 
-    return { list: requestOk, requestHiddenCount: requestHiddenCount };
-  }, [slotDef, employees, requests, weekShifts, dateIso, currentShiftId, showRequestBlocked]);
+    return {
+      list: requestOk,
+      requestHiddenCount: requestHiddenCount,
+      sameDayHiddenCount: sameDayHiddenCount,
+    };
+  }, [slotDef, employees, requests, weekShifts, dateIso, currentShiftId, showRequestBlocked, showSameDayStaff, selectedEmployeeId]);
 
   const eligibleEmployees = eligible.list;
 
@@ -229,7 +294,11 @@ export default function ShiftFormModal({
     open && !readOnly && Boolean(slotDef) &&
     Boolean(form.start && form.end && form.start < form.end) &&
     !((slotDef && !slotDef.isDay) && form.employeeId && !form.role);
-  useEnterSubmit(open, enterCanSave, handleSave);
+  // v16.0.0: during ModalPresence's 200ms exit the cached element still
+  // carries open={true}, so a stray Enter would re-fire the primary
+  // action on a modal that is already closing. Gate on !leaving.
+  const { leaving } = usePresence();
+  useEnterSubmit(open && !leaving, enterCanSave, handleSave);
   // v15.3.0: Esc closes the cell editor (read-only mode included — the
   // footer there is a single Close, and onClose is the same handler).
   useEscClose(open, onClose);
@@ -239,9 +308,6 @@ export default function ShiftFormModal({
   // ── Field setters ────────────────────────────────────────────────────
   function setField(key, value) {
     setForm(function (prev) { return { ...prev, [key]: value }; });
-    // v0.8.0: clear the same-day save guard banner as soon as the user
-    // changes any field — keeps the error from lingering after the fix.
-    if (saveError) setSaveError("");
   }
 
   function resetToDefaults() {
@@ -269,18 +335,12 @@ export default function ShiftFormModal({
   function handleSave() {
     if (!valid) return;
 
-    // v0.8.0 STRICT guard. The picker filter already excludes anyone on
-    // another shift this date, but a stale dropdown (e.g., the modal was
-    // opened, another tab assigned the same person, this modal didn't
-    // re-render) could still produce a same-day double-booking. Refuse
-    // the save and surface a red banner so the manager can pick again.
-    if (form.employeeId) {
-      const clash = findSameDayShift(weekShifts, form.employeeId, dateIso, currentShiftId);
-      if (clash) {
-        setSaveError("This employee is already on another shift this date. Pick someone else or clear the existing shift first.");
-        return;
-      }
-    }
+    // v16.0.0: the v0.8.0 same-day refusal used to live here — it hard-
+    // blocked the save when the chosen employee already worked this date.
+    // Split shifts are now a legitimate manual action, so the block is
+    // gone; `splitShiftBanner` below warns instead and the save proceeds.
+    // The auto-generator keeps its own HARD same-day filter, so it can
+    // still never create a split by itself.
 
     const payload = {
       id: (shift && shift.id) || undefined,
@@ -328,17 +388,18 @@ export default function ShiftFormModal({
     }),
   ];
 
-  // v0.8.0: the empty-list note now has to account for THREE filters
-  // (role, same-day, request). Surface the most actionable explanation
-  // for the manager. The same-day filter is the strictest — if it's the
-  // one that emptied the list, mention it. Otherwise fall back to the
-  // role-based message.
+  // v0.8.0: the empty-list note has to account for three filters (role,
+  // same-day, request). Surface the most actionable explanation.
+  // v16.0.0: both the same-day and request filters are now reversible via
+  // toggles, so the copy points at whichever one is actually hiding people
+  // rather than implying the list is final.
+  const anyHidden = eligible.requestHiddenCount > 0 || eligible.sameDayHiddenCount > 0;
   const noEligibleNote = eligibleEmployees.length === 0
     ? (
       <p style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
-        {eligible.requestHiddenCount > 0
-          ? "No eligible employees left after filtering same-day shifts and day-off / holiday requests. Toggle the option below to include staff with requests, or clear another shift on this date."
-          : "No active employees have a role that fits this slot, or everyone eligible is already scheduled this date."}
+        {anyHidden
+          ? "Everyone eligible is hidden by the filters below"
+          : "No active employee holds a role for this slot"}
       </p>
     )
     : null;
@@ -366,21 +427,23 @@ export default function ShiftFormModal({
     )
     : null;
 
-  // v0.8.0: red banner when the save guard refused the picked combo.
-  const saveErrorBanner = saveError
+  // v16.0.0: the split-shift counterpart. Same shape as the request toggle
+  // above — only rendered when it has something to reveal (or is already
+  // on, which happens when this cell is one half of an existing split).
+  const sameDayToggle = eligible.sameDayHiddenCount > 0 || showSameDayStaff
     ? (
-      <div
-        style={{
-          marginTop: 6,
-          padding: "8px 10px",
-          background: "var(--bg-danger-tint)",
-          border: "1px solid var(--border-danger-tint)",
-          color: "var(--text-danger)",
-          borderRadius: 10,
-          fontSize: 12,
-        }}
-      >
-        {saveError}
+      <div style={{ marginTop: 8 }}>
+        <Toggle
+          checked={showSameDayStaff}
+          onChange={setShowSameDayStaff}
+          label="Show staff already working this date"
+          helper={
+            !showSameDayStaff && eligible.sameDayHiddenCount > 0
+              ? eligible.sameDayHiddenCount + " hidden, would be split shifts"
+              : null
+          }
+          className="mgt-hover-scale"
+        />
       </div>
     )
     : null;
@@ -435,35 +498,78 @@ export default function ShiftFormModal({
     );
   }
 
-  const warningBoxStyle = {
-    marginTop: 6,
-    padding: "8px 10px",
-    background: "var(--bg-warning-tint)",
-    border: "1px solid var(--border-warning-tint)",
-    color: "var(--text-warning)",
-    borderRadius: 10,
-    fontSize: 12,
-  };
+  // v16.0.0 (phase 40): these five soft warnings each used to end with the
+  // same sentence — "You can still save; this is just a warning." — and
+  // open with a warning glyph. Both were the modal reassuring the manager
+  // about its own strictness. The Save button is right there and enabled;
+  // that IS the statement that saving is allowed, and repeating it five
+  // times over made the stack read as nagging rather than informing.
+  //
+  // Each is now a noun phrase naming the condition: no glyph, no trailing
+  // period, no second-person framing. The warning tint already says what
+  // kind of thing this is.
+  //
+  // v16.0.0 (phase 42): all five are <Notice> now, so the picker's warnings
+  // and the app-level write error are one component with one set of metrics.
+  // The title/detail split did real work on the copy: it separated the
+  // CONDITION (which is the whole message) from the SPECIFICS (which used to
+  // be spliced into the same sentence with <strong> tags and connectives).
+  const noticeGap = { marginTop: 6 };
 
   const conflictBanner = conflict
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ This employee has a <strong>{requestTypeLabel(conflict.type)}</strong> request
-        covering {dateIso}{conflict.notes ? " — " + conflict.notes : ""}. You can
-        still save; this is just a warning.
-      </div>
+      <Notice
+        style={noticeGap}
+        title={requestTypeLabel(conflict.type) + " request on this date"}
+        detail={conflict.notes || undefined}
+      />
+    )
+    : null;
+
+  // v16.0.0: split-shift warning. Fires whenever the currently-selected
+  // assignee already holds another shift on this date — which, since
+  // v16.0.0, is allowed rather than refused. Named so the manager can see
+  // exactly what they're stacking onto (e.g. "Kitchen Day, 11:00–16:00"),
+  // because the whole risk here is an accidental 12-hour straight day.
+  //
+  // No simulation needed, unlike the rest/max-consecutive warnings below:
+  // the clash is a fact about existing records, not about what this
+  // assignment would imply.
+  const sameDayShifts = form.employeeId
+    ? findSameDayShifts(weekShifts, form.employeeId, dateIso, currentShiftId)
+    : [];
+  // The slot names go in the title (that is the clash), the hours in the
+  // detail (that is what makes it a long day). Splitting them this way also
+  // removes the connective-heavy inline markup the old single line needed.
+  const sameDayLabels = sameDayShifts.map(function (s) {
+    return s.section && s.dayPart
+      ? (SECTIONS[s.section] ? SECTIONS[s.section].label : s.section)
+        + " " + (s.dayPart === "day" ? "Day" : "Evening")
+      : "another shift";
+  });
+  const sameDayTimes = sameDayShifts
+    .map(function (s) { return s.start && s.end ? s.start + "–" + s.end : null; })
+    .filter(Boolean);
+  const splitShiftBanner = sameDayShifts.length > 0
+    ? (
+      <Notice
+        style={noticeGap}
+        title={"Split shift — already on " + sameDayLabels.join(" and ")}
+        detail={sameDayTimes.length > 0
+          ? sameDayTimes.join(" and ") + ", this date"
+          : "This date"}
+      />
     )
     : null;
 
   const prefMismatchBanner = prefMismatch
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ This employee has requested{" "}
-        <strong>
-          {prefMismatch.preferredDayPart === "day" ? "day shifts only" : "evening shifts only"}
-        </strong>{" "}
-        on this date. You can still save; this is just a warning.
-      </div>
+      <Notice
+        style={noticeGap}
+        title={"Shift preference — "
+          + (prefMismatch.preferredDayPart === "day" ? "day shifts only" : "evening shifts only")}
+        detail="Requested for this date"
+      />
     )
     : null;
 
@@ -472,22 +578,26 @@ export default function ShiftFormModal({
   // missing, keeping the message accurate even for legacy callers.
   const minOffForCopy = Number.isFinite(minConsecutiveDaysOff) ? minConsecutiveDaysOff : 2;
   const maxConsecForCopy = Number.isFinite(maxConsecutiveWorkingDays) ? maxConsecutiveWorkingDays : 5;
+  // "Rest rule" / "Consecutive cap" lead both of these so they name the same
+  // constraints the generator's in-cell badges do — one vocabulary whether
+  // the manager hit the rule by hand or the auto-run hit it for them.
   const restWarningBanner = restWarning
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ Saving this would leave this employee without {minOffForCopy} consecutive
-        day{minOffForCopy === 1 ? "" : "s"} off this calendar week. You can still save; this is just a
-        warning.
-      </div>
+      <Notice
+        style={noticeGap}
+        title={"Rest rule — fewer than " + minOffForCopy + " consecutive day"
+          + (minOffForCopy === 1 ? "" : "s") + " off"}
+        detail="Counted across this week"
+      />
     )
     : null;
 
   const maxConsecutiveBanner = maxConsecutiveWarning
     ? (
-      <div style={warningBoxStyle}>
-        ⚠ Saving this would put this employee at more than {maxConsecForCopy} consecutive
-        working days. You can still save; this is just a warning.
-      </div>
+      <Notice
+        style={noticeGap}
+        title={"Consecutive cap — more than " + maxConsecForCopy + " working days in a row"}
+      />
     )
     : null;
 
@@ -513,14 +623,13 @@ export default function ShiftFormModal({
               <button
                 key={r}
                 type="button"
-                className={readOnly ? undefined : "mgt-hover-scale"}
+                className={readOnly ? undefined : "mgt-hover-scale mgt-press"}
                 disabled={readOnly}
                 onClick={readOnly ? undefined : function () { setField("role", on ? "" : r); }}
                 style={{
                   ...BTN.base,
-                  padding: "6px 12px",
-                  fontSize: 13,
-                  borderRadius: 999,
+                  ...BTN_SIZE.md,
+                  borderRadius: R.pill,
                   background: on ? "rgb(" + rgb + ")" : "var(--bg-pill)",
                   color: on ? "var(--text-on-accent)" : "var(--text-primary)",
                   border: "1px solid " + (on ? "rgb(" + rgb + ")" : "var(--btn-ghost-border)"),
@@ -562,21 +671,36 @@ export default function ShiftFormModal({
     <Overlay open={open} isMobile={isMobile} onClose={onClose} title={headerTitle}>
       <Fld label="Assignee">
         <select
-          className={readOnly ? undefined : "mgt-hover-scale"}
+          className={readOnly ? "mgt-select" : "mgt-hover-scale mgt-select"}
           value={form.employeeId}
           onChange={function (e) { setField("employeeId", e.target.value); }}
           disabled={readOnly}
-          style={{ ...S.inputBase, paddingRight: 28, opacity: readOnly ? 0.8 : 1 }}
+          style={{ ...S.selectBase, opacity: readOnly ? 0.8 : 1 }}
         >
           {employeeOptions}
         </select>
         {noEligibleNote}
+        {readOnly ? null : sameDayToggle}
         {readOnly ? null : requestToggle}
-        {conflictBanner}
-        {prefMismatchBanner}
-        {restWarningBanner}
-        {maxConsecutiveBanner}
-        {saveErrorBanner}
+        {/* v16.0.0: the split banner leads the stack — it describes the
+            single most consequential thing about this assignment (a
+            12-hour straight day), so it should be the first thing read.
+
+            phase 31: each banner gets its OWN Reveal rather than one
+            around the stack. They appear and disappear independently as
+            the manager changes the assignee, and a single wrapper would
+            only ease the group as a whole — swapping one banner for
+            another inside it would still snap. Per-banner, every case is
+            smooth and the container height is just their sum.
+
+            Each of these consts is already an element-or-null, so
+            `show={Boolean(x)}` needs no change to how they're built, and
+            Reveal replays the cached element through the collapse. */}
+        <Reveal show={Boolean(splitShiftBanner)}>{splitShiftBanner}</Reveal>
+        <Reveal show={Boolean(conflictBanner)}>{conflictBanner}</Reveal>
+        <Reveal show={Boolean(prefMismatchBanner)}>{prefMismatchBanner}</Reveal>
+        <Reveal show={Boolean(restWarningBanner)}>{restWarningBanner}</Reveal>
+        <Reveal show={Boolean(maxConsecutiveBanner)}>{maxConsecutiveBanner}</Reveal>
       </Fld>
 
       {rolePicker}
@@ -620,9 +744,9 @@ export default function ShiftFormModal({
         <div style={{ marginTop: 4 }}>
           <button
             type="button"
-            className="mgt-hover-scale"
+            className="mgt-hover-scale mgt-press"
             onClick={resetToDefaults}
-            style={{ ...BTN.base, ...BTN.ghost, padding: "6px 10px", fontSize: 12 }}
+            style={{ ...BTN.base, ...BTN.ghost, ...BTN_SIZE.sm }}
           >
             Reset times & role to template defaults
           </button>

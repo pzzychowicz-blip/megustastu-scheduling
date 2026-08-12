@@ -79,7 +79,11 @@ export function isPastWeek(weekStart, todayIso) {
 // dependency-light (it's loaded by pdf-export which is a lazy chunk).
 // Mon = 0 in the WEEKDAYS array; JS getDay() returns 0=Sun..6=Sat.
 const WEEKDAY_KEY_FROM_JS_DAY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+// Exported since v16.0.0: `generator.js` needs the same all-seven-weekday
+// ladder that `unionSlotCountForBlock` / `isLiveShiftForTemplate` use, so
+// that "this slot row exists" means one thing everywhere. See the note on
+// the `slotsForWeek` call in generateWeek.
+export const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 export function weekdayKeyForDate(date) {
   return WEEKDAY_KEY_FROM_JS_DAY[date.getDay()];
@@ -268,12 +272,24 @@ export function makeWeekConfigResolver(configRevisions, settings, baseShiftTempl
   }
   return {
     cfgForDate: cfgForDate,
+    // v16.0.0: compares against the UNION count (base + every weekday
+    // override) rather than the base count alone, via the shared
+    // isLiveShiftForTemplate.
+    //
+    // Why the union: the grid renders a union ladder, so a row exists
+    // visually iff SOME weekday needs it. Tying "counts" to that same
+    // condition keeps "renders ⟺ counts" exactly true. Comparing against
+    // the base count would drop a legitimately-generated shift sitting at
+    // an index only a weekday override creates; comparing against that
+    // date's own count would strip fairness credit for work already done,
+    // just because the manager later trimmed one weekday. Both are worse.
+    //
+    // For templates with no weekday overrides the union IS the base count,
+    // so this is a strict widening — pre-v16.0.0 behaviour is unchanged.
     isLiveShift: function (shift) {
       if (!shift || !shift.section || !shift.dayPart || !shift.date) return true;
       const tmpl = cfgForDate(parseIsoDate(shift.date)).shiftTemplate;
-      const block = tmpl[shift.section] && tmpl[shift.section][shift.dayPart];
-      const count = block && Number.isFinite(block.count) ? block.count : 0;
-      return (shift.slotIndex || 0) < count;
+      return isLiveShiftForTemplate(shift, tmpl);
     },
   };
 }
@@ -353,6 +369,40 @@ function isBlockMigrated(block) {
       if (!t || !t.start || !t.end) return false;
     }
   }
+  // v16.0.0: optional `weekdays` axis (per-weekday count + times overrides).
+  // Same contract as soloTimes above — ABSENT is the normal case and must
+  // NOT flag; present-and-valid must NOT flag either, or the eager
+  // migration in AppShell rewrites /shiftTemplate on every single session.
+  // Only genuinely malformed shapes flag for repair.
+  if ("weekdays" in block && block.weekdays !== null) {
+    const wd = block.weekdays;
+    if (typeof wd !== "object" || Array.isArray(wd)) return false;
+    const keys = Object.keys(wd);
+    // {} would have been stripped to null by RTDB on write, so an in-memory
+    // empty object means a hand-edit or a bug — clean it up.
+    if (keys.length === 0) return false;
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (WEEKDAY_KEYS.indexOf(k) === -1) return false;
+      const e = wd[k];
+      if (!e || typeof e !== "object") return false;
+      if (typeof e.count !== "number" || !Number.isFinite(e.count) || e.count < 0) return false;
+      if (e.count === 0) {
+        // count 0 means "this row doesn't run today" — there is nothing to
+        // time, and an empty times array is unrepresentable in RTDB.
+        if ("times" in e) return false;
+      } else {
+        if (!Array.isArray(e.times) || e.times.length !== e.count) return false;
+        for (let j = 0; j < e.times.length; j++) {
+          const t = e.times[j];
+          if (!t || !t.start || !t.end) return false;
+        }
+      }
+      // soloTimes is a block-level axis only; per-weekday overrides win over
+      // solo outright, so a per-weekday soloTimes would be meaningless.
+      if ("soloTimes" in e) return false;
+    }
+  }
   return true;
 }
 
@@ -397,6 +447,7 @@ export function materializeShiftTemplateBlock(block, sectionKey, dayPart) {
   // (never write [] — Firebase RTDB strips empty arrays to null, and an
   // explicit-null round-trip would defeat the "absent = off" semantic).
   const rawSolo = Array.isArray(block.soloTimes) ? block.soloTimes : null;
+  const out = { count: count, times: times };
   if (rawSolo && rawSolo.length > 0) {
     const soloTimes = [];
     let lastValid = null;
@@ -410,9 +461,55 @@ export function materializeShiftTemplateBlock(block, sectionKey, dayPart) {
       const seed = lastValid || times[i];
       soloTimes.push({ start: seed.start, end: seed.end });
     }
-    return { count: count, times: times, soloTimes: soloTimes };
+    out.soloTimes = soloTimes;
   }
-  return { count: count, times: times };
+
+  // v16.0.0: canonicalise the optional `weekdays` axis. Walked in Mon..Sun
+  // order so the stored object has a stable key order (readable diffs in
+  // the Firebase console); unknown keys are dropped; each entry's `times`
+  // is length-synced to that weekday's own count using the same
+  // last-entry-extend rule the block uses, seeded from the block's times.
+  //
+  // A weekday whose override happens to equal the inherited value is
+  // deliberately NOT normalised away — the manager explicitly set it, and
+  // silently dropping it would make the Settings pill flip from "override"
+  // back to "inherits" after a Firebase round-trip.
+  //
+  // Result with zero surviving keys → the key is OMITTED entirely, never
+  // written as {} or null (RTDB strips empty collections; see the v1.12.0
+  // Chef-pill bug).
+  const rawWeekdays = block.weekdays && typeof block.weekdays === "object" && !Array.isArray(block.weekdays)
+    ? block.weekdays
+    : null;
+  if (rawWeekdays) {
+    const wd = {};
+    for (let k = 0; k < WEEKDAY_KEYS.length; k++) {
+      const key = WEEKDAY_KEYS[k];
+      const e = rawWeekdays[key];
+      if (!e || typeof e !== "object") continue;
+      if (!Number.isFinite(e.count) || e.count < 0) continue;
+      const c = Math.round(e.count);
+      if (c === 0) { wd[key] = { count: 0 }; continue; }
+      const src = Array.isArray(e.times) ? e.times : [];
+      const list = [];
+      let lastValid = null;
+      for (let i = 0; i < c; i++) {
+        const t = src[i];
+        if (t && t.start && t.end) {
+          list.push({ start: t.start, end: t.end });
+          lastValid = t;
+          continue;
+        }
+        const seed = lastValid || times[i] || times[times.length - 1]
+          || { start: OPERATING_HOURS.start, end: OPERATING_HOURS.end };
+        list.push({ start: seed.start, end: seed.end });
+      }
+      wd[key] = { count: c, times: list };
+    }
+    if (Object.keys(wd).length > 0) out.weekdays = wd;
+  }
+
+  return out;
 }
 
 export function materializeShiftTemplate(template) {
@@ -485,6 +582,99 @@ function slotSoloTimeFor(block, index) {
   return null;
 }
 
+// ── Per-weekday overrides (v16.0.0) ──────────────────────────────────────
+// A block may carry an optional `weekdays` map keyed by the seven weekday
+// strings, each entry `{count, times: [{start,end}, ...]}` (or `{count: 0}`
+// for "this row doesn't run that weekday"). Absent = the block behaves
+// exactly as it did pre-v16.0.0.
+//
+// Resolution precedence for a slot's times on a given date is:
+//   per-weekday override → soloTimes → flat block defaults
+// See `slotTimesForDate`.
+
+// The effective slot count for a block on one weekday.
+function blockCountForWeekday(block, weekdayKey) {
+  const wd = block && block.weekdays;
+  const e = wd && weekdayKey ? wd[weekdayKey] : null;
+  if (e && Number.isFinite(e.count) && e.count >= 0) return e.count;
+  return Number.isFinite(block && block.count) ? block.count : 0;
+}
+
+// The WIDEST ladder this block produces across `keys`. Passing null (or no
+// keys) yields the base count, which is what makes `slotsForDay` a
+// byte-identical wrapper for every pre-v16.0.0 caller.
+function blockUnionCount(block, keys) {
+  let max = Number.isFinite(block && block.count) ? block.count : 0;
+  if (!keys || keys.length === 0) return max;
+  for (let i = 0; i < keys.length; i++) {
+    const c = blockCountForWeekday(block, keys[i]);
+    if (c > max) max = c;
+  }
+  return max;
+}
+
+// The override times for one (weekday, slot index), or null.
+function slotWeekdayTimeFor(block, weekdayKey, index) {
+  const wd = block && block.weekdays;
+  const e = wd ? wd[weekdayKey] : null;
+  if (!e || !Array.isArray(e.times)) return null;
+  const t = e.times[index];
+  if (t && t.start && t.end) return { start: t.start, end: t.end };
+  return null;
+}
+
+// v16.0.0: the widest ladder a block can EVER produce (base + all seven
+// weekday overrides). Used by the orphan-shift predicate: the grid renders
+// a union ladder, so "this shift's row exists somewhere in the week" is
+// exactly the condition under which it renders — and therefore exactly the
+// condition under which it should count. Collapses to `block.count` when
+// there are no overrides.
+export function unionSlotCountForBlock(block) {
+  return blockUnionCount(block, WEEKDAY_KEYS);
+}
+
+// v16.0.0: shared orphan-shift predicate. A shift whose slotIndex no longer
+// exists anywhere in the resolved template is an orphan — it doesn't render
+// and must not inflate counts or hours. Lifted here so the fairness
+// aggregates and WeeklyShiftSummary read ONE definition; they previously
+// carried separate copies that would now disagree (one keyed on base count,
+// one on the union).
+export function isLiveShiftForTemplate(shift, template) {
+  if (!template) return true;
+  if (!shift || !shift.section || !shift.dayPart) return true;
+  const sec = template[shift.section];
+  const block = sec && sec[shift.dayPart];
+  return (shift.slotIndex || 0) < unionSlotCountForBlock(block);
+}
+
+// Build the per-weekday axes attached to one slot: the times each weekday
+// overrides for this index, and the weekdays on which this index doesn't
+// run at all. Both are null when the block has no overrides, which keeps
+// the slot object shape identical to pre-v16.0.0 for untouched templates.
+function weekdayAxesForSlot(block, index, keys) {
+  if (!block || !block.weekdays || !keys || keys.length === 0) {
+    return { weekdayTimes: null, weekdayOff: null, firstOverrideTime: null };
+  }
+  let times = null;
+  let off = null;
+  let firstOverrideTime = null;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (blockCountForWeekday(block, key) <= index) {
+      if (!off) off = {};
+      off[key] = true;
+      continue;
+    }
+    const t = slotWeekdayTimeFor(block, key, index);
+    if (t) {
+      if (!times) times = {};
+      times[key] = t;
+      if (!firstOverrideTime) firstOverrideTime = t;
+    }
+  }
+  return { weekdayTimes: times, weekdayOff: off, firstOverrideTime: firstOverrideTime };
+}
+
 // v1.12.0: resolver that takes a /settings.dayRequiredRoles value (which may
 // be a v1.12.0 per-role boolean object, a v1.11.0 array of role names, or
 // missing entirely) and returns the canonical array of required role names
@@ -547,31 +737,81 @@ export function resolveDayRequiredRoles(settingsValue, sectionKey) {
 // `DEFAULT_DAY_REQUIRED_ROLES[section]` — which mirrors the pre-v1.11.0
 // SECTIONS hard-coded default. Bare callers (tests, legacy code paths)
 // continue to work without modification.
+// v16.0.0: `slotsForDay` is now a thin wrapper over `slotsForWeek`, which
+// takes the list of weekday keys actually on display and returns the UNION
+// ladder — the widest slot list any of those weekdays needs.
+//
+// Why a union rather than a per-date ladder: the desktop grid is one CSS
+// grid with a shared left label column and `display: contents` rows, and
+// the PDF is one autotable row per slot. Neither can be ragged. So the
+// ladder stays uniform for the week and dates where a row doesn't run
+// render an inert "—" placeholder, reusing the same machinery that already
+// handles closed day-parts. This also keeps `slotsByKey`, ClearConfirmModal's
+// "by shift row" scope, GenerateResultsModal's labels and the generator's
+// stale-record lookup working with no changes at all.
+//
+// Passing no weekday keys yields the base counts — byte-identical output to
+// pre-v16.0.0 for every existing caller.
 export function slotsForDay(template, dayRequiredRolesOverride) {
+  return slotsForWeek(template, dayRequiredRolesOverride, null);
+}
+
+export function slotsForWeek(template, dayRequiredRolesOverride, weekdayKeys) {
   const slots = [];
 
   const kitchenRequired = resolveDayRequiredRoles(dayRequiredRolesOverride, "kitchen");
   const fohRequired = resolveDayRequiredRoles(dayRequiredRolesOverride, "foh");
 
-  // Kitchen day
-  const kitDay = template.kitchen.day;
-  for (let i = 0; i < kitDay.count; i++) {
-    const t = slotTimeFor(kitDay, "kitchen", "day", i);
-    // v15.1.0: per-open-mode times — soloStart/soloEnd are non-null only
-    // when the block carries a valid soloTimes entry for this index.
-    // `slotTimesForDate` (below) picks between the two per date.
-    const st = slotSoloTimeFor(kitDay, i);
-    slots.push({
-      key: "kitchen-day-" + i,
-      section: "kitchen",
-      dayPart: "day",
+  // Shared per-slot construction. `ladderCount` is the union across the
+  // visible weekdays, so `i` can exceed the block's own count — an "extra"
+  // row that exists only because some weekday asks for it.
+  function baseSlot(block, sectionKey, dayPart, i, ladderCount) {
+    const axes = weekdayAxesForSlot(block, i, weekdayKeys);
+    const flat = slotTimeFor(block, sectionKey, dayPart, i);
+    const isExtraSlot = i >= (Number.isFinite(block.count) ? block.count : 0);
+    // An extra row has no entry in the flat `times` array, so slotTimeFor
+    // returns the OPERATING_HOURS fallback. Prefer the first weekday
+    // override that actually defines this index — otherwise the PDF row
+    // label and the grid's reference column would advertise 11:00–23:00 for
+    // a slot that never runs at those hours.
+    const defaults = isExtraSlot && axes.firstOverrideTime ? axes.firstOverrideTime : flat;
+    const st = slotSoloTimeFor(block, i);
+    return {
+      key: sectionKey + "-" + dayPart + "-" + i,
+      section: sectionKey,
+      dayPart: dayPart,
       slotIndex: i,
-      defaultStart: t.start,
-      defaultEnd: t.end,
+      defaultStart: defaults.start,
+      defaultEnd: defaults.end,
+      // v15.1.0: per-open-mode times — non-null only when the block carries
+      // a valid soloTimes entry for this index. `slotTimesForDate` picks.
       soloStart: st ? st.start : null,
       soloEnd: st ? st.end : null,
+      // v16.0.0: per-weekday axes. Both null when the block has no
+      // overrides, keeping the slot shape identical to pre-v16.0.0.
+      weekdayTimes: axes.weekdayTimes,
+      weekdayOff: axes.weekdayOff,
+      isExtraSlot: isExtraSlot,
+      sectionLabel: SECTIONS[sectionKey].label,
+      ladderCount: ladderCount,
+    };
+  }
+
+  // Numbering follows the LADDER length, not the block's own count — a
+  // base-1 block with a weekday override of 2 must not produce two rows
+  // both labelled "Kitchen Day" (they'd be indistinguishable in
+  // ClearConfirmModal's by-row scope and in the PDF row headers).
+  function dayLabel(prefix, i, ladderCount) {
+    return ladderCount > 1 ? prefix + " " + (i + 1) : prefix;
+  }
+
+  // Kitchen day
+  const kitDay = template.kitchen.day;
+  const kitDayN = blockUnionCount(kitDay, weekdayKeys);
+  for (let i = 0; i < kitDayN; i++) {
+    slots.push({
+      ...baseSlot(kitDay, "kitchen", "day", i, kitDayN),
       defaultRole: null,
-      sectionLabel: SECTIONS.kitchen.label,
       dayPartLabel: "Day",
       // Day-shift roles are null in the data model (one person covers all
       // section roles). We still surface the roles list to the modal so it
@@ -581,30 +821,20 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
       // and generator demand the employee hold AT LEAST ONE of these
       // roles (not just any of coversRoles). Empty / undefined keeps the
       // permissive "any of coversRoles" v1.0 behaviour.
-      // v1.11.0: resolved from /settings override when present; falls back
-      // to SECTIONS.kitchen.dayRequiredRoles otherwise.
+      // v1.11.0: resolved from /settings override when present.
       requiredRoles: kitchenRequired,
       isDay: true,
-      humanLabel: kitDay.count > 1 ? "Kitchen Day " + (i + 1) : "Kitchen Day",
+      humanLabel: dayLabel("Kitchen Day", i, kitDayN),
     });
   }
 
   // Kitchen evening
   const kitEve = template.kitchen.evening;
-  for (let i = 0; i < kitEve.count; i++) {
-    const t = slotTimeFor(kitEve, "kitchen", "evening", i);
-    const st = slotSoloTimeFor(kitEve, i);
+  const kitEveN = blockUnionCount(kitEve, weekdayKeys);
+  for (let i = 0; i < kitEveN; i++) {
     slots.push({
-      key: "kitchen-evening-" + i,
-      section: "kitchen",
-      dayPart: "evening",
-      slotIndex: i,
-      defaultStart: t.start,
-      defaultEnd: t.end,
-      soloStart: st ? st.start : null,
-      soloEnd: st ? st.end : null,
+      ...baseSlot(kitEve, "kitchen", "evening", i, kitEveN),
       defaultRole: defaultRoleForSlot("kitchen", "evening", i),
-      sectionLabel: SECTIONS.kitchen.label,
       dayPartLabel: "Evening",
       eligibleRoles: SECTIONS.kitchen.roles,  // Chef / Plating / Pot
       isDay: false,
@@ -614,20 +844,11 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
 
   // FoH day
   const fohDay = template.foh.day;
-  for (let i = 0; i < fohDay.count; i++) {
-    const t = slotTimeFor(fohDay, "foh", "day", i);
-    const st = slotSoloTimeFor(fohDay, i);
+  const fohDayN = blockUnionCount(fohDay, weekdayKeys);
+  for (let i = 0; i < fohDayN; i++) {
     slots.push({
-      key: "foh-day-" + i,
-      section: "foh",
-      dayPart: "day",
-      slotIndex: i,
-      defaultStart: t.start,
-      defaultEnd: t.end,
-      soloStart: st ? st.start : null,
-      soloEnd: st ? st.end : null,
+      ...baseSlot(fohDay, "foh", "day", i, fohDayN),
       defaultRole: null,
-      sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Day",
       coversRoles: SECTIONS.foh.roles,
       // v1.1.0: FoH has no dayRequiredRoles → empty list keeps the
@@ -635,27 +856,17 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
       // v1.11.0: resolved from /settings override when present.
       requiredRoles: fohRequired,
       isDay: true,
-      humanLabel: fohDay.count > 1 ? "FoH Day " + (i + 1) : "FoH Day",
+      humanLabel: dayLabel("FoH Day", i, fohDayN),
     });
   }
 
-  // FoH evening. v1.9.0: per-slot times via slotTimeFor (legacy
-  // secondPersonStart still honoured for backward-compat reads).
+  // FoH evening. v1.9.0: per-slot times via slotTimeFor.
   const fohEve = template.foh.evening;
-  for (let i = 0; i < fohEve.count; i++) {
-    const t = slotTimeFor(fohEve, "foh", "evening", i);
-    const st = slotSoloTimeFor(fohEve, i);
+  const fohEveN = blockUnionCount(fohEve, weekdayKeys);
+  for (let i = 0; i < fohEveN; i++) {
     slots.push({
-      key: "foh-evening-" + i,
-      section: "foh",
-      dayPart: "evening",
-      slotIndex: i,
-      defaultStart: t.start,
-      defaultEnd: t.end,
-      soloStart: st ? st.start : null,
-      soloEnd: st ? st.end : null,
+      ...baseSlot(fohEve, "foh", "evening", i, fohEveN),
       defaultRole: defaultRoleForSlot("foh", "evening", i),
-      sectionLabel: SECTIONS.foh.label,
       dayPartLabel: "Evening",
       eligibleRoles: SECTIONS.foh.roles,   // Bar or Floor — pick one
       isDay: false,
@@ -664,6 +875,17 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
   }
 
   return slots;
+}
+
+// v16.0.0: does this slot's row run on `date` at all? False only when a
+// per-weekday override reduced that weekday's count below this slot index.
+//
+// Deliberately independent of openingDays: `isSlotOpenOnDate` answers "is
+// the restaurant open for this day-part", this answers "does this row exist
+// today". Callers check both.
+export function isSlotScheduledOnDate(slot, date) {
+  if (!slot || !slot.weekdayOff) return true;
+  return slot.weekdayOff[weekdayKeyForDate(date)] !== true;
 }
 
 // ── Per-date slot times (v15.1.0) ────────────────────────────────────────
@@ -682,12 +904,32 @@ export function slotsForDay(template, dayRequiredRolesOverride) {
 // generator.js (new-shift payload times + the Regenerate wipe pass's
 // override detection). PDF export deliberately does NOT use this — solo
 // cells printing their actual times as two-line cells is a feature.
+// v16.0.0: a THIRD tier sits above solo — per-weekday overrides. Full
+// precedence is now:
+//   1. per-weekday override for this exact weekday   (v16.0.0)
+//   2. solo times, when this day-part is the only one open  (v15.1.0)
+//   3. flat block defaults
+// A weekday that carries an override therefore ignores soloTimes even if it
+// happens to be a solo day — the more specific setting wins, which is the
+// locked precedence.
+//
+// The SIGNATURE IS UNCHANGED, which is what makes this cheap: ScheduleGrid's
+// renderCell, both generator call sites, ShiftFormModal's initial/reset
+// times and the swap/move payload all inherit per-weekday times with no
+// edits of their own.
 export function slotTimesForDate(slot, date, openingDays) {
+  const wk = weekdayKeyForDate(date);
+
+  if (slot.weekdayTimes) {
+    const t = slot.weekdayTimes[wk];
+    if (t) return { start: t.start, end: t.end };
+  }
+
   if (!slot.soloStart || !slot.soloEnd) {
     return { start: slot.defaultStart, end: slot.defaultEnd };
   }
   const norm = normalizeOpeningDays(openingDays);
-  const entry = norm[weekdayKeyForDate(date)];
+  const entry = norm[wk];
   const sibling = slot.dayPart === "day" ? "evening" : "day";
   if (entry && entry[slot.dayPart] === true && entry[sibling] === false) {
     return { start: slot.soloStart, end: slot.soloEnd };
@@ -777,12 +1019,24 @@ export function deriveCellState(shift, slotDef) {
   };
 }
 
-// ── Same-day double-booking check (v0.8.0) ───────────────────────────────
-// STRICT rule: a single employee cannot hold more than one shift on the
-// same date — covers day + evening on the same Tuesday too (a 12-hour
-// straight stretch is a labour-law red flag and almost always manager
-// error). Enforced both by filtering the picker dropdown AND by a final
-// guard in the shift modal's save handler.
+// ── Same-day shift lookup (v0.8.0; semantics changed in v16.0.0) ─────────
+// Finds other shifts the employee already holds on the same date.
+//
+// v0.8.0–v15.4.1 this backed a STRICT rule: one employee could never hold
+// two shifts on one date, enforced by hiding them from the picker AND by a
+// refusal in the save handler.
+//
+// **v16.0.0 — split shifts are allowed, MANUALLY.** The same person may now
+// work day AND evening on one date. What changed is only who enforces it:
+//
+//   - Manual picker (ShiftFormModal) — SOFT. Same-day staff are hidden by
+//     default behind a toggle (mirroring the day-off / holiday toggle), and
+//     choosing one raises a yellow warning. The save goes through.
+//   - Swap / Move (ScheduleGrid) — SOFT, but confirmed. A landing that
+//     would create a split opens a confirm dialog first.
+//   - Auto-generator (generator.js step 4) — still HARD. The generator must
+//     never produce a split on its own; a 12-hour straight day is a
+//     deliberate manager decision, not something to stumble into.
 //
 // `excludeShiftId` lets the caller skip the shift currently being edited
 // so the assignment doesn't conflict with itself.
@@ -799,6 +1053,28 @@ export function findSameDayShift(shiftsMap, employeeId, dateIso, excludeShiftId)
     return s;
   }
   return null;
+}
+
+// v16.0.0: the plural form. Under the old strict rule there could only ever
+// be one clash, so returning the first was enough. Now that splits are
+// legal, a warning wants to NAME every shift the employee already holds
+// that date — and a third assignment on one date, while unlikely, is no
+// longer impossible and should read as such rather than silently
+// mentioning only one.
+//
+// Returns an array (possibly empty), in the map's iteration order.
+export function findSameDayShifts(shiftsMap, employeeId, dateIso, excludeShiftId) {
+  const out = [];
+  if (!employeeId || !dateIso) return out;
+  const all = Object.values(shiftsMap || {});
+  for (let i = 0; i < all.length; i++) {
+    const s = all[i];
+    if (!s.employeeId || s.employeeId !== employeeId) continue;
+    if (s.date !== dateIso) continue;
+    if (excludeShiftId && s.id === excludeShiftId) continue;
+    out.push(s);
+  }
+  return out;
 }
 
 // ── Request ↔ shift conflict matching ────────────────────────────────────
@@ -1009,41 +1285,59 @@ function hoursBetween(startStr, endStr) {
 // mean. A fully-closed day-part gives its slots weight 0 → they drop
 // out of the average ("when they are off"). If every eligible slot
 // has weight 0 → returns 0.
+// Private ladder cache for avgShiftHours. The full seven-weekday ladder
+// depends ONLY on (shiftTemplate, dayRequiredRoles), but avgShiftHours is
+// called once per employee per week from blendedAvgShiftHours — so a
+// 10-employee, 4-week window rebuilt one identical list 40 times, and did it
+// again for the calendar-month aggregate, on every re-run of either memo.
+//
+// WeakMap keyed on the template object: the config resolver caches its
+// per-Monday results, so those identities are stable across the walk, and
+// entries drop on their own when a revision is superseded. The second-level
+// identity check on dayRequiredRoles covers the settings object changing
+// under a template that didn't.
+//
+// Safe to share the array because avgShiftHours only READS the slots. Do not
+// hand these out to a caller that might mutate them.
+const avgSlotsCache = new WeakMap();
+function fullWeekSlotsFor(shiftTemplate, dayRequiredRoles) {
+  const hit = avgSlotsCache.get(shiftTemplate);
+  if (hit && hit.roles === dayRequiredRoles) return hit.slots;
+  const slots = slotsForWeek(shiftTemplate, dayRequiredRoles, WEEKDAY_KEYS);
+  avgSlotsCache.set(shiftTemplate, { roles: dayRequiredRoles, slots: slots });
+  return slots;
+}
+
 export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles, openingDays) {
   if (!shiftTemplate || !emp) return 0;
-  const slots = slotsForDay(shiftTemplate, dayRequiredRoles);
+  // v16.0.0: the FULL seven-weekday ladder, so every per-weekday override
+  // is visible here. (slotsForDay would give the base ladder with the
+  // weekday axes stripped, silently ignoring the overrides.) With no
+  // overrides this is the same list slotsForDay returns.
+  const slots = fullWeekSlotsFor(shiftTemplate, dayRequiredRoles);
   if (slots.length === 0) return 0;
   const pref = emp.preference;
   const wantDay = pref === "day" || pref === "either" || !pref;
   const wantEve = pref === "evening" || pref === "either" || !pref;
 
-  // Open-weekday counts per day-part. normalizeOpeningDays handles the
-  // legacy boolean shape AND a missing arg (defaults to both-open).
+  // v16.0.0: the weighting is now a straight per-weekday loop rather than
+  // the v15.1.0 two-bucket (both-open / solo) split. Per-weekday overrides
+  // can give every weekday a different duration AND a different headcount,
+  // so two buckets no longer span the space.
   //
-  // v15.1.0: each day-part's open count splits into "both-open" weekdays
-  // (sibling day-part also open → slot runs its NORMAL times) and "solo"
-  // weekdays (sibling closed → slot runs its soloTimes when configured).
-  // The per-slot contribution weights each mode by its weekday count, so
-  // an evening shift that runs 16:00–23:00 five days a week but
-  // 13:00–23:00 on two evening-only days averages accordingly. Templates
-  // without soloTimes collapse to the v1.15.0 math exactly (hSolo ===
-  // hNormal, and cBoth + cSolo equals the old per-day-part open count).
+  // For each eligible slot we collect one hours value per weekday the slot
+  // actually runs (day-part open, and not dropped by a weekday override),
+  // then average across all of them. That is exactly the same "weight each
+  // mode by how many weekdays use it" idea, just at per-weekday resolution.
+  //
+  // BACKWARD-COMPAT (non-negotiable — this feeds the generator's fairness
+  // ranking): with no weekday overrides, the weekdays contributing to a
+  // slot are precisely the open weekdays for its day-part; they partition
+  // into sibling-open (→ hNormal) and sibling-closed (→ hSolo, which equals
+  // hNormal when no soloTimes are configured). Their cardinalities are the
+  // old cBoth / cSolo, so Σ perDay === hNormal·cBoth + hSolo·cSolo and
+  // |perDay| === cBoth + cSolo — term for term identical to v15.1.0.
   const norm = normalizeOpeningDays(openingDays);
-  let dayBothCount = 0;
-  let daySoloCount = 0;
-  let eveBothCount = 0;
-  let eveSoloCount = 0;
-  for (let i = 0; i < WEEKDAY_KEYS.length; i++) {
-    const e = norm[WEEKDAY_KEYS[i]];
-    if (e && e.day) {
-      if (e.evening) dayBothCount++;
-      else daySoloCount++;
-    }
-    if (e && e.evening) {
-      if (e.day) eveBothCount++;
-      else eveSoloCount++;
-    }
-  }
 
   let weightedTotal = 0;
   let weightSum = 0;
@@ -1052,15 +1346,54 @@ export function avgShiftHours(emp, shiftTemplate, dayRequiredRoles, openingDays)
     if (s.isDay && !wantDay) continue;
     if (!s.isDay && !wantEve) continue;
     if (!roleMatchesSlot(emp, s)) continue;
-    const hNormal = hoursBetween(s.defaultStart, s.defaultEnd);
-    const hSolo = s.soloStart && s.soloEnd ? hoursBetween(s.soloStart, s.soloEnd) : hNormal;
-    if (hNormal <= 0 && hSolo <= 0) continue;
-    const cBoth = s.dayPart === "day" ? dayBothCount : eveBothCount;
-    const cSolo = s.dayPart === "day" ? daySoloCount : eveSoloCount;
-    weightedTotal += hNormal * cBoth + hSolo * cSolo;
-    weightSum += cBoth + cSolo;
+
+    const perDay = [];
+    for (let k = 0; k < WEEKDAY_KEYS.length; k++) {
+      const wk = WEEKDAY_KEYS[k];
+      const e = norm[wk];
+      if (!e || e[s.dayPart] !== true) continue;        // day-part closed
+      if (s.weekdayOff && s.weekdayOff[wk]) continue;   // row doesn't run
+      const t = slotTimesForWeekdayKey(s, wk, e);
+      perDay.push(hoursBetween(t.start, t.end));
+    }
+    if (perDay.length === 0) continue;
+
+    // The drop guard is deliberately TWO-PASS: v15.1.0 skipped a slot only
+    // when BOTH candidate durations were non-positive. A naive per-weekday
+    // `if (h <= 0) continue` is NOT equivalent — with hNormal 6, hSolo 0,
+    // five both-open and two solo weekdays, the old maths yields 30/7 while
+    // per-weekday skipping yields 30/5. Drop the slot only when every
+    // candidate is non-positive; otherwise keep them all, zeros included.
+    let anyPositive = false;
+    for (let j = 0; j < perDay.length; j++) {
+      if (perDay[j] > 0) { anyPositive = true; break; }
+    }
+    if (!anyPositive) continue;
+
+    for (let j = 0; j < perDay.length; j++) {
+      weightedTotal += perDay[j];
+      weightSum += 1;
+    }
   }
   return weightSum > 0 ? weightedTotal / weightSum : 0;
+}
+
+// Sibling of slotTimesForDate that takes a weekday KEY plus that weekday's
+// already-normalized opening entry, so avgShiftHours' inner loop doesn't
+// allocate seven Date objects per slot. Same three-tier precedence:
+// per-weekday override → solo → flat defaults.
+function slotTimesForWeekdayKey(slot, weekdayKey, openingEntry) {
+  if (slot.weekdayTimes) {
+    const t = slot.weekdayTimes[weekdayKey];
+    if (t) return { start: t.start, end: t.end };
+  }
+  if (slot.soloStart && slot.soloEnd && openingEntry) {
+    const sibling = slot.dayPart === "day" ? "evening" : "day";
+    if (openingEntry[slot.dayPart] === true && openingEntry[sibling] === false) {
+      return { start: slot.soloStart, end: slot.soloEnd };
+    }
+  }
+  return { start: slot.defaultStart, end: slot.defaultEnd };
 }
 
 // v15.3.0: clamp a contiguous date window to an employee's tenure
@@ -1717,6 +2050,12 @@ export function isWeekComplete(weekShifts, weekStartDate, slots, openingDays) {
     for (let s = 0; s < slots.length; s++) {
       const slot = slots[s];
       if (!isSlotOpenOnDate(dates[d], slot, openingDays)) continue;
+      // v16.0.0: a per-weekday override can drop this row on this weekday.
+      // Without this gate every extra union-ladder row would read as an
+      // unfilled cell on every non-overriding weekday — which would keep
+      // isWeekComplete permanently false (Export PDF disabled forever) and
+      // wildly inflate the incomplete-export warning count.
+      if (!isSlotScheduledOnDate(slot, dates[d])) continue;
       const shift = findShiftForSlot(weekShifts, dIso, slot);
       if (!shift || !shift.employeeId) return false;
     }
@@ -1738,6 +2077,12 @@ export function countEmptyCells(weekShifts, weekStartDate, slots, openingDays) {
     for (let s = 0; s < slots.length; s++) {
       const slot = slots[s];
       if (!isSlotOpenOnDate(dates[d], slot, openingDays)) continue;
+      // v16.0.0: a per-weekday override can drop this row on this weekday.
+      // Without this gate every extra union-ladder row would read as an
+      // unfilled cell on every non-overriding weekday — which would keep
+      // isWeekComplete permanently false (Export PDF disabled forever) and
+      // wildly inflate the incomplete-export warning count.
+      if (!isSlotScheduledOnDate(slot, dates[d])) continue;
       const shift = findShiftForSlot(weekShifts, dIso, slot);
       if (!shift || !shift.employeeId) count += 1;
     }

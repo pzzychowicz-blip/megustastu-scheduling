@@ -39,7 +39,7 @@
 // read-only nature reads as "details panel" rather than a form.
 
 import { useState } from "react";
-import { S } from "../lib/constants.js";
+import { R, S } from "../lib/constants.js";
 import { Overlay, Section, mkBtn } from "./atoms.jsx";
 import { buildEmployeeFairnessDetail, parseIsoDate } from "../lib/schedule-logic.js";
 import { useEscClose } from "../hooks/useEscClose.js";
@@ -134,7 +134,7 @@ function WeekBar({ row, onClick }) {
   const rangeStr = fmtRangeShort(row.weekStartIso, row.weekEndIso);
   const baseTitle = row.shiftsCount + " / " + row.shiftsTarget + " shifts (" + rangeStr + ")";
   const interactive = typeof onClick === "function";
-  const rowTitle = interactive ? baseTitle + " — click to open this week" : baseTitle;
+  const rowTitle = interactive ? "Open " + baseTitle : baseTitle;
 
   const inner = (
     <>
@@ -180,7 +180,7 @@ function WeekBar({ row, onClick }) {
     return (
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={onClick}
         title={rowTitle}
         aria-label={"Open " + rangeStr + " in the schedule"}
@@ -190,7 +190,7 @@ function WeekBar({ row, onClick }) {
           gap: 10,
           fontSize: 12,
           padding: "4px 8px",
-          borderRadius: 8,
+          borderRadius: R.pill,
           background: "transparent",
           border: "1px solid transparent",
           color: "inherit",
@@ -216,37 +216,6 @@ function WeekBar({ row, onClick }) {
       title={rowTitle}
     >
       {inner}
-    </div>
-  );
-}
-
-// v1.14.0: small helper for the Reasoning view's emphasised numbers.
-// Keeps the formula prose readable — bolded values stand out from the
-// muted formula glue ("=", "×", "−") around them.
-function Num({ children }) {
-  return (
-    <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{children}</span>
-  );
-}
-
-// v1.14.0: formula line with prose label on the left, formula on the
-// right. Wraps on narrow screens. Each line reads as one self-contained
-// step in the derivation.
-function FormulaRow({ label, formula }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        justifyContent: "space-between",
-        gap: 12,
-        padding: "4px 0",
-        fontSize: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <span style={{ ...S.muted, fontSize: 11, minWidth: 120 }}>{label}</span>
-      <span style={{ color: "var(--text-primary)", flex: 1, minWidth: 0 }}>{formula}</span>
     </div>
   );
 }
@@ -280,7 +249,6 @@ export default function EmployeeFairnessModal({
   // Hooks must be called unconditionally — React hook rules forbid
   // early-return-then-useState. The body's "no employee" guard moved
   // below the useState line.
-  const [view, setView] = useState("data");
 
   // v15.3.0: Esc closes the drill-down (above the early return — hooks run
   // unconditionally).
@@ -313,21 +281,11 @@ export default function EmployeeFairnessModal({
   // clamp to [1..7] with a 5 fallback.
   const wpwRaw = employee.workingDaysPerWeek;
   const wpw = Number.isFinite(wpwRaw) && wpwRaw >= 1 ? Math.min(7, Math.round(wpwRaw)) : 5;
-  // v15.4.0: avg shift hours is now per-window-blended (config can vary across
-  // the window via revisions), so the Reasoning view reads the per-window value
-  // exposed on each detail block rather than a single recomputed average.
-  const prefLabel = employee.preference === "day"
-    ? "day shifts only"
-    : employee.preference === "evening"
-      ? "evening shifts only"
-      : "either day or evening";
   const monthLength = cm && cm.monthEndIso ? parseIsoDate(cm.monthEndIso).getDate() : 0;
   // v15.3.0: targets pro-rate by tenure-active days within the window. When
   // the employee is active for the WHOLE window these collapse to the
   // pre-v15.3.0 numbers (activeDays === windowDays), so the formula display
   // only switches to the active-days wording when tenure actually clips it.
-  const r28ActiveDays = Number.isFinite(r28.activeDays) ? r28.activeDays : 28;
-  const r28Partial = r28ActiveDays < (r28.windowDays || 28);
   const cmActiveDays = Number.isFinite(cm.activeDays) ? cm.activeDays : monthLength;
   const cmPartial = cmActiveDays < (cm.windowDays || monthLength);
   const monthShiftsTargetRaw = wpw * (cmActiveDays / 7);
@@ -374,12 +332,16 @@ export default function EmployeeFairnessModal({
           value={cm.holidayDays + " day" + (cm.holidayDays === 1 ? "" : "s")}
           delta={cm.holidayDays > 0 ? "subtracted from target" : null}
         />
-        <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
-          {cmPartial
-            ? "Target pro-rated to the " + cmActiveDays + " of " + monthLength
-              + " days active (tenure): workingDaysPerWeek × " + cmActiveDays + " / 7."
-            : "Target pro-rated as workingDaysPerWeek × " + monthLength + " / 7."}
-        </div>
+        {/* v16.0.0 (phase 40): only the TENURE case gets a caption now. The
+            other branch spelled out the plain pro-rating formula, naming an
+            internal field at the manager — the target is on the row above
+            and the rule is theirs. A clipped window is different: it is the
+            one case where the number looks wrong without the reason. */}
+        {cmPartial ? (
+          <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
+            {"Active " + cmActiveDays + " of " + monthLength + " days, target pro-rated"}
+          </div>
+        ) : null}
       </Section>
 
       <Section title="Per-week pattern" style={{ marginBottom: 12 }}>
@@ -391,192 +353,44 @@ export default function EmployeeFairnessModal({
             return <WeekBar key={row.weekStartIso} row={row} onClick={handler} />;
           })}
         </div>
-        <div style={{ ...S.muted, fontSize: 11, marginTop: 8 }}>
-          Each bar is shifts worked vs the raw workingDaysPerWeek for that week.
-          Red = under, neutral = at, green = at-or-over target.
-          {typeof onJumpToWeek === "function"
-            ? " Click a bar to open that week in the schedule."
-            : null}
-        </div>
+        {/* The legend explained the colours, the denominator and that the
+            bars are clickable. The counts sit at the end of every bar, the
+            colours match the delta bars on the panel these rows were opened
+            from, and a clickable row is a button. */}
       </Section>
     </>
   );
 
-  // v1.14.0: reasoning view. Three Section blocks aligned with the
-  // data view so the manager can mental-map between the two. Each
-  // section shows the formula with the employee's actual numbers
-  // plugged in. Single source of truth per number — the values come
-  // from the same `detail` object the data view reads from.
-  const reasoningView = (
+  // v16.0.0: action row + footnote live in Overlay's `footer` slot, which
+  // pins them to the sheet's bottom edge and bounds the body above them.
+  //
+  // v16.0.0 (phase 39): this row used to hold a second button, left-aligned
+  // opposite Close, flipping the whole modal between "data" and "reasoning".
+  // The reasoning view restated each figure as a worked formula with the
+  // employee's values substituted in — "workingDaysPerWeek (5) x active
+  // days (28) of 28 / 7 - holiday days (2) = 18". That is a system showing
+  // its working, which is the shape of an assistant explaining itself
+  // rather than of a tool. The numbers it explained are the numbers on
+  // screen; the rules behind them are documented, and are the manager's
+  // own rules. With one button left there is nothing to align against, so
+  // the row is a plain right-aligned Close.
+  const footer = (
     <>
-      <Section title="Last 28 days — how the numbers were derived" style={{ marginBottom: 12 }}>
-        <div style={{ ...S.muted, fontSize: 11, marginTop: -4, marginBottom: 8 }}>
-          Window: {fmtRangeShort(r28.dateFromIso, r28.dateToIso)} (28 days).
-          {employee.preference ? " Preference: " + prefLabel + "." : null}
-        </div>
-        <FormulaRow
-          label="Shifts target"
-          formula={
-            r28Partial ? (
-              <>
-                workingDaysPerWeek (<Num>{wpw}</Num>) × active days (<Num>{r28ActiveDays}</Num>) of <Num>28</Num> / <Num>7</Num>
-                {" − "}holiday days (<Num>{r28.holidayDays}</Num>)
-                {" = "}<Num>{r28.shiftsTarget}</Num>
-                {r28.shiftsTarget === 0 ? " (floored at 0)" : ""}
-              </>
-            ) : (
-              <>
-                workingDaysPerWeek (<Num>{wpw}</Num>) × <Num>4</Num> weeks
-                {" − "}holiday days (<Num>{r28.holidayDays}</Num>)
-                {" = "}<Num>{r28.shiftsTarget}</Num>
-                {r28.shiftsTarget === 0 ? " (floored at 0)" : ""}
-              </>
-            )
-          }
-        />
-        {r28Partial ? (
-          <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
-            Pro-rated to the <Num>{r28ActiveDays}</Num> of 28 days this employee
-            is active in the window (tenure dates).
-          </div>
-        ) : null}
-        <FormulaRow
-          label="Hours target"
-          formula={
-            <>
-              shifts target (<Num>{r28.shiftsTarget}</Num>) × avg shift hours (<Num>{fmtHours(r28.avgShiftHours)}</Num>)
-              {" = "}<Num>{fmtHours(r28.hoursTarget)}</Num>
-            </>
-          }
-        />
-        <FormulaRow
-          label="Actual"
-          formula={
-            <>
-              <Num>{r28.shiftsCount}</Num> shifts worked, <Num>{fmtHours(r28.hoursTotal)}</Num> in window.
-            </>
-          }
-        />
-        <FormulaRow
-          label="Hours deficit"
-          formula={
-            <>
-              max(0, target (<Num>{fmtHours(r28.hoursTarget)}</Num>)
-              {" − "}actual (<Num>{fmtHours(r28.hoursTotal)}</Num>))
-              {" = "}<Num>{fmtHours(Math.max(0, r28.hoursTarget - r28.hoursTotal))}</Num>
-            </>
-          }
-        />
-        <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
-          Only <em>holiday</em> requests subtract from the target — day-off requests
-          still HARD-block their dates but the employee remains available for the
-          full quota across the remaining open dates (v1.9.0 rule). Avg shift hours
-          is the mean duration of the slots <em>this employee can actually fill</em> —
-          slots where their roles match AND the dayPart matches their preference. A
-          Chef-only evening employee's avg uses only the Kitchen Evening Chef slot;
-          a Bar-only evening employee averages just the FoH Evening slots. Each
-          slot is weighted by how many days a week its day-part is open, so a shift
-          that runs every day counts more than one that runs twice a week. Both
-          hours-deficit and shifts-deficit feed the auto-generator's ranking —
-          most-behind picks first.
-        </div>
-      </Section>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        {mkBtn({ type: "button", className: "mgt-hover-scale mgt-press", variant: "ghost", onClick: onClose, children: "Close" })}
+      </div>
 
-      <Section title="Calendar month — how the numbers were derived" style={{ marginBottom: 12 }}>
-        <div style={{ ...S.muted, fontSize: 11, marginTop: -4, marginBottom: 8 }}>
-          Month: {cm.monthLabel} ({fmtDateShort(cm.monthStartIso)} – {fmtDateShort(cm.monthEndIso)}, {monthLength} days).
-        </div>
-        <FormulaRow
-          label="Pro-rated raw"
-          formula={
-            cmPartial ? (
-              <>
-                workingDaysPerWeek (<Num>{wpw}</Num>) × active days (<Num>{cmActiveDays}</Num>) of <Num>{monthLength}</Num> / <Num>7</Num>
-                {" = "}<Num>{(Math.round(monthShiftsTargetRaw * 100) / 100)}</Num>
-                {" → round → "}<Num>{Math.round(monthShiftsTargetRaw)}</Num>
-              </>
-            ) : (
-              <>
-                workingDaysPerWeek (<Num>{wpw}</Num>) × month length (<Num>{monthLength}</Num>) / <Num>7</Num>
-                {" = "}<Num>{(Math.round(monthShiftsTargetRaw * 100) / 100)}</Num>
-                {" → round → "}<Num>{Math.round(monthShiftsTargetRaw)}</Num>
-              </>
-            )
-          }
-        />
-        <FormulaRow
-          label="Shifts target"
-          formula={
-            <>
-              <Num>{Math.round(monthShiftsTargetRaw)}</Num>
-              {" − "}holiday days (<Num>{cm.holidayDays}</Num>)
-              {" = "}<Num>{cm.shiftsTarget}</Num>
-              {cm.shiftsTarget === 0 ? " (floored at 0)" : ""}
-            </>
-          }
-        />
-        <FormulaRow
-          label="Hours target"
-          formula={
-            <>
-              shifts target (<Num>{cm.shiftsTarget}</Num>) × avg shift hours (<Num>{fmtHours(cm.avgShiftHours)}</Num>)
-              {" = "}<Num>{fmtHours(cm.hoursTarget)}</Num>
-            </>
-          }
-        />
-        <FormulaRow
-          label="Actual so far"
-          formula={
-            <>
-              <Num>{cm.shiftsCount}</Num> shifts worked, <Num>{fmtHours(cm.hoursTotal)}</Num> this month.
-            </>
-          }
-        />
-        <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
-          The generator's ranking sums this window's deficits with the rolling
-          28-day window's deficits — recent days appear in both, weighting
-          recent under-utilization more heavily. (v1.14.0)
-        </div>
-      </Section>
-
-      <Section title="Per-week pattern — how each bar's target was derived" style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {detail.perWeek.map(function (row) {
-            const holiday = Number.isFinite(row.holidayDays) ? row.holidayDays : 0;
-            const rowActive = Number.isFinite(row.activeDays) ? row.activeDays : 7;
-            const rowPartial = rowActive < 7;
-            return (
-              <FormulaRow
-                key={row.weekStartIso}
-                label={row.label + " (" + fmtRangeShort(row.weekStartIso, row.weekEndIso) + ")"}
-                formula={
-                  rowPartial ? (
-                    <>
-                      wpw (<Num>{wpw}</Num>) × active (<Num>{rowActive}</Num>)/7
-                      {" − "}holiday (<Num>{holiday}</Num>)
-                      {" = "}target <Num>{row.shiftsTarget}</Num>
-                      {", worked "}<Num>{row.shiftsCount}</Num>
-                      {" ("}<Num>{fmtHours(row.hoursTotal)}</Num>{")"}
-                    </>
-                  ) : (
-                    <>
-                      wpw (<Num>{wpw}</Num>)
-                      {" − "}holiday (<Num>{holiday}</Num>)
-                      {" = "}target <Num>{row.shiftsTarget}</Num>
-                      {", worked "}<Num>{row.shiftsCount}</Num>
-                      {" ("}<Num>{fmtHours(row.hoursTotal)}</Num>{")"}
-                    </>
-                  )
-                }
-              />
-            );
-          })}
-        </div>
-        <div style={{ ...S.muted, fontSize: 11, marginTop: 6 }}>
-          Each bar is a 7-day window vs the weekly quota, pro-rated to the days
-          the employee is active that week (tenure) when their dates clip it.
-        </div>
-      </Section>
+      <p style={{ ...S.muted, marginTop: 10, fontSize: 11 }}>
+        Informational only
+      </p>
     </>
   );
 
@@ -586,68 +400,15 @@ export default function EmployeeFairnessModal({
       isMobile={isMobile}
       onClose={onClose}
       title={title}
+      footer={footer}
     >
       {empArchived ? (
         <div style={{ ...S.muted, fontSize: 12, marginTop: -6, marginBottom: 12 }}>
-          Archived employee — counts include any orphaned assignments still on the roster.
+          Archived, including any orphaned assignments
         </div>
       ) : null}
 
-      {/* v1.15.0: inner scroll wrapper. The Overlay desktop sheet uses
-          overflow:visible (v1.9.0 hover-scale fix) so any content
-          taller than maxHeight:80vh spills past the sheet. The
-          Reasoning view's multi-line formulas + 4 per-week rows is
-          taller than the data view and overflows. Cap the body
-          height and re-introduce internal scroll for the Section
-          stack only. empArchived note + footer + footnote stay
-          OUTSIDE the scroller so they always stick to the visible
-          sheet's top/bottom edges. Negative horizontal margin +
-          matching padding gives hover-scaled rows 16 px of clip
-          breathing room (same pattern as ScheduleGrid's outer
-          wrapper and GenerateResultsModal's section wrapper). */}
-      <div
-        style={{
-          maxHeight: isMobile ? "55vh" : "min(60vh, 480px)",
-          overflowY: "auto",
-          padding: "4px 16px",
-          margin: "0 -16px",
-        }}
-      >
-        {view === "data" ? dataView : reasoningView}
-      </div>
-
-      {/* v1.14.0: footer with the Reasoning toggle on the left and
-          Close on the right. justify-content: space-between achieves
-          the layout without an absolute-positioned spacer. Reasoning
-          button label flips between "Reasoning" and "Show data" so the
-          manager always sees the action they can take next, not the
-          state they're already in. */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 8,
-          marginTop: 8,
-          flexWrap: "wrap",
-        }}
-      >
-        {mkBtn({
-          type: "button",
-          className: "mgt-hover-scale",
-          variant: "ghost",
-          onClick: function () { setView(view === "data" ? "reasoning" : "data"); },
-          children: view === "data" ? "Reasoning" : "Show data",
-          title: view === "data"
-            ? "Show how these numbers were calculated"
-            : "Back to the data view",
-        })}
-        {mkBtn({ type: "button", className: "mgt-hover-scale", variant: "ghost", onClick: onClose, children: "Close" })}
-      </div>
-
-      <p style={{ ...S.muted, marginTop: 12, fontSize: 11 }}>
-        Informational only. To change shifts or requests, use the Schedule or Requests tabs.
-      </p>
+      {dataView}
     </Overlay>
   );
 }

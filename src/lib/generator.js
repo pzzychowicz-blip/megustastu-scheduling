@@ -48,9 +48,11 @@
 
 import {
   visibleWeekDates,
-  weekdayKeyForDate,
   isoDate,
-  slotsForDay,
+  slotsForWeek,
+  isSlotScheduledOnDate,
+  weekdayKeyForDate,
+  WEEKDAY_KEYS,
   findShiftForSlot,
   findSameDayShift,
   findRequestConflict,
@@ -634,13 +636,30 @@ export function generateWeek(args) {
     };
   }
 
-  // v1.11.0: pass the configured per-section required-role override into
-  // slotsForDay. When `dayRequiredRoles` is null (legacy call), slotsForDay
-  // falls back to the SECTIONS defaults — pre-v1.11.0 behaviour.
-  const slots = slotsForDay(shiftTemplate, dayRequiredRoles);
+  // visibleWeekDates (not weekDatesWithShifts): the generator must never
+  // fill into a closed day.
+  const dates = visibleWeekDates(weekStart, openingDays);
+
+  // v1.11.0: pass the configured per-section required-role override in.
+  // When `dayRequiredRoles` is null (legacy call), the resolver falls back
+  // to the SECTIONS defaults — pre-v1.11.0 behaviour.
+  //
+  // v16.0.0: the ladder is built over ALL SEVEN weekdays, not just the ones
+  // this run visits. That matters because `slotsByKey` is also what
+  // `wipeShiftsWithPolicy` uses to decide whether an existing record is a
+  // stale leftover — and a missing key there means DELETE. Narrowing the
+  // ladder to the open days would make Regenerate destroy a real assignment
+  // sitting at an index that only a per-weekday override creates, on a
+  // weekday the manager has since closed: ScheduleGrid still renders that
+  // shift (weekDatesWithShifts keeps the day) and the fairness aggregates
+  // still count it (isLiveShiftForTemplate scans all seven keys), so the
+  // generator must agree. One definition of "this slot row exists", shared
+  // by all three. Filling is unaffected — the worklist below gates every
+  // cell on isSlotOpenOnDate AND isSlotScheduledOnDate, so a row that runs
+  // on no visible weekday is simply never visited.
+  const slots = slotsForWeek(shiftTemplate, dayRequiredRoles, WEEKDAY_KEYS);
   const slotsByKey = {};
   for (let i = 0; i < slots.length; i++) slotsByKey[slots[i].key] = slots[i];
-  const dates = visibleWeekDates(weekStart, openingDays);
   const rarity = buildRoleRarity(employees);
 
   // v1.6.1: per-employee count of visible-week dates blocked by a
@@ -700,6 +719,10 @@ export function generateWeek(args) {
     for (let s = 0; s < slots.length; s++) {
       const slot = slots[s];
       if (!isSlotOpenOnDate(date, slot, openingDays)) continue;
+      // v16.0.0: THE line that stops the generator filling a row a
+      // per-weekday override drops on this weekday. Without it the
+      // generator would happily staff a slot the grid renders as "—".
+      if (!isSlotScheduledOnDate(slot, date)) continue;
       const existing = findShiftForSlot(workingShifts, dIso, slot);
       if (existing) continue;
       const built = buildCandidates(

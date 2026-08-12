@@ -6,45 +6,39 @@
 // swap/move mechanic owned by ScheduleGrid.
 //
 // Dumb button — owns no swap state itself. Reads `active` from the
-// parent and fires `onToggle()` when clicked. The hint label below the
-// button is also rendered here for spatial proximity.
+// parent and fires `onToggle()` when clicked.
 //
 // Props:
 //   active     (bool)             — whether swap mode is currently on
 //   phase      ("source-select"|"target-select"|undefined)
-//                                  — for the hint copy; undefined when active=false
+//                                  — unused since v16.0.0; the button no
+//                                    longer narrates which phase it is in.
+//                                    Kept so ScheduleGrid's call site (which
+//                                    passes it) needs no edit if a future
+//                                    per-phase affordance wants it back.
 //   isMobile   (bool)             — currently unused; kept for parity with
-//                                   other nav-bar buttons in case the hint
-//                                   needs a mobile-specific tweak later
+//                                   the other nav-bar buttons
 //   disabled   (bool)             — v1.12.0; greys out the button and
 //                                   no-ops the click. Past-week lockdown
 //                                   in ScheduleGrid passes this.
 //   onToggle   (fn)               — fires when the button is clicked
 
-import { BTN } from "../lib/constants.js";
+import { BTN, BTN_SIZE, pillTone } from "../lib/constants.js";
 
 export default function SwapButton({ active, onToggle, disabled }) {
-  // v1.7.0: when active, the button paints in the yellow warning
-  // palette so it visually matches the source-cell pulse + swap banner
-  // (one swap-mode visual identity, distinct from accent-blue / green).
-  // Inactive state stays in the neutral secondary palette to read as
-  // a regular nav-bar tool alongside Generate / Clear.
+  // v16.0.0 (phase 37): ON is `pillTone(true)` — solid `--accent`, the same
+  // ON language phase 23 gave every other selectable control in the app, and
+  // now also the swap-source cell's ring.
+  //
+  // It used to paint the yellow WARNING tint, on the reasoning that swap
+  // needed a visual identity "distinct from accent-blue / green". That was
+  // reasonable in isolation and wrong in context: yellow already means
+  // something specific here (a conflict, a breached rule, a shift on a
+  // closed day-part), so an armed tool wearing it read as a problem. An
+  // armed tool is a selected control, and this app has one look for that.
   const baseStyle = active
-    ? {
-        ...BTN.base,
-        padding: "6px 12px",
-        fontSize: 13,
-        background: "var(--bg-warning-tint)",
-        color: "var(--text-warning)",
-        border: "1px solid var(--border-warning-tint)",
-        fontWeight: 600,
-      }
-    : {
-        ...BTN.base,
-        ...BTN.secondary,
-        padding: "6px 12px",
-        fontSize: 13,
-      };
+    ? { ...BTN.base, ...BTN_SIZE.md, ...pillTone(true) }
+    : { ...BTN.base, ...BTN.secondary, ...BTN_SIZE.md };
   const style = disabled
     ? { ...baseStyle, opacity: 0.5, cursor: "not-allowed" }
     : baseStyle;
@@ -57,17 +51,19 @@ export default function SwapButton({ active, onToggle, disabled }) {
   return (
     <button
       type="button"
-      className="mgt-hover-scale"
+      className="mgt-hover-scale mgt-press"
       onClick={handleClick}
       disabled={disabled}
       style={style}
-      title={disabled
-        ? "Past weeks are read-only"
-        : active
-          ? "Click a cell to choose source / target, or click again to cancel"
-          : "Toggle Swap mode to move or swap an assignment in two clicks"}
+      aria-pressed={active === true}
+      // v16.0.0 (phase 37): the label is the tool's NAME, in both states. It
+      // used to flip to "Swap: cancel" when armed — a control relabelling
+      // itself with its own exit instruction, on top of a banner that said
+      // the same thing and a Cancel button beside it. Three affordances for
+      // one Esc. The solid-accent fill and `aria-pressed` carry the state.
+      title={disabled ? "Past weeks are read-only" : "Move or swap an assignment"}
     >
-      {active ? "Swap: cancel" : "Swap…"}
+      Swap
     </button>
   );
 }

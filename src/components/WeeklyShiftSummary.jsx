@@ -45,9 +45,10 @@
 //   highlightedEmployeeId (string|null)         — v1.7.0; currently lit pill
 //   onHighlight           (fn(id|null))         — v1.7.0; click handler
 
-import { S, BTN, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
+import { R, S, BTN, BTN_SIZE, BADGE_SIZE, DEFAULT_WORKING_DAYS } from "../lib/constants.js";
 import {
   holidayDaysInWeekByEmployee,
+  isLiveShiftForTemplate,
   employeeTenureOverlapsDates,
   isEmployeeActiveOnDate,
   isoDate,
@@ -75,37 +76,54 @@ function rawQuotaFor(emp) {
   return Math.round(v);
 }
 
-// Count unique dates this employee is on in the week. Two shifts on the
-// same date (shouldn't happen per same-day strict, but defensive)
-// collapse to one — matches the `countAssignedDates` semantic in
-// generator.js.
+// One pass over the week's shifts producing BOTH per-employee tallies.
+//
+//   counts[empId]  — unique DATES worked. Two shifts on one date collapse to
+//                    one, matching `countAssignedDates` in generator.js and
+//                    deliberately so: `workingDaysPerWeek` is a count of
+//                    DAYS, so a split shift consumes one day of quota, not
+//                    two. (v16.0.0: that collapse used to be described as
+//                    defensive, because same-day-strict meant it couldn't
+//                    happen. Split shifts made it load-bearing.)
+//   splits[empId]  — the surplus records the collapse above swallows, so the
+//                    pill can still surface a 12-hour double. A date with
+//                    two shifts contributes 1, a (pathological) three
+//                    contributes 2. Absent when zero.
+//
+// Computed together rather than in two functions: they walk the same records
+// and apply the same orphan skip, so one pass halves the work AND makes the
+// two numbers consistent by construction instead of by keeping two copies of
+// the skip rule in sync.
 //
 // v15.4.0: `template` is the focus-week resolved shift template. When given,
 // orphan shifts — a slot index that no longer exists at its (section, dayPart)
 // in the resolved template (the manager dropped the slot count) — are skipped
-// so they don't inflate the pill count. They already don't render on the grid.
-function buildCountByEmployee(weekShifts, template) {
-  function isLive(s) {
-    if (!template) return true;
-    const sec = template[s.section];
-    const block = sec && sec[s.dayPart];
-    const count = block && Number.isFinite(block.count) ? block.count : 0;
-    return (s.slotIndex || 0) < count;
-  }
-  const seen = {};
+// so they don't inflate either tally. They already don't render on the grid,
+// and a shift that doesn't render must not be reported as half of a split.
+function buildWeekTallies(weekShifts, template) {
+  const perDate = {};
   const all = Object.values(weekShifts || {});
   for (let i = 0; i < all.length; i++) {
     const s = all[i];
     if (!s || !s.employeeId || !s.date) continue;
-    if (!isLive(s)) continue;
-    if (!seen[s.employeeId]) seen[s.employeeId] = {};
-    seen[s.employeeId][s.date] = true;
+    if (!isLiveShiftForTemplate(s, template)) continue;
+    if (!perDate[s.employeeId]) perDate[s.employeeId] = {};
+    perDate[s.employeeId][s.date] = (perDate[s.employeeId][s.date] || 0) + 1;
   }
-  const out = {};
-  for (const id in seen) {
-    out[id] = Object.keys(seen[id]).length;
+  const counts = {};
+  const splits = {};
+  for (const id in perDate) {
+    const dates = perDate[id];
+    let days = 0;
+    let extra = 0;
+    for (const d in dates) {
+      days += 1;
+      if (dates[d] > 1) extra += dates[d] - 1;
+    }
+    counts[id] = days;
+    if (extra > 0) splits[id] = extra;
   }
-  return out;
+  return { counts: counts, splits: splits };
 }
 
 export default function WeeklyShiftSummary({
@@ -114,7 +132,18 @@ export default function WeeklyShiftSummary({
   // v15.4.0: focus-week resolved template, drives the orphan-shift skip.
   template,
 }) {
-  const counts = buildCountByEmployee(weekShifts, template);
+  // v16.0.0: split shifts. `counts` deliberately counts DISTINCT DATES, so
+  // an employee working day + evening on one Tuesday still reads as one
+  // day against their weekly quota — `workingDaysPerWeek` is literally a
+  // count of days, and the generator's quota gate and every fairness
+  // target agree with that reading. But the pill would then be silent
+  // about a 12-hour double, which is exactly the thing a manager scanning
+  // this panel wants to notice. So the same pass reports the swallowed
+  // surplus separately and it renders as a suffix, without touching any of
+  // the quota maths.
+  const tallies = buildWeekTallies(weekShifts, template);
+  const counts = tallies.counts;
+  const splitDays = tallies.splits;
   // v1.6.0: per-employee count of visible-week dates blocked by a
   // request. v1.9.0: narrowed to `holiday` only — `dayoff` no longer
   // decrements the effective cap (it still HARD-blocks the date via
@@ -152,6 +181,7 @@ export default function WeeklyShiftSummary({
       archived: emp.active === false,
       count: count,
       quota: quota,
+      splits: splitDays[emp.id] || 0,
       // Under-utilization ratio: lower = more under-utilized → sorts first.
       // Quota=0 (someone fully on holiday) collapses to ratio=1 so they
       // don't disturb the under-utilization sort.
@@ -184,7 +214,7 @@ export default function WeeklyShiftSummary({
           flexWrap: "wrap",
         }}
       >
-        <div style={{ ...S.h2, margin: 0, fontSize: 14 }}>
+        <div style={{ ...S.panelTitle }}>
           Shifts assigned
         </div>
         <span style={{ ...S.muted, fontSize: 11 }}>{weekLabel}</span>
@@ -231,14 +261,13 @@ export default function WeeklyShiftSummary({
             <button
               key={r.id}
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-press"
               onClick={interactive
                 ? function () { onHighlight(isSelected ? null : r.id); }
                 : undefined}
               style={{
                 ...BTN.base,
-                padding: "4px 10px",
-                fontSize: 12,
+                ...BTN_SIZE.sm,
                 cursor: interactive ? "pointer" : "default",
                 border: "1px solid " + borderColor,
                 opacity: r.archived ? 0.55 : 1,
@@ -246,7 +275,13 @@ export default function WeeklyShiftSummary({
                 boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : undefined,
                 fontWeight: isSelected ? 700 : undefined,
               }}
-              title={r.archived ? r.name + " (archived)" : r.name}
+              title={
+                (r.archived ? r.name + " (archived)" : r.name)
+                + (r.splits > 0
+                  ? " — " + r.splits + " split shift" + (r.splits === 1 ? "" : "s")
+                    + " this week (day + evening on the same date)"
+                  : "")
+              }
             >
               <span
                 style={{
@@ -259,6 +294,30 @@ export default function WeeklyShiftSummary({
               <span style={{ marginLeft: 6, opacity: 0.85 }}>
                 {r.count} / {r.quota}
               </span>
+              {/* v16.0.0: split-shift marker. The count to its left is a
+                  count of DAYS, so a split is invisible there by design —
+                  this is what tells the manager the day was a double. In
+                  the warning palette because a 12-hour straight day is
+                  worth a second look, not because it's an error. */}
+              {r.splits > 0 ? (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    // v16.0.0 (phase 24): was 1px 5px / 10 — smaller than
+                    // every other badge in the app for no recorded reason.
+                    // It rides on a BTN_SIZE.sm pill, so it takes the
+                    // standalone badge metrics like any TBadge would.
+                    ...BADGE_SIZE.base,
+                    fontWeight: 700,
+                    borderRadius: R.pill,
+                    background: "var(--bg-warning-tint)",
+                    border: "1px solid var(--border-warning-tint)",
+                    color: "var(--text-warning)",
+                  }}
+                >
+                  {r.splits === 1 ? "split" : r.splits + " splits"}
+                </span>
+              ) : null}
             </button>
           );
         })}

@@ -27,8 +27,9 @@
 //                                        Clear is undoable.
 
 import { useState, forwardRef, useImperativeHandle } from "react";
-import { BTN } from "../lib/constants.js";
+import { BTN, BTN_SIZE } from "../lib/constants.js";
 import { formatWeekRange, isoDate } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import ClearConfirmModal from "./ClearConfirmModal.jsx";
 
 // v15.3.0: forwardRef so the `C` keyboard shortcut in ScheduleGrid can open
@@ -130,8 +131,7 @@ function ClearButton({
   const style = {
     ...BTN.base,
     ...BTN.secondary,
-    padding: "6px 12px",
-    fontSize: 13,
+    ...BTN_SIZE.md,
     opacity: disabled ? 0.5 : 1,
     cursor: disabled ? "not-allowed" : "pointer",
   };
@@ -140,7 +140,7 @@ function ClearButton({
     <>
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={handleClick}
         disabled={disabled}
         style={style}
@@ -149,17 +149,21 @@ function ClearButton({
         Clear…
       </button>
 
-      <ClearConfirmModal
-        open={open}
-        weekLabel={formatWeekRange(weekStart)}
-        weekDates={weekDates}
-        weekShifts={weekShifts}
-        slots={slots}
-        busy={busy}
-        isMobile={isMobile}
-        onClose={handleClose}
-        onConfirm={handleConfirm}
-      />
+      <ModalPresence show={open}>
+        {open ? (
+          <ClearConfirmModal
+            open
+            weekLabel={formatWeekRange(weekStart)}
+            weekDates={weekDates}
+            weekShifts={weekShifts}
+            slots={slots}
+            busy={busy}
+            isMobile={isMobile}
+            onClose={handleClose}
+            onConfirm={handleConfirm}
+          />
+        ) : null}
+      </ModalPresence>
     </>
   );
 }

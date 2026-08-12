@@ -5,6 +5,1169 @@ an entry. Newest first.
 
 ---
 
+## v16.0.0 — Bookings parity, split shifts, per-weekday template
+
+**Date:** 2026-08-05
+
+**Behavioural change:** Substantial, in three independent areas. See each
+phase below. *(Entry created with phase 1 and extended in place by every
+later commit on this branch — one entry per version.)*
+
+### Phase 1 — Design tokens + motion CSS foundation
+
+Groundwork for the MGT Bookings visual-parity pass. Purely additive: no
+existing rule changed behaviour, so the app renders identically after this
+commit.
+
+- **`--font-app`** — the app typeface becomes a single token, and a new
+  global `input, textarea, select, button { font-family: inherit }` rule
+  forces it onto form controls (which do not inherit `font-family` per
+  spec, and were falling back to browser defaults). Ported from Bookings,
+  where the same rule fixed a monospace textarea.
+- **Radii scale (`--r-pill` / `-sheet` / `-card` / `-inset` / `-tight`)**,
+  exported from `constants.js` as `R`. Values were chosen to match
+  Scheduling's *existing* dominant literal per role (999 / 16 / 12 / 10 /
+  8), so the sweep in phase 2 is a visual no-op rather than a restyle.
+  Deliberately absent from the `[data-theme="dark"]` block — radii are
+  theme-agnostic. `S.card`, `S.surfaceSoft`, `S.inputBase` and `BTN.base`
+  converted here; the remaining ~50 call sites land in phase 2.
+- **Motion vocabulary** — Scheduling had exactly one global class
+  (`.mgt-hover-scale`) and two `@keyframes` declared inline inside
+  `ScheduleGrid`. Added the modal set (`mgt-scrim/card/sheet-in|out`),
+  `mgt-toast-in|out`, the directional `mgt-view-in-left|right`,
+  `mgt-fade-in`, and `.mgt-press` (which uses `filter: brightness()`
+  rather than a transform specifically so it never fights
+  `.mgt-hover-scale`'s hover transform). Consumers arrive in phase 3.
+- **Reduced motion** — two independent kill switches, matching Bookings:
+  the OS `prefers-reduced-motion` media query, and a per-device toggle
+  writing `localStorage["mgt-reduce-motion"]` which the no-flash inline
+  script stamps onto `<html data-motion="reduce">` before React mounts.
+  The Settings toggle that drives the second one lands in phase 6.
+
+**Deliberate divergence from Bookings:** Bookings' `.mgt-hover-scale:hover`
+rule *dropped* its `border-radius` declaration in its v17.7.0 radii work,
+requiring every consumer to set its own. Scheduling keeps the declaration
+(now `var(--r-card)`) because here it is load-bearing: Toggle atoms,
+Collapsible headers and `Fld`-wrapped Settings rows carry no inline
+`border-radius` at all, and removing it would paint their hover card with
+sharp corners.
+
+**BTN parity note:** Bookings exports ten `BTN` variants, but they are
+named for its own domain (tables / edit / del / …). Scheduling's five
+semantic variants cover every call site here, so the parity pass
+deliberately did not import the other eight — dead tokens are worse than
+no tokens. What the apps now genuinely share is `R` and the motion CSS.
+
+**Files changed:** `index.html` (tokens, global rules, keyframes,
+reduced-motion, no-flash script), `src/lib/constants.js` (+`R`, 4 token
+applications), `src/App.jsx` (→ 16.0.0, sha
+`bookings-parity-split-shifts-perweekday-template`), `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean; main bundle 181.29 kB gz.
+
+### Phase 2 — borderRadius → `R` token sweep
+
+Mechanical conversion of every `borderRadius` literal in `src/components/`
+to an `R.*` token — 50 call sites across 16 files. Assigned **by role**
+(what kind of surface is this?) rather than by matching the old number,
+per the `R` doc block in `constants.js`.
+
+Conversions: `999 → R.pill` (10), `16 → R.sheet` (2), `12 → R.card` (5),
+`10 → R.inset` (16), `8 → R.tight` (17).
+
+**Left numeric on purpose** — these are tuned geometry or micro-detail,
+not surface roles, and match the exception classes Bookings documents for
+its own scale:
+
+- `borderRadius: "50%"` circles — `ConnectionStatus` dot (×2), `atoms`
+  Toggle knob.
+- `MonthlyFairnessPanel` delta-bar trio (5 / 5 / 1 / 4) — the radius is
+  part of a hand-tuned bar geometry from the v1.13.0 polish rounds.
+- `EmployeeFairnessModal` sparkline track/fill pair (6 / 6).
+- `Kbd` keycap (6), `ScheduleGrid`'s role chip (6), mobile section band
+  (6) and the amber "closed" tag (5).
+- `atoms` mobile Overlay sheet (0) — full-bleed by design.
+- `src/lib/pdf-export.js` — out of scope entirely; it never reads CSS
+  vars because the printed palette is locked light (v0.11.0).
+
+**Behavioural change:** None. Token values were chosen in phase 1 to equal
+the literals they replace, so this is a pure indirection change.
+
+**Files changed:** 16 files under `src/components/` (`atoms`, `AppShell`,
+`ScheduleGrid`, `Settings`, `ShiftFormModal`, `EmployeeFormModal`,
+`EmployeesList`, `RequestFormModal`, `RequestsList`,
+`RequestPreviewModal`, `WeeklyRequestsPreview`, `ClearConfirmModal`,
+`ConnectionStatus`, `LoginScreen`, `MonthlyFairnessPanel`,
+`EmployeeFairnessModal`) — radii plus the `R` import, `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean; main bundle 181.34 kB gz (+0.05).
+Static check that every `R.*` reference resolves to a defined key. In the
+DEV browser: token values resolve (`--r-card` → 12px etc.), and spot-checked
+computed radii match their pre-sweep pixel values (Generate button 12px,
+tab pill 8px, date pill 10px).
+
+### Phase 3 — Animation primitives + animated modals
+
+Ported Bookings' animation atoms into `atoms.jsx` (`Presence`, `Toast`,
+`ModalPresence` + `PresenceContext` / `usePresence`, `Reveal`,
+`AutoHeight`, `SlideView`, and the shared `usePresenceLifecycle` state
+machine), then used them to give every modal a real open/close animation.
+
+**The structural problem this had to solve.** Scheduling's modals are
+*always mounted* and toggle an `open` prop, while the data behind them
+goes null the instant the parent closes them — `ScheduleGrid` sets
+`modalCell = null`, so `slotDef` becomes null and
+`if (!open || !slotDef) return null` fires. A modal therefore cannot
+animate its own exit: by the time it knows it is closing, its content is
+already gone. `ModalPresence` fixes this by caching the last truthy child
+*element*, whose props still hold the old data, and re-rendering it for
+the duration of the exit while publishing `{leaving: true}` on
+`PresenceContext`. All ten mount sites were converted to
+`<ModalPresence show={cond}>{cond ? <Modal open … /> : null}</ModalPresence>`.
+
+`Overlay` now reads that context and swaps its scrim and sheet to the
+`*-out` keyframes before unmounting. With no provider the context default
+`{leaving: false}` applies, so an un-wrapped Overlay still behaves exactly
+as before.
+
+Also on `Overlay`:
+
+- **`footer` slot (new, optional).** The sheet becomes a flex column with a
+  bounded scrolling body and a pinned footer. This is the supported fix for
+  the "tall modal spills past the sheet" problem that v1.9.0's
+  `overflow: visible` introduced and that two modals had patched with
+  ad-hoc inner scrollers. Modals *without* a footer keep `overflow: visible`
+  untouched, so hover-scaled inputs still lift past the border.
+- **Mobile body-scroll lock** — the page behind a full-screen sheet no
+  longer scrolls under the user's finger.
+- **Safe-area insets** on the mobile sheet, so it clears the notch and the
+  home indicator.
+
+**Enter-key guard.** Because the cached element keeps `open={true}` through
+the 200 ms exit, a stray Enter could re-fire a modal's primary action while
+it was closing. The four modals wired to `useEnterSubmit` (`ShiftFormModal`,
+`EmployeeFormModal`, `RequestFormModal`, `ExportWarningModal`) now read
+`usePresence()` and gate on `open && !leaving`. `useEscClose` was left
+ungated on purpose — `onClose` during a close is idempotent.
+
+**Known minor consequence:** `isAnyOverlayOpen()` (`src/lib/keyboard.js`)
+probes for a mounted `data-mgt-overlay`, so the global keyboard shortcuts
+stay suppressed for the 200 ms of the exit animation. A keypress landing in
+that window does nothing. Accepted rather than worked around.
+
+**Files changed:** `src/components/atoms.jsx` (+7 exports, Overlay rewrite),
+the ten mount sites (`ScheduleGrid` ×2, `AppShell`, `ClearButton`,
+`ExportButton`, `GenerateButton`, `EmployeesList`, `RequestsList`,
+`WeeklyRequestsPreview`, `MonthlyFairnessPanel`), the four Enter-submit
+modals, `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. In the DEV browser, instrumented
+the full modal lifecycle: open → `mgt-scrim-in` / `mgt-card-in`, settled,
+close → `mgt-scrim-out` / `mgt-card-out`, unmounted after ~200 ms. With
+`data-motion="reduce"` stamped, scrim / card / hover-scale all collapse to
+`1e-06s`, confirming both reduced-motion switches reach the new animations.
+
+### Phase 4 — Migrate the two hand-rolled modal scrollers onto `footer`
+
+`GenerateResultsModal` (v1.9.4) and `EmployeeFairnessModal` (v1.15.0) each
+carried a near-identical local workaround: a `maxHeight` + `overflowY: auto`
+box with negative horizontal margins, added because the desktop sheet is
+`overflow: visible` (the v1.9.0 hover-scale fix) and their tall content —
+35+ cleared rows on a busy Regenerate, or the Reasoning view's formulas plus
+four per-week rows — pushed the action buttons off the backdrop. Both are
+now deleted in favour of Overlay's `footer` slot, which owns the bounded
+body and the clip breathing room centrally.
+
+**Bug found and fixed while verifying:** the desktop sheet was
+`content-box`, so `maxHeight: 80vh` capped only the content box — the
+rendered sheet came out at 80vh **plus** 40px padding and 2px border (704px
+against a 661.6px cap on an 827px viewport). Pre-existing since v1.9.0 and
+harmless while the sheet merely overflowed, but the `footer` layout sizes
+its scrolling body from that cap, so it now has to be accurate. Added
+`boxSizing: "border-box"`.
+
+Both modals' buttons also picked up `.mgt-press`.
+
+**Files changed:** `src/components/GenerateResultsModal.jsx`,
+`src/components/EmployeeFairnessModal.jsx`, `src/components/atoms.jsx`
+(box-sizing), `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. In the DEV browser the fairness
+modal now measures: sheet `display: flex` / `column` / `overflow: hidden`,
+children = title (19px) → body (`overflowY: auto`, scrollable) → footer
+(72px); after switching to the taller Reasoning view the sheet is 662px
+against a 661.6px cap (respected), and the footer stays on screen.
+
+### Phase 5 — Press feedback + a focus-visible ring
+
+**`.mgt-press`** is now applied centrally in `mkBtn`, so all 30 buttons
+built through the builder get the `:active` brightness dip for free, and it
+composes with whatever `className` the caller passes. The app also has 37
+raw `<button>` elements using `BTN.base` directly; the nav-bar action
+buttons among them (Generate / Swap / Undo / Clear / Export, plus the
+AppShell tab and Sign-out buttons) were opted in explicitly. Press uses
+`filter` and hover uses `transform`, so the two never clobber each other.
+
+**`:focus-visible`** — a 2px accent outline with a 2px offset, added
+globally. **Neither app had any focus affordance at all**, which was the
+clearest accessibility gap in both: a keyboard user tabbing through had no
+way to tell where they were. `:focus-visible` rather than `:focus` so a
+mouse click doesn't paint a ring while Tab does; `outline` rather than
+`box-shadow` because it follows border-radius automatically, sits outside
+the box model (no reflow), and can't fight the inset shadow `S.inputBase`
+paints.
+
+This required removing `outline: "none"` from `S.inputBase`. It was an
+*inline* style, so it beat the new global rule and would have left every
+input in the app unfocusable-looking. Note that per spec text inputs match
+`:focus-visible` on any focus including click — which is the behaviour we
+want for a field.
+
+*(A ROADMAP item is filed to port the focus ring back to MGT Bookings,
+which has the same gap.)*
+
+**Files changed:** `index.html` (focus-visible rule),
+`src/lib/constants.js` (drop `outline: "none"`),
+`src/components/atoms.jsx` (`mkBtn` applies `.mgt-press`), six nav-button /
+shell components, `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. In the DEV browser, a real Tab
+keypress lands on a button matching `:focus-visible` with a computed
+`2px solid rgb(10, 132, 255)` outline at `2px` offset; programmatic
+`.focus()` correctly does *not* match, confirming the rule is
+keyboard-scoped rather than firing on clicks.
+
+### Phase 6 — ConnectionStatus: three states + the anchoring bugfix
+
+**The bug Bookings flagged for us.** `ConnectionStatus.jsx:22-28` in MGT
+Bookings carries a note left for this repo: *"NB Scheduling's copy has the
+same latent bug — port this fix on its next touch."* The popover picked its
+anchor side from `isMobile`, but the dot's x position depends on header
+flex-wrap, not viewport width — so a left-anchored popover hanging off a
+right-edge dot ran off-screen. Measured in the DEV browser at 599px
+(`isMobile` true, header unwrapped): the dot's right edge is at 470px and
+the popover is 246px wide, so the old `left: 0` put it at [458, 704] on a
+599px viewport — about 105px unreachable. The anchor side is now **measured**
+at open time, preferring right-anchoring and flipping left only when there
+is no room.
+
+**Three states, not two.** `connected === false` was doing double duty: "we
+haven't confirmed a connection yet" *and* "the connection dropped". Since
+`useFirebaseConnection` starts `false`, the dot flashed **red on every page
+load** before settling green — a false outage alarm. The hook now returns
+`{connected, hasConnected}`, latching `hasConnected` on the first successful
+connect (ref-guarded so reconnects don't re-set it), which lets the
+component distinguish:
+
+| condition | state | colour |
+|---|---|---|
+| `!hasConnected && !connected` | Connecting… | amber |
+| `connected` | Connected | green |
+| `hasConnected && !connected` | Connection lost | red |
+
+Bookings' devices-presence list was deliberately **not** ported — Scheduling
+is single-manager by design (a locked v1 decision), so there is never more
+than one device to list.
+
+**Token cleanup:** the dot's glow was two `rgba()` literals inline in the
+component, violating the v0.11.0 rule that JS carries no colour literals.
+Now `--status-{online,offline,connecting}-glow`, themed in both blocks. The
+dot button also gained an explicit `R.pill` radius — the hover rule paints
+an opaque `--bg-hover-card` behind whatever it lifts, and without a radius
+that renders as a hard-edged rectangle around a round dot (the same trap
+Bookings hit and documented).
+
+**Files changed:** `index.html` (+6 status tokens),
+`src/hooks/useFirebaseConnection.js` (returns an object),
+`src/components/ConnectionStatus.jsx`, `src/components/AppShell.jsx`,
+`REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. DEV browser at 599px: popover
+measures [224, 470] — fully on screen, right-anchored as intended.
+
+### Phase 7 — Tab transitions + the reduce-animations toggle
+
+**Tab nav.** Scheduling's tab strip was already a pill track (segment
+background, lifted active pill, horizontal scroll rather than widening the
+layout) — much closer to Bookings than expected. Only two alignments were
+needed: the track and pills move from `R.card`/`R.tight` to `R.pill`, and
+`scrollbarWidth: none` hides the scrollbar that appeared on narrow
+viewports.
+
+**Directional view transitions.** The tab body is wrapped in `<SlideView>`,
+re-keyed on every tab change so the CSS keyframe replays (remounting is the
+only way to re-trigger one). Direction comes from the index delta along
+`TABS`: moving right enters from the right, moving left from the left. The
+outgoing view is not animated — it just unmounts, which keeps the swap
+crisp instead of crossfaded.
+
+The slide hooks sit **above** `AppShell`'s `if (!ready)` early return. They
+were briefly written below it, which is a Rules-of-Hooks violation — hooks
+must run unconditionally or React's ordering invariant breaks.
+
+**Reduce animations.** A new Toggle in Settings → Display, and the one
+preference on that tab that deliberately does **not** live in `/settings`:
+it is per-device (a weak tablet and a fast laptop should be able to
+disagree), so it writes `localStorage["mgt-reduce-motion"]` and stamps
+`data-motion="reduce"` on `<html>`. The same key is read by the no-flash
+inline script before React mounts, so the preference is honoured from the
+first paint. The Toggle's initial state is read in a lazy `useState`
+initializer rather than an effect — an effect would paint "off" for a frame
+on a device that has it on.
+
+**Header (A10) — deliberately not restructured.** The plan called for
+aligning the header with Bookings' two-row chrome, but that layout is
+booking-domain-specific (date nav, walk-in, waitlist badge). Scheduling's
+header is title + connection dot + sign-out, with week navigation living
+inside `ScheduleGrid` where it belongs. Copying the structure would be
+parity for its own sake. The genuinely shared part — `--font-app` reaching
+every control — landed in phase 1 and is verified.
+
+**Files changed:** `src/components/AppShell.jsx` (pill radii, SlideView,
+slide state), `src/components/Settings.jsx` (+`REDUCE_MOTION_KEY`, toggle
+and handler), `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. DEV browser: track and pills both
+compute `999px` with `scrollbar-width: none`; instrumented tab changes give
+`mgt-view-in-right` moving right and `mgt-view-in-left` moving left, with
+the class cleared after the animation ends. The reduce-animations Toggle
+flips `data-motion` and the localStorage key on, then cleanly back off.
+
+### Phase 8 — Directional week slide on the schedule grid
+
+The `ScheduleGrid` counterpart to phase 7's tab transition. Forward in time
+enters from the right, backward from the left, matching the mental model of
+a calendar running left-to-right.
+
+Direction is derived from the focus week's **timestamp delta**, not from
+which control was used — so `goPrev` / `goNext`, `goToday`, the `←` / `→` /
+`T` keyboard shortcuts, and `jumpToWeek` from the fairness sparkline all
+animate correctly without any of them having to declare a direction.
+
+Only the grid itself is wrapped. The nav bar, banners, and the summary /
+requests / fairness panels below stay put, so the week's content changes
+inside a stable frame rather than the whole page lurching.
+
+**Files changed:** `src/components/ScheduleGrid.jsx`, `REFACTOR_LOG.md`.
+
+**Verification:** `npm run build` clean. DEV browser: Next → `mgt-view-in-right`,
+Prev → `mgt-view-in-left`, grid re-renders intact (83 interactive cells).
+
+### Phases 9–10 — Split shifts (manual only)
+
+The same person may now work day **and** evening on one date. This was a
+HARD block from v0.8.0, enforced in four places; three of them soften, and
+the fourth deliberately does not.
+
+| Site | Before | After |
+|---|---|---|
+| `ShiftFormModal` picker filter | hard-excluded | hidden by default, revealed by a toggle |
+| `ShiftFormModal` save handler | red refusal | yellow warning, save proceeds |
+| `ScheduleGrid.attemptSwap` | red refusal | confirm dialog, then proceeds |
+| `generator.js` step (4) | hard filter | **unchanged** |
+
+**The generator is the load-bearing exception.** A 12-hour straight day
+should be a deliberate manager decision, never something the algorithm
+stumbles into, so `buildCandidates` keeps its same-day filter and
+`generator.js` was not touched at all in this version.
+
+**`schedule-logic`.** `findSameDayShift`'s doc block described a strict rule
+that no longer exists and was rewritten. Added `findSameDayShifts` (plural):
+under the old rule there could only ever be one clash, but a warning now
+wants to name *every* shift the employee already holds that date, and a
+third assignment on one date — while unlikely — is no longer impossible.
+
+**Picker (phase 9).** Filter (b) becomes hide-by-default, mirroring the
+day-off / holiday treatment in (c): a "Show staff already working this
+date" toggle reveals them, with the helper text saying picking one creates
+a split. Two deliberate steps rather than one mis-click in a long dropdown.
+The toggle **auto-flips ON** when the cell being edited is already half of
+an existing split — otherwise the `<select>` would render a value absent
+from its own options, the identical bug the request toggle has guarded
+against since v0.8.0. The save-time refusal is deleted; `splitShiftBanner`
+warns instead, naming the existing shift and its times, and leads the banner
+stack because it describes the most consequential thing about the
+assignment.
+
+**Swap / Move (phase 10).** New `SplitConfirmModal`. Swap commits on the
+second cell click — there is no Save step to hang an inline warning on — so
+this flow needs a real dialog or two ordinary grid clicks could silently
+produce a double. `attemptSwap` was split into validation + a new
+`commitSwap`, so the confirm can resume the exact pending operation.
+Deliberately **not** wired to Enter: the dialog exists to interrupt a
+two-click flow, so it should cost a deliberate click. Same-date day→evening
+moves are untouched — those were always allowed, being a relocation rather
+than a duplication.
+
+**Counting (phase 10).** Quota and every fairness target stay **date**-based:
+`workingDaysPerWeek` is literally a count of days, so a split consumes one
+day, and hours (which sum per record) already reflect the reality of a
+longer day. But that makes a split invisible on the "Shifts assigned" pill,
+which is exactly where a manager would want to notice it — so
+`buildSplitDayCountByEmployee` reports the surplus separately and the pill
+gains a small amber "split" marker plus an explanatory tooltip. No quota
+maths changed.
+
+**Files changed:** `src/lib/schedule-logic.js`,
+`src/components/ShiftFormModal.jsx`, `src/components/ScheduleGrid.jsx`,
+`src/components/SplitConfirmModal.jsx` (new),
+`src/components/WeeklyShiftSummary.jsx`, `REFACTOR_LOG.md`. Stale
+"same-day strict" comments corrected in each.
+
+**Verification:** `npm run build` clean. Full flow driven in the DEV
+browser: assigned Carlos to Kitchen Day Mon, then opened Kitchen Evening
+Mon — Carlos correctly hidden, toggle present reading "1 hidden — picking
+one creates a split shift"; flipping it revealed him and selecting him
+raised *"Split shift. This employee is already on Kitchen Day (11:00–16:00)
+on 2026-08-03…"* with Save enabled. After saving, the weekly pill read
+`Carlos 1 / 5 [split]` (one day of quota, split flagged) and the fairness
+row read `1 / 13 shifts, 12h` — date-based count, honest hours.
+
+**The important one:** running Fill-empty over that week produced 37 filled
+cells and, checking every column for an employee appearing twice, **exactly
+one split — the manually-created one.** The generator added none.
+
+*(First attempt at that check reported zero splits and was wrong: it
+stripped the leading time from each cell but not the role pill, so
+`"Carlos"` and `"ChefCarlos"` compared unequal. Re-run matching against the
+known employee names.)*
+
+### Phases 17–21 — The rest of the pre-push review
+
+Patryk asked for all three remaining buckets, so every finding is closed on
+this branch rather than deferred.
+
+**17 — the cell editor stopped discarding work.** Two ShiftFormModal defects
+from Part B. The re-init effect had gained `weekShifts` as a dependency (the
+new same-day auto-flip reads it) while still calling `setForm(initialForm)`,
+so any write to `/shifts` — an undo, a second device, a Firebase echo —
+silently reverted whatever the manager had typed into the open modal.
+`weekShifts` and `requests` now come through a ref; both were only ever
+needed for the one-shot read at open. Separately, `showSameDayStaff` was
+auto-flipped ON only at open, so turning it back off with a same-day
+employee selected filtered them out of the option list while
+`form.employeeId` still held their id — the select rendered blank, reading
+as "Unassigned", and Save wrote the assignment anyway. Fixed at the
+invariant rather than the symptom: the `eligible` memo never filters out the
+current selection, so "the select's value is always in its options" holds
+for BOTH toggles in every order of operations. They still count toward the
+hidden totals, so the helper text stays truthful. CLAUDE.md claimed the
+auto-flip maintained that invariant; corrected to describe what does.
+
+**18 — "closed" stopped meaning two things.** `renderUnscheduledSlotCell`
+passed `true` as `renderCell`'s `closedOverride`, which paints a hard-coded
+"closed" tag — so a cell whose row a per-weekday override drops, but which
+still holds a real shift, told the manager the restaurant was shut on a day
+it was trading. Every other surface already split the two cases
+(`renderClosedCell`'s `label`, pdf-export's `"Closed"` vs `"—"`); only the
+occupied path conflated them, because `renderCell` had two states where it
+needed three. `closedOverride` → `inertTag`, a caller-supplied string:
+`"closed"` (day-part not open) or `"not today"` (open, row doesn't run).
+
+**19 — two atoms bugs.** Overlay's mobile body-scroll lock used per-instance
+save-and-restore of `document.body.style.overflow`. Modals are
+one-at-a-time by design, but ModalPresence keeps a closing one mounted for
+200 ms, so opening B while A animates out interleaves the pairs: B saves
+`prev="hidden"` (A's lock), A's cleanup restores `""` and unlocks the page
+under a full-screen B, and B's cleanup writes back `"hidden"` — leaving
+`<body>` unscrollable with no modal open until a reload. The lock is a
+property of the document, so it is refcounted at module level and the style
+is touched only on the 0↔1 edges. And `SlideView`'s `onAnimationEnd` wasn't
+target-guarded: animationend bubbles, and ScheduleGrid renders
+`mgt-jump-pulse` (1.6 s) on cells *inside* the wrapper, so a cell animation
+finishing mid-slide stripped the direction class and snapped the half-slid
+view into place.
+
+**20 — two visual fixes.** `S.inputBase` is `R.pill`, correct for a
+single-line control (CSS clamps to half the box → a true pill at any
+height). Multi-line is the case that breaks it, and `S.inputBase` is also
+spread onto the Notes textarea: at `rows={2}` (~62 px) it clamps to ~31 px
+per corner and reads as a lozenge, worse as `resize: vertical` grows it.
+Overridden to `R.card` there, on the same reasoning as the grid's canvas
+exception. And AppShell's tab track hid its scrollbar with inline
+`scrollbarWidth` / `msOverflowStyle` — Firefox and legacy Edge only. WebKit
+needs `::-webkit-scrollbar`, which no inline style can express, so the bar
+still painted in Safari and Chrome including iOS. Replaced with a global
+`.mgt-no-scrollbar` utility.
+
+**21 — cleanup.** `saveError` and its banner: the v0.8.0 same-day refusal
+was their only trigger and this version deleted it, leaving a state slot
+initialised to `""`, reset to `""` on open, never assigned anything else,
+and ~20 lines of unreachable markup. Removed. `--status-assigned-solid`:
+declared in both theme blocks with zero readers — removed, and the
+explanatory comment now says to add one *with* its consumer.
+`Toast` / `Reveal` / `AutoHeight`: ported with no call sites, ~120 lines
+never executed, including AutoHeight's ResizeObserver lifecycle and
+Reveal's double-rAF + delayed overflow flip. Removed and tracked in
+ROADMAP.md beside `useFlip`, which this version had already deferred on
+exactly that reasoning — port each WITH its first consumer, so its first
+execution isn't its first test. The radii doc block in `constants.js` and
+`index.html` still listed ScheduleGrid's section band and closed tag as
+numeric exceptions when this same version converted both; the list is now
+accurate and marked exhaustive, so `grep -rn "borderRadius: [0-9]" src/`
+is a real audit again (it returns exactly the five documented sites).
+
+Two efficiency findings, both from re-reading changed code rather than
+profiling. `avgShiftHours` builds the full seven-weekday ladder, and is
+called once per employee per week from `blendedAvgShiftHours` — a
+10-employee, 4-week window rebuilt one identical list 40 times, twice over
+for the calendar-month aggregate, on every re-run of either memo. Now
+memoised in a `WeakMap` keyed on the template object (the config resolver
+caches those per Monday, so identities are stable) with an identity check
+on `dayRequiredRoles`; safe to share because `avgShiftHours` only reads.
+And `WeeklyShiftSummary` walked the week's shifts twice with the same
+orphan skip; one pass now yields both tallies, which also makes them
+consistent by construction instead of by keeping two copies of the rule in
+sync.
+
+**Verification.** `npm run build` green after every commit. `avgShiftHours`
+re-checked against v15.4.0's recorded 6.143 baseline: **6.142857**,
+unchanged, with the cache hit returning the identical value and a different
+`dayRequiredRoles` under the same template correctly missing the entry.
+`grep` confirms no `saveError`, no `R.tight`, no `--status-assigned-solid`,
+and no `Toast`/`Reveal`/`AutoHeight` references remain. Bundle 186.03 kB gz
+(from 185.93 — the ladder cache and the merged tally slightly outweigh the
+removals).
+
+### Phase 16 — Pre-push code-review fix: one ladder definition
+
+`/code-review` on the branch diff found a **data-loss** path introduced by
+Phase C8, fixed here before the push.
+
+`generateWeek` built its slot ladder from `visibleWeekDates`, so a slot index
+that exists only because of a per-weekday override was absent from the ladder
+whenever that weekday happened to be **closed**. `slotsByKey` is not only the
+fill worklist's lookup — it is also what `wipeShiftsWithPolicy` consults to
+decide whether an existing record is a stale leftover, and a missing key there
+means *delete*. So Regenerate would permanently destroy a real assignment that
+ScheduleGrid was still rendering (`weekDatesWithShifts` keeps a closed day that
+carries a shift, v15.3.0) and that the fairness aggregates were still counting
+(`isLiveShiftForTemplate` scans all seven weekday keys).
+
+Three different ladder widths had ended up standing for one concept:
+all-seven (`isLiveShiftForTemplate`), visible-days (`ScheduleGrid`), open-days
+(the generator). The fix collapses the generator onto the same all-seven basis
+the orphan predicate already uses, so "this slot row exists" means one thing
+everywhere. Filling is untouched: the worklist still gates every cell on
+`isSlotOpenOnDate` **and** `isSlotScheduledOnDate`, so a row that runs on no
+visible weekday is simply never visited.
+
+`WEEKDAY_KEYS` is exported from `schedule-logic.js` for this (it was already
+the basis of `unionSlotCountForBlock`).
+
+**Files changed:** `src/lib/schedule-logic.js` (export `WEEKDAY_KEYS`),
+`src/lib/generator.js` (ladder basis + import). Net +20 / −5 lines, almost all
+comment.
+
+**Verification** — pure Node harness against the real module:
+
+| Check | Result |
+|---|---|
+| No weekday overrides: all-seven ladder vs open-days ladder | **identical** (7 slots) — strict no-op on every existing doc |
+| FoH Evening base 2 + Sat override 3, Saturday closed — old basis | `foh-evening-2` **absent** → Regenerate deletes the shift |
+| Same, new basis | `foh-evening-2` **present** → record survives |
+| Extra row on a Monday | `isSlotScheduledOnDate` → **false** (still un-fillable) |
+| Extra row's `defaultStart–End` | `19:00–23:00`, i.e. the override's own times, not the `OPERATING_HOURS` fallback |
+
+`npm run build` green; bundle unchanged at 185.93 kB gz.
+
+The review's other 13 findings were reported to Patryk rather than fixed here
+— none is a correctness emergency and each is its own decision.
+
+### Phase 15 — The pill radius system + solid status labels
+
+Ports MGT Bookings **v17.7.0** wholesale. Phase 2 of this version had
+already built the token layer, but chose values that made that sweep a
+visual no-op; this is the change the tokens existed to make possible.
+
+**Token values now match Bookings exactly, token for token** — `--r-pill`
+999, `--r-auth` 40 (new), `--r-sheet` 16→20, `--r-card` 12→14, `--r-inset`
+10. Scheduling's extra `--r-tight` (8px) is **retired**: all 17 of its call
+sites were re-read and turned out to be 14 controls (now pills) and 3
+surfaces (2 inset, 1 card). The two apps are now on one scale that can't
+drift apart again.
+
+**Two edits did most of the work:** `BTN.base` and `S.inputBase` moving to
+`R.pill`, which pills every button, input and `<select>` in the app from a
+single line each — including both native selects, which compose from
+`S.inputBase`.
+
+**Role assignments, all re-read rather than pattern-replaced:** segmented
+tracks and their segments, weekday pills, scope buttons, date chips and the
+in-cell "closed" tag → `pill`; the two popovers and the connection popover
+→ `sheet` (popovers sit with modal shells); every banner → `card`; the
+login card → the new `auth`.
+
+**`.mgt-hover-scale` had to be fixed first.** Its hover rule hard-set a card
+radius, which would have squared off every pill the instant the pointer
+touched it. The declaration is **deleted**, not set to `inherit` — `inherit`
+resolves against the PARENT's radius, so a bare element inside a square
+parent goes square anyway. Bookings reached the same conclusion mid-rollout
+and its brief's original `inherit` instruction was wrong.
+
+Deleting it was safe in Bookings because nothing relied on it. **Scheduling
+had three surfaces that did** — the Toggle row, the Collapsible header and
+the `Fld`-wrapped Settings row, none of which carried a radius of their own.
+That is exactly the divergence phase 1 documented. Each was given an
+explicit `R.card`, so nothing depends on the hover rule for its shape any
+more and the v16.0.0 divergence note is now obsolete.
+
+**Canvas exception — the schedule grid cells stay `inset`.** They are a data
+grid, the direct analogue of Bookings' timeline blocks (an explicit
+exception there too): a 100×60px cell at 999px reads as a lozenge and the
+grid stops reading as a table. The mobile day-card cells match.
+
+**Solid status labels (Bookings' companion rule).** Scheduling had no solid
+status colours at all — Bookings has `BLOCK_BG`; the `--status-*-bg` tokens
+here are translucent tints. Four `--status-*-solid` tokens were added in
+both themes, plus a `solidPalette` on each `REQUEST_TYPES` entry.
+
+- **Labels → solid:** request-type pills in the requests list, the weekly
+  preview and the preview modal; role chips on employee rows and inside
+  schedule cells.
+- **Pickers → unchanged.** Both role pickers (employee form, shift form)
+  already did chosen-solid / rest-tinted, which is precisely Bookings' picker
+  rule — there the tint is the only thing marking an option unselected, so
+  solid-filling everything would erase the distinction. Verified still
+  correct after the change.
+- The in-cell role chip keeps its local `fontSize: 10` / `padding: 1px 6px`
+  rather than Bookings' standalone-label metrics (`11.5` / `5px 11px`),
+  which would blow out a grid cell. The **fill** is what makes it read as a
+  label; the metrics are the app-specific part.
+
+**Noted at decision time:** solid role chips sit inside schedule cells
+alongside the green pill-highlight and amber swap states. Checked live —
+the chips read clearly as labels against the muted cell background.
+
+**Files changed:** `index.html` (token values, 8 solid status tokens, hover
+rule), `src/lib/constants.js` (`R` reshaped, `BTN.base`, `S.inputBase`,
+`S.fldRow`, `solidPalette` ×3), `src/components/atoms.jsx` (Toggle +
+Collapsible radii), and 12 component files.
+
+**Verification.** `npm run build` clean. Live in DEV: tokens resolve
+`999 / 40 / 20 / 14 / 10` with `--r-tight` gone; a Generate button and a tab
+pill both compute `999px`; a grid cell computes `10px`; the hover rule's
+`cssText` no longer contains `border-radius`; request pills render solid
+(`rgb(50,215,75)` green / `rgb(152,152,157)` grey, white text, `999px`); the
+role picker still shows one solid selected chip against neutral siblings;
+and the light-theme solid token resolves to `#34c759`. Only 14 numeric
+radius literals remain in `src/`, all documented exceptions.
+
+### Phases 11–13 — Per-weekday shift template (times **and** headcount)
+
+Kitchen and Front of House can now be adjusted per weekday: a different
+headcount and different per-slot times on any given day, edited through a
+pill + popover mirroring the existing "Open days" picker.
+
+**Storage.** An optional `weekdays` map on each (section, dayPart) block,
+sparse, keyed by weekday: `{count, times:[{start,end}...]}`, or `{count: 0}`
+for "this row doesn't run that weekday". Absent = the block behaves exactly
+as before. It rides inside the existing `shiftTemplate` config-revision
+axis, so effective-dating, `resolveConfigForWeek` and the Scheduled-changes
+list are all untouched. Never written as `{}`, `null` or `[]` — RTDB strips
+empty collections, which is precisely the v1.12.0 Chef-pill bug.
+
+**The central decision: a UNION ladder, not a per-date one.** The slot list
+stays uniform for the week — the widest any visible weekday needs — and
+dates where a row doesn't run render an inert `—`, reusing the closed-day
+machinery. A per-date ladder was rejected because the desktop grid is a
+single CSS grid with a shared label column and `display: contents` rows,
+and the PDF is one autotable row per slot; neither can be ragged. The union
+also means `slotsByKey`, ClearConfirmModal's by-row scope,
+GenerateResultsModal's labels and the generator's stale-record lookup keep
+working with no changes at all.
+
+`slotTimesForDate` gains a third precedence tier — **per-weekday override →
+soloTimes → flat defaults** — while keeping its signature, which is what
+makes this cheap: `renderCell`, both generator call sites, `ShiftFormModal`
+and the swap payload inherit per-weekday times without a single edit.
+
+**Three things that would each have been a real bug:**
+
+1. **`isWeekComplete` / `countEmptyCells`** had to gate on the new
+   `isSlotScheduledOnDate` in the same commit as the ladder. Without it
+   every extra union row reads as unfilled on every non-overriding weekday
+   — Export PDF disabled permanently and a wildly inflated warning count.
+2. **`humanLabel`** had to switch from the block's own count to the ladder
+   length, or a base-1 block with a weekday override of 2 yields two rows
+   both called "Kitchen Day" — indistinguishable in the by-row clear scope
+   and in the PDF.
+3. **Extra rows have no entry in the flat `times` array**, so
+   `defaultStart`/`defaultEnd` would fall back to 11:00–23:00 and the row
+   label would advertise hours the slot never runs. They now inherit from
+   the first weekday override that defines the index.
+
+**Orphan predicate widened to the union**, via a new shared
+`isLiveShiftForTemplate`. The grid renders a row iff *some* weekday needs
+it, so tying "counts" to the same condition keeps "renders ⟺ counts"
+exactly true. Comparing against the base count would drop a legitimately
+generated shift; comparing against that date's own count would strip
+fairness credit for work already done because the manager later trimmed a
+weekday. This also removed two duplicated copies of the predicate inside
+`WeeklyShiftSummary` that would otherwise have disagreed with the resolver.
+
+**`avgShiftHours` generalised** from the v15.1.0 two-bucket (both-open /
+solo) weighting to a per-weekday loop, since per-weekday overrides give each
+weekday its own duration and headcount. The drop guard stays **two-pass** on
+purpose — a naive per-weekday `if (h <= 0) skip` is not equivalent (hNormal
+6, hSolo 0, five both-open + two solo gives 30/7 the old way, 30/5 the naive
+way), and this feeds the generator's fairness ranking.
+
+**Settings.** A per-weekday pill row per block: `—` inherits, `×N`
+overrides, `off` doesn't run. The popover is above-anchored (the pill row
+sits at the bottom of a block, so anchoring below would cover the next
+block's row) with a bounded, internally-scrolling times list so it stays a
+predictable size at any headcount. State is a composite string key
+(`"foh|evening|sat"`) preserving the existing toggle idiom, with a single
+`useRef` attached conditionally to whichever block owns the open popover —
+`renderBlock` is a plain function called four times and cannot call
+`useRef` itself. Opening a popover does not create the override; the first
+edit does. `blockDirty` normalizes `{}` ↔ absent, without which the dirty
+dot never clears and the 800 ms debounce re-writes the revision on every
+Firebase echo. `onCountChange` deliberately carries `weekdays` through
+untouched — overrides are explicit manager intent.
+
+**Files changed:** `src/lib/schedule-logic.js`, `src/lib/generator.js`,
+`src/lib/pdf-export.js`, `src/components/ScheduleGrid.jsx`,
+`src/components/Settings.jsx`, `src/components/WeeklyShiftSummary.jsx`,
+`REFACTOR_LOG.md`.
+
+**Verification.** A pure Node harness confirmed the logic layer before any
+UI existed: baseline `avgShiftHours` = 6.142857, matching the 6.143 recorded
+in v15.4.0's log (backward-compat exact); union ladder 7→8 with correct
+labels; the extra row inheriting 19:00–23:00 from the override rather than
+the operating-hours fallback; `isSlotScheduledOnDate` correct for every
+weekday including `count: 0`; precedence confirmed both ways (an override
+beats solo on a solo Monday, solo still wins with no override); and
+`materializeShiftTemplateBlock` a fixed point whose output does **not** flag
+`isShiftTemplateMigrated`, so the eager migration cannot loop.
+
+Then end-to-end in the DEV browser: set Kitchen Evening Saturday to 4 people
+with an 18:00 start on the new slot. The pill read `Sat ×4`; the current
+week was correctly unchanged (revisions default to next Monday); the
+following week grew a 4th Kitchen Evening row labelled 18:00–23:00 with
+`· varies` on all four evening rows and 6 `—` placeholders (the six
+non-Saturday days). Running Fill-empty filled 36 cells and left **all six
+dashes untouched**. Export reported **10** empty cells — exactly 46 rendered
+minus 36 filled, with the dashes correctly excluded; it would have said 16
+had the completeness gate been missing.
+
+### Phases 22–28 — Design unification pass
+
+Triggered by a direct review: the app "looks agentic and very AI",
+inconsistent element to element. Investigation found one root cause behind
+almost all of it, plus a genuine animation regression this version had
+introduced.
+
+**Root cause.** ~40 sites hand-rolled
+`<button style={{ ...BTN.base, padding, fontSize }}>` instead of calling
+`mkBtn`. Each one therefore (a) invented its own size and (b) missed the
+`.mgt-press` that `mkBtn` applies centrally. Measured: **13 distinct
+control sizes** (10/14, 8/14, 8/12, 6/14, 6/12·13, 6/12·12, 6/10·13,
+6/10·12, 4/10·12, 4/10·11, 3/9, 2/10, 2/8) and press feedback on **11 of
+~40** buttons.
+
+- **Phase 22 — `BTN_SIZE = {lg, md, sm, xs}`.** Every call site assigned a
+  tier by role. `.mgt-press` added to all 48 interactive buttons. Three
+  buttons documented as deliberately off-scale, including the fairness NAME
+  button whose `4px 8px` Patryk explicitly confirmed in v1.13.0 round 5
+  after rejecting this scale's `sm`.
+- **Phase 23 — `pillTone` / `segmentTone`.** Inside the single Edit-employee
+  form, three booleans disagreed about ON: Active green, "Fixed days: ON"
+  tinted accent, "Priority: ON" solid accent. Eleven call sites now spread
+  one of two helpers. Also removed the last colour literal outside
+  `pdf-export.js` (`rgba(255,255,255,0.8)` in the Clear scope sub-label).
+- **Phase 24 — `BADGE_SIZE = {base, cell}`.** `TBadge` is the badge atom at
+  2px 8px / 11, but five surfaces re-implemented a badge at their own size
+  — including the request-type pill in the preview modal rendering at a
+  different size from the TBadge showing the SAME record in RequestsList.
+- **Phase 25 — popover fade.** Three popovers hard-mounted. `.mgt-fade-in`
+  was defined in `index.html` with zero consumers; giving it these three
+  closed an animation gap and a dead token together.
+- **Phase 26 — `Reveal` + `Toast` ported** with the consumers ROADMAP.md
+  named: the `Collapsible` body and the result banner. See the locked
+  decision in CLAUDE.md for the three load-bearing `Reveal` details and the
+  `{resultBanner ? … : null}` cache guard.
+- **Phase 27 — the hover-snap regression.** `transition` is a shorthand,
+  and `.mgt-hover-scale` / `.mgt-press` are equal-specificity single-class
+  selectors, so the later rule REPLACED the earlier. `.mgt-press` listed
+  only `filter` / `background-color`, so every element with both classes
+  lost its `transform` transition and its hover snapped. Measured before
+  the fix: an element with both computed
+  `transition: filter 0.16s, background-color 0.16s` — no transform — and
+  `.mgt-hover-scale:not(.mgt-press)` matched **zero** elements on the
+  Schedule tab. Pre-existing at 11 buttons; phase 22 made it universal.
+  One shared declaration now. Folded in: `outline-color`/`outline-offset`
+  so the focus ring fades, and `--shadow-keycap` replacing the `Kbd` atom's
+  hardcoded shadow (a 6%-black drop is invisible on a dark keycap).
+- **Phase 28 — layout jump.** Two real shifts, both found by measuring.
+  `S.card` needed `min-width: 0`: as a flex item its default
+  `min-width: auto` let the grid's 944px `minWidth` propagate up and beat
+  `width: 100%`, rendering the card 942px at `left: -5` on a 932px viewport
+  — the whole page scrolled sideways by 5px. And
+  `html { scrollbar-gutter: stable }`, because the four tabs' differing
+  heights toggled the vertical scrollbar and shifted the centred column.
+
+**Verification.** All in the live DEV page rather than by inspection:
+every button's computed padding enumerated (so the off-scale list is
+exhaustive, not asserted); "Fixed days: ON" and "Priority: ON" confirmed
+identical; split marker at 2px 8px / 11 and date pills at 4px 10px / 12;
+`Reveal` settling at a real px height with inner `overflow: visible` and a
+popover opened inside a revealed section having **no clipping ancestor**;
+the banner mid-exit carrying `mgt-toast-out` while still reading "Filled 0
+cells, 8 left empty…" (proving the cache); `transition` including
+`transform` again; horizontal overflow **false** on all four tabs with
+Schedule → Employees → Requests → Settings → Schedule returning to
+identical geometry. Re-checked at 375px: no horizontal overflow on any tab,
+full-sheet modal at exactly viewport width with the body scroll locked.
+
+One shift is left deliberately: `AppShell.jsx:360` sizes the card 1100 on
+Schedule vs 820 elsewhere, so its edges move ~19px on a tab switch. The
+grid needs the room; flagged in ROADMAP.md rather than decided here.
+
+### Phases 30–33 — Write failures, remaining motion, ROADMAP split
+
+**Phase 30 — "toggles revert after a second".** Reported as a Settings
+bug; diagnosed in the live DEV page as a Firebase RULES problem. The
+"Reduce animations" toggle (localStorage) flips fine, while Dark mode /
+Show role pills / Allow incomplete export (all `/settings`) never stick,
+every attempt logging `set at /settings failed: permission_denied` — while
+signed in, with reads working. The one-second delay is RTDB's optimistic
+write: `set()` updates the local cache and fires `onValue` (toggle flips),
+the server refuses, Firebase rolls back and fires again (toggle snaps
+back). Cause: DEV is `megustastu-bookings-dev`, **shared with the Bookings
+app**, whose rules cover its paths and not Scheduling's `/settings`.
+
+The app bug that hid it, and what shipped: all three async `.catch()`
+handlers in `usePersistence` only `console.warn`ed. The pre-write guards
+have always reported refusals through the `writeWarning` banner; the
+server's refusal now goes through the same channel via a shared
+`reportWriteError`, with a distinct PERMISSION_DENIED message that says
+the change was rolled back and points at the Rules rather than at what the
+manager typed. `isSilent` honoured as before, so the eager migration still
+can't raise a banner. **The rules themselves remain to be fixed in the
+Firebase Console — outside the repo.**
+
+**Phase 31 — the surfaces that still popped.** Two reported (the fairness
+row snapping when picking someone from the "Shifts assigned" pills — it is
+a plain `<div>`, and the motion classes carrying the shared transition sit
+on the name *button* inside it; and the fixed-days weekday pills appearing
+in one frame). Swept for the same failure: the archived / past "Show"
+lists, ShiftFormModal's five warning banners, RequestFormModal's
+shift-preference fields, and Settings' banner-duration row. The banners get
+one Reveal EACH rather than one around the stack — they toggle
+independently, and a single wrapper would still snap when one replaced
+another inside it.
+
+Also hardened `Reveal` beyond Bookings' original. Its closed state is
+`0fr` + `opacity: 0`, so the content is *invisible*, not merely
+un-animated — if the double rAF is delayed, what the user loses is the
+content. Caught when an automated run measured a revealed section still at
+`opacity: 0, height: 0` a second after opening because nothing had forced
+a paint. A 60ms `setTimeout` now races the rAF; `setOpen(true)` is
+idempotent, so the smooth path still wins normally.
+
+**Phase 32 — ROADMAP split.** The file was collecting entries that were
+really Bookings work, written in the one repo that cannot act on them.
+Moved to `megustastu-bookings/ROADMAP.md` (branch
+`chore/roadmap-scheduling-ports`), rewritten in that file's bullet house
+style and **re-verified against that repo's own source** rather than
+copied: 28 call sites there carry both motion classes, it has zero
+`focus-visible` rules, and the `outline: "none"` removal that was a
+prerequisite here does not apply there — stated explicitly rather than
+repeated as if universal.
+
+**Phase 33 — three more surfaces onto the scale.** `S.rowTitle` (list row
+titles were `fontSize: 15`, between `body` and `h2`, matching nothing),
+`S.panelTitle` (all three grid panels wrote `{...S.h2, margin:0,
+fontSize:14}` — three copies of one override), and the Scheduled-changes
+axis badges (a byte-for-byte duplicated span at 1px 8px / 10, a fourth
+hand-rolled badge).
+
+**Closing verification** — by enumerating COMPUTED styles of every visible
+element, not by reading source: every rendered font size is on the scale
+{11,12,13,14,17,22} bar one documented 10px outlier (the in-grid role
+chip, `BADGE_SIZE.cell`), and every border-radius resolves to an `R` token
+or a documented geometry exception.
+
+### Phases 37–40 — Removing the agentic register
+
+**Files:** `ScheduleGrid.jsx`, `SwapButton.jsx`, `GenerateConfirmModal.jsx`,
+`GenerateButton.jsx`, `EmployeeFairnessModal.jsx`, `ShiftFormModal.jsx`,
+`SplitConfirmModal.jsx`, `EmployeeFormModal.jsx`, `MonthlyFairnessPanel.jsx`,
+`Settings.jsx`, `atoms.jsx`, `constants.js`, `index.html`.
+**Deleted:** `GenerateResultsModal.jsx`.
+
+**Behavioural change:** Yes, and deliberately subtractive. Prompted by a
+screenshot of swap mode: a full-width yellow banner reading "Pick a filled
+cell as the source." beside a nav button relabelled "Swap: cancel" and a
+red Cancel pill. The app had grown a register in which it narrated its own
+state, announced its own results, hedged about its own strictness, and
+offered to explain its own reasoning — to a single manager who is also its
+sole developer. The test applied throughout: *does the artifact already
+show this?*
+
+- **Phase 37 — swap.** Phase banners, the success banner and the
+  self-relabelling button gone; guidance moves to per-cell cursors (`grab`
+  / `not-allowed`). Selection restyled from a pulsing yellow warning tint
+  to solid `--accent` with no animation. Solid rather than tinted is
+  load-bearing — an assigned cell already sits at 22% accent, so the first
+  attempt at `--accent-tint-soft` (18%) was *fainter* than the cell it
+  highlighted and read as no change; caught by reading computed styles,
+  not by looking. Refusals became a `statusChip` plus a one-shot shake on
+  the offending cell. **Drag-and-drop added** as a second path into the
+  same `attemptSwap`, sharing validation, the split-shift confirm and the
+  undo op.
+- **Phase 38 — results.** The generate/regenerate/clear/undo banner
+  deleted; only a no-change run still speaks, distinguishing "Nothing to
+  fill" from "No eligible staff". With it went `GenerateResultsModal`,
+  `GENERATOR_REASONS`, `jumpToCell` + `mgt-jump-pulse`, and the two
+  banner-timing `/settings` fields with their Settings rows.
+  `GenerateConfirmModal` lost an intro paragraph, a five-bullet rules
+  list, a preference-mode card and four adaptive explainer variants.
+- **Phase 39 — fairness.** `EmployeeFairnessModal`'s Reasoning ↔ Show-data
+  toggle and its worked-formula view removed, with the `Num` / `FormulaRow`
+  helpers that existed only to typeset them.
+- **Phase 40 — voice.** UI strings became noun phrases: no trailing
+  period, no em dash, no second-person framing, no warning glyphs. Five
+  `ShiftFormModal` warnings lost "You can still save; this is just a
+  warning."; the past-week banner became a chip; the grid's six-line
+  footer manual, the Settings intro, `SplitConfirmModal`'s reassurance and
+  the sparkline legend were deleted. The now-consumerless `Toast` atom,
+  its keyframes and `REVEAL_OUT_MS`'s export were removed under the repo's
+  own "dead tokens are worse than no tokens" rule.
+
+**Known cost, accepted on request:** the generator's per-cell reasons are
+no longer surfaced anywhere in the UI. The codes remain in `generator.js`.
+**Closed in phase 42 below** — the reasons came back on the cells; the
+modal did not.
+
+**Verification** — in DEV against the live grid, not from source: armed
+state and both cursors; source selection; a refused swap (chip + shake +
+clean expiry); a completed drag-move; undo restoring the grid
+byte-for-byte; the compact confirm modal; a no-change run showing the
+correct one of the two phrases; the fairness modal's three sections and
+sparkline; all four tabs rendering after a cache-cleared server restart.
+
+---
+
+### Phase 45 — Clickable scheduled-change rows + Shift+D theme chord
+
+**Files:** `src/components/Settings.jsx`, `src/components/AppShell.jsx`,
+`src/components/ShortcutsModal.jsx`, `CLAUDE.md`.
+
+**Behavioural change:** Yes — two additive shortcuts to existing controls.
+Neither replaces the path it shortcuts.
+
+- **Scheduled-changes rows select the picker week.** Editing an existing
+  change meant reading its week off the row and retyping that date into
+  the effective-from input. Clicking the row now does it. The row is a
+  content-sized `<button>` wrapping the label + axis badges, with Remove
+  as a **sibling** — the nested-`<button>` shape is invalid HTML, and this
+  matches `<MonthlyFairnessPanel>`'s name-button + delta-bar pair and the
+  `<WeeklyRequestsPreview>` pill. The row whose Monday equals the picker
+  now carries an `--accent-tint-strong` border: the header line says
+  "editing an existing change" but not which one once several exist.
+- **`Shift`+`D` flips the theme from anywhere.** Writes `darkMode:
+  !isDark` via `saveSettings` — byte-identical to the Display toggle's
+  write, so it persists and a manager following the system pref stops
+  following it, exactly as if they had flipped the switch.
+- **Two review findings, fixed before commit.** (a) The chord was first
+  written as `if (e.shiftKey) { …; return; }`, which swallowed every
+  other shifted keystroke: on AZERTY-style layouts the number row arrives
+  with `shiftKey` set, so digit tab-switching would have died there. Now
+  matched as `e.shiftKey && e.key === "D"|"d"` with everything else
+  falling through. (b) The row tooltip printed the raw ISO date; it now
+  reuses `formatWeekRange` like every other label in the card.
+- **Live state without re-subscribing.** The theme write needs current
+  `isDark` + `settings`; the keydown listener stays mounted once with an
+  empty dep array and reaches them through a ref that a separate effect
+  keeps current. `ShortcutRow` gained a `joiner` prop ("+" for chords,
+  "/" for alternatives) so the cheatsheet reads "Shift + D".
+
+**Verified in DEV:** row click moves the picker and the highlight and
+writes nothing; digit tab-switching, `?`, and Esc still work; Shift+D
+round-trips dark → light → dark and is correctly inert while typing in a
+field and while the help overlay is open. Bundle 183.38 kB gz (+0.14).
+
+---
+
+### Phase 44 — A removed scheduled change stays removed
+
+**Files:** `src/components/Settings.jsx`, `src/hooks/usePersistence.js`,
+`CLAUDE.md`.
+
+**Behavioural change:** Yes — removing a `/configRevisions` record no longer
+re-creates it (or a phantom sibling) ~800 ms later.
+
+**The bug, as reported.** Settings → picker on "Week of 10–16 Aug 2026" →
+Remove that row → the row disappears and comes back about a second later.
+
+**Root cause: two clocks inside one component.** `deleteConfigRevision` is
+fire-and-forget, so the `configRevisions` prop keeps the record until
+Firebase echoes back. `handleRemoveRevision` re-seeded the forms from a
+locally filtered map, but the dirty baseline `resolvedAtPicker` kept
+resolving against the live prop. For as long as the echo took, the form
+held post-delete values and the baseline held pre-delete ones — so
+`openDaysFormDirty` / `fohDirty` / `kitchenDirty` read true and armed the
+800 ms auto-save. Two ways that lands, both observed as "it came back":
+
+- picker on the deleted revision's **own** Monday →
+  `findRevisionIdForMonday` scans the stale map, returns the id just
+  deleted, and `upsertConfigRevision` writes the whole record back at the
+  same key (the merge spread even restores the axis the save didn't touch);
+- picker on a **later** Monday → no existing id, so a brand-new revision is
+  pushed at the picker week carrying the fallback config.
+
+The pre-v16 comment on `handleRemoveRevision` claimed the filtered map
+prevented this. It only ever reached `seedFormsFor` — not the baseline, not
+the id lookup, not `revisionList`.
+
+- **Pending-delete ledger.** `pendingDeletedIds` state + a memoised
+  `visibleRevisions` (the prop minus those ids). Every in-component read now
+  goes through it: both form seed initialisers, `seedFormsFor`,
+  `findRevisionIdForMonday`, `upsertRevisionAxis`'s merge spread,
+  `resolvedAtPicker`, `revisionList`, and both save effects' dep arrays.
+  One map per render, so a delete can no longer manufacture a dirty state —
+  and because the ledger changes the dep identity immediately, it also
+  cancels any armed debounce timer in the same commit instead of waiting on
+  the echo.
+- **The ledger is optimistic, so it releases on settle.** A rejected delete
+  (rules, offline) is rolled back by the SDK, and the row must come back —
+  hiding it behind a delete that never landed would be a worse bug than the
+  one being fixed. `deleteFromCollection` therefore returns a
+  `Promise<boolean>`; Settings clears the id when it settles either way.
+  Failure reporting is unchanged (`reportWriteError` already surfaced it).
+- **`handleReset` routed through the same helper.** Factory reset deletes
+  every revision and had the identical staleness — its `skipNextReseedRef`
+  dance was covering for it on the seeding side only.
+
+**Verified in DEV** (`megustastu-scheduling-dev`, live grid + Settings): the
+reported repro with the picker on the deleted revision's own Monday — row
+stays gone past 6 s, no new record in `/configRevisions`; the later-picker
+variant — no phantom revision at the picker week, opening days correctly
+fall back; creating a revision still works; the schedule grid resolves the
+surviving revision's config. Bundle unchanged at 183.24 kB gz.
+
+---
+
+### Phase 43 — Revision CAS on the two singletons + rules source of truth
+
+**Files:** `src/lib/revGuard.js` (new), `src/hooks/usePersistence.js`,
+`database.rules.json` (new), `database.rules.README.md` (new), `CLAUDE.md`.
+
+**Behavioural change:** Yes — `/settings` and `/shiftTemplate` writes become
+atomic root updates carrying a `<name>Rev` counter. Additive under the
+current (permissive) rules, so it is rolling-safe: app first, rules second.
+
+**Why now.** Chasing the DEV `PERMISSION_DENIED` on settings saves turned up
+the actual cause, and it is not a rules problem: Scheduling's `devConfig`
+points at `megustastu-bookings-dev`, so both apps share one database and one
+`/settings` node. `usePersistence` reads that whole node, `Settings.jsx`
+spreads it back into its own write, and the write therefore rewrites
+Bookings' rev-guarded children (`layout`, `optimizer`, `bookingDefaults`,
+`general`, `dayShifts`, `operatingHours`, `whatsapp`, `users/{uid}/prefs`)
+at their existing values without bumping their revs. Bookings' rules reject
+exactly that. **The rules were right; the app was wrong.** Fix is the
+dedicated `megustastu-scheduling-dev` project — pending the web config,
+which cannot be derived.
+
+- **`revGuard.js`** — pure (no Firebase import, per the `src/lib/` rule):
+  `revKeyFor(path)` and `buildRevUpdate(path, value, baseRev)` returning the
+  root-relative payload plus the rev it used.
+- **`usePersistence`** — each singleton is now two subscriptions, and the
+  path counts as loaded only when BOTH have reported. That gate is
+  load-bearing: writing with the node loaded but the rev unknown would send
+  rev 1 and be rejected against any existing counter. The rev ref is bumped
+  optimistically at write time so Settings' 800ms auto-save debounce can
+  fire two writes without the second self-rejecting on a stale base; a
+  rejection's rollback echo resets it to server truth.
+- **Scope.** Only the two whole-object nodes. The keyed collections write
+  disjoint child paths and cannot race wholesale — the same reasoning
+  Bookings' own README gives for keyed `/bookings/{id}`. Per-record
+  `updatedAt`/`baseUpdatedAt` CAS is explicitly NOT included: these records
+  carry no `updatedAt`, and publishing that rule would reject every shift
+  write. Noted in `database.rules.README.md` as deferred.
+- **No auto-retry** on rejection. Bookings resyncs and replays because two
+  staff share a tablet and a laptop; this app has one manager, so the banner
+  plus the SDK's rollback is the honest answer.
+
+- **`firebase.js` devConfig swapped** to `megustastu-scheduling-dev` (second
+  commit, once the web config was available — `apiKey` / `messagingSenderId`
+  / `appId` cannot be derived from a project name). The two apps can no
+  longer reach each other's data at all.
+
+**Verification** — build clean; rules JSON parses; the app boots with the two
+extra subscriptions against a database where neither rev node exists (`ready`
+still flips, no hang); after the swap the console banner reads
+`[firebase] DEV — megustastu-scheduling-dev` with a clean console, and the
+old session correctly does not carry over (different Auth pool).
+
+**Not verified, and why:** the rev-CAS SUCCESS path. Before the swap the only
+reachable database was Bookings', which denies this write for the reason
+above (it stayed denied cleanly — banner, no JS errors). After the swap the
+new project needs its Auth user and its rules published before anything can
+sign in, and that is console work. First run there is the real test: flip a
+Settings toggle and watch `settingsRev` appear at 1 and count up.
+
+**One transient worth not misreading:** a `TypeError: Cannot set properties
+of undefined (setting 'current')` at `usePersistence.js:182` appeared in the
+console during this work. It came from the HMR module version saved between
+changing `subscribeSingleton`'s signature and updating its two call sites —
+`revRef` was genuinely undefined in that intermediate build. Current source
+passes the ref at both sites; line 182 is now a `console.warn`.
+
+---
+
+### Phase 42 — Feedback surfaces: reasons back on the cells, one Notice
+
+**Files:** `ScheduleGrid.jsx`, `ShiftFormModal.jsx`, `SplitConfirmModal.jsx`,
+`RequestFormModal.jsx`, `AppShell.jsx`, `atoms.jsx`, `usePersistence.js`,
+`constants.js`, `index.html`.
+
+**Behavioural change:** Yes — new feedback on the grid, one new shared
+component, and a partial reversal of phase 38.
+
+- **Status chips centred and +30%.** New `BADGE_SIZE.status` (5×14 / 14px,
+  up from `base`'s 2×8 / 11px); `statusChip`'s container gains
+  `justifyContent: center` and a third `warning` tone. Left-aligned at 11px
+  the chip read as a fourth nav-bar control and was easy to miss over the
+  grid.
+- **A committed swap flashes green.** New `swapSuccess` state; swap flashes
+  both cells, move flashes only the destination; `mgt-cell-reject` renamed
+  `mgt-cell-react` now that both outcomes drive it. Clears at 1100ms. No
+  chip — the flash marks WHICH cells changed, the part the grid does not
+  show.
+- **Generator reasons restored, on the cells.** `GENERATOR_REASONS` returns
+  to `constants.js` in a `{ tag, detail }` shape; `unfilledByCell` maps
+  `dateIso|slotKey → reasonCode` from `summary.unfilledCells`; the badge
+  renders beside "Open" with the clause as its `title`. A centred warning
+  chip carries the count. `GenerateResultsModal` stays deleted.
+- **`Notice` atom.** Replaces three hand-rolled tinted boxes — the write
+  error, five picker warnings, the split-shift clash list. Title + detail
+  at 13/700 and 12.5/500, `12px 14px`, `R.card`, solid pill action.
+  `writeWarning` became `{ title, detail }`; `PATH_LABELS` maps RTDB nodes
+  to names a manager recognises.
+- **Drawn select chevron.** `.mgt-select` + `S.selectBase`. Chrome ignores
+  `padding-right` for the native arrow (measured: 28px and 44px landed on
+  the same pixel), so it sat inside the pill's right cap.
+
+**Two precedence traps, both found by reading computed styles rather than
+by looking:** an inline `background` shorthand silently killed the
+chevron's `background-image`, and an inline `padding` shorthand silently
+killed the class's `padding-right`. Both now live in `S.selectBase`.
+
+**Verification** — in DEV against the live grid: refusal chip measured at
+14px / 5×14 / centred with the danger tint and `mgt-cell-react` on the
+target; a same-employee swap flashing both cells `--bg-active-on` and
+pushing "Undo: Swap"; a Fill-empty run reporting "9 unfilled" with `booked`
+/ `at quota` badges and their tooltips on all nine cells; the split-shift
+`Notice` measured at 13/700 + 12.5/500; the two-person `SplitConfirmModal`
+list; the danger `Notice` with its solid pill, triggered by the DEV
+project's still-live `/settings` PERMISSION_DENIED; `npm run build` clean.
+
+---
+
 ## v15.4.1 — Doc accuracy (pre-onboarding audit follow-up)
 
 **Date:** 2026-06-21

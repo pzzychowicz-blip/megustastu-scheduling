@@ -22,6 +22,52 @@
          blocks; never reference colours from JS directly.
       ──────────────────────────────────────────────────────────────────── */
       :root {
+        /* ── v16.0.0: font stack ──────────────────────────────────────────
+           Single source of truth for the app typeface. Ported from MGT
+           Bookings (`--font-app`) so the two apps render identically.
+           Form controls do NOT inherit font-family per spec, so a global
+           rule below forces it onto input / textarea / select / button. */
+        --font-app: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, Arial, sans-serif;
+
+        /* ── v16.0.0: radii scale ─────────────────────────────────────────
+           The SAME five tokens, with the same values, as MGT Bookings
+           v17.7.0's pill radius system. Assign BY ROLE, never by matching
+           the old literal:
+             --r-pill   CONTROLS — buttons, inputs, selects, chips, badges,
+                        segmented tracks and their segments, weekday pills
+             --r-auth   the login card, only
+             --r-sheet  modal shells + popovers
+             --r-card   cards, banners, panels, Collapsible bodies
+             --r-inset  rows nested inside a card, and the schedule grid
+                        cells (see the canvas exception below)
+
+           999px rather than a real pill radius: CSS clamps an oversized
+           radius to half the box, so ONE token is a true pill at every
+           control height in the app — 28px weekday pills, 40px buttons,
+           44px sheet actions — with no per-element arithmetic and nothing
+           to re-tune when a control's height changes.
+
+           DELIBERATELY not duplicated into the [data-theme="dark"] block —
+           radii are theme-agnostic.
+
+           CANVAS EXCEPTION: the schedule grid cells stay --r-inset. They
+           are a data grid, the direct analogue of Bookings' timeline
+           blocks (also an explicit exception there) — a 100×60px cell at
+           999px reads as a lozenge and the grid stops reading as a table.
+
+           Micro-radii that stay numeric at their call sites, as geometry
+           rather than style: the Kbd keycap (6), the MonthlyFairnessPanel
+           delta-bar trio (5/5/1/4), the EmployeeFairnessModal sparkline
+           pair (6), the mobile Overlay sheet's full-bleed 0, and every
+           `50%` circle. That list is exhaustive — `grep -rn
+           "borderRadius: [0-9]" src/` (excluding pdf-export.js) should
+           return those and nothing else. */
+        --r-pill: 999px;
+        --r-auth: 40px;
+        --r-sheet: 20px;
+        --r-card: 14px;
+        --r-inset: 10px;
+
         /* Body */
         --bg-app-from: #f3f5f8;
         --bg-app-to: #e7ecf2;
@@ -41,6 +87,12 @@
         --bg-input: rgba(255,255,255,0.85);
         --border-input: rgba(0,0,0,0.08);
         --shadow-input-inset: inset 0 1px 2px rgba(0,0,0,0.06);
+        /* v16.0.0 (phase 27): the Kbd keycap's drop + inset-bottom pair.
+           Was hardcoded in atoms.jsx as rgba(0,0,0,0.06)/rgba(0,0,0,0.08),
+           the last colour literal outside pdf-export.js. A 6%-black drop
+           is invisible on a dark keycap, so the key read flat in dark
+           mode; every other shadow token already has a dark variant. */
+        --shadow-keycap: 0 1px 2px rgba(0,0,0,0.06), inset 0 -1px 0 rgba(0,0,0,0.08);
         --text-input: #111;
 
         /* Text */
@@ -70,6 +122,20 @@
         --status-cancelled-bg: rgba(255,59,48,0.18);
         --status-cancelled-text: #9a1f17;
         --status-cancelled-border: rgba(255,59,48,0.45);
+
+        /* v16.0.0 (pill radius pass): SOLID status fills. The -bg tokens
+           above are translucent tints; these are the same hues at full
+           strength, for status LABELS — which now render solid so a label
+           carries the same visual weight as the action button beside it,
+           instead of reading lighter on some screens than others.
+           Scheduling's analogue of MGT Bookings' BLOCK_BG. Only the three
+           REQUEST_TYPES actually use these; a fourth (-assigned-) was
+           defined with no reader and removed — add one WITH its consumer.
+           Status PICKERS keep chosen = solid, rest = tinted, so both
+           families are needed. */
+        --status-open-solid: #8e8e93;
+        --status-confirmed-solid: #34c759;
+        --status-cancelled-solid: #ff3b30;
 
         /* Role channels (RGB triplets — composers add alpha at use site,
            e.g. background: rgba(var(--role-bar-rgb), 0.2)) */
@@ -133,9 +199,18 @@
         --bg-active-off: rgba(142,142,147,0.18);
 
         /* v15.2.0: Firebase connection status dot (AppShell) — solid
-           iOS green / red so the indicator reads clearly at small size. */
+           iOS green / red so the indicator reads clearly at small size.
+           v16.0.0: + a third "connecting" state (amber) for the window
+           before the first successful connect, and glow tokens for all
+           three. The glows used to be rgba literals inline in
+           ConnectionStatus.jsx, which broke the v0.11.0 rule that JS
+           carries no colour literals. */
         --status-online: #34c759;
+        --status-online-glow: rgba(52,199,89,0.25);
         --status-offline: #ff3b30;
+        --status-offline-glow: rgba(255,59,48,0.25);
+        --status-connecting: #ff9f0a;
+        --status-connecting-glow: rgba(255,159,10,0.25);
         --border-active-off: rgba(142,142,147,0.45);
         --text-active-off: #3a3a3c;
 
@@ -178,6 +253,7 @@
         --bg-input: rgba(28,28,30,0.85);
         --border-input: rgba(255,255,255,0.10);
         --shadow-input-inset: inset 0 1px 2px rgba(0,0,0,0.25);
+        --shadow-keycap: 0 1px 2px rgba(0,0,0,0.35), inset 0 -1px 0 rgba(0,0,0,0.45);
         --text-input: #f2f2f7;
 
         /* Text */
@@ -207,6 +283,11 @@
         --status-cancelled-bg: rgba(255,69,58,0.22);
         --status-cancelled-text: #FF6B61;
         --status-cancelled-border: rgba(255,69,58,0.50);
+
+        /* v16.0.0: solid status fills — Apple's dark system variants. */
+        --status-open-solid: #98989d;
+        --status-confirmed-solid: #32d74b;
+        --status-cancelled-solid: #ff453a;
 
         /* Role channels — Apple dark system variants (lighter / more saturated) */
         --role-bar-rgb: 255, 179, 64;
@@ -269,7 +350,11 @@
 
         /* v15.2.0: Firebase connection status dot (AppShell) */
         --status-online: #32d74b;
+        --status-online-glow: rgba(50,215,75,0.30);
         --status-offline: #ff453a;
+        --status-offline-glow: rgba(255,69,58,0.30);
+        --status-connecting: #ffd60a;
+        --status-connecting-glow: rgba(255,214,10,0.30);
         --border-active-off: rgba(152,152,157,0.50);
         --text-active-off: #d1d1d6;
 
@@ -293,11 +378,65 @@
       }
 
       html, body, #root { height: 100%; margin: 0; }
+
+      /* v16.0.0 (phase 28): reserve the vertical scrollbar's gutter at all
+         times. The app is a centred column, and the four tabs have very
+         different heights — a tall Schedule scrolls, a short Requests list
+         does not. Without this, switching between them adds and removes the
+         scrollbar, and the centred content JUMPS sideways by the
+         scrollbar's width (~15px on Windows/Linux, and on macOS whenever
+         the user has set "Show scroll bars: Always").
+
+         `stable` keeps the gutter reserved even when there is nothing to
+         scroll, so the column never moves. Ignored by engines that don't
+         support it, where the behaviour is simply what it is today. */
+      html { scrollbar-gutter: stable; }
+
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+        font-family: var(--font-app);
         background: linear-gradient(180deg, var(--bg-app-from) 0%, var(--bg-app-to) 100%);
         color: var(--color-body);
         -webkit-font-smoothing: antialiased;
+      }
+
+      /* v16.0.0: form controls don't inherit font-family per spec, so they
+         fall back to the browser default (textareas render monospace in
+         several engines). Ported from MGT Bookings, where the same rule
+         fixed a monospace Notes field. */
+      input, textarea, select, button { font-family: inherit; }
+
+      /* ── v16.0.0 (phase 42): select chevron ─────────────────────────────
+         Chrome paints the native <select> arrow against the BORDER-BOX edge,
+         and no amount of `padding-right` moves it — verified in the browser
+         with two otherwise-identical selects at 28px and 44px, whose arrows
+         landed on the same pixel. Since v16.0.0 gave every control `R.pill`
+         (999px, clamping to half the box), that arrow now sits inside the
+         curve of the right cap and reads as crowding the edge.
+
+         So the native one goes and we draw our own, which also means the
+         chevron finally matches the one the Collapsible headers use instead
+         of being whatever the engine ships.
+
+         The stroke colour is baked into the data URI — an SVG in a
+         `background-image` is a separate document and cannot see this page's
+         custom properties, so the theme split has to happen out here as two
+         rules rather than one `var()`. Keep the two paths identical apart
+         from the `stroke=` value.
+
+         The matching right PADDING is not here — it lives on `S.selectBase`
+         in constants.js, because that token sets `padding` as a shorthand
+         inline and inline wins, so a `padding-right` declared here would just
+         be overwritten. The two values are picked together; if you move the
+         chevron, move the padding with it. */
+      .mgt-select {
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5L6 6.5L11 1.5' stroke='%236b6b70' stroke-width='1.7' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+      }
+      [data-theme="dark"] .mgt-select {
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5L6 6.5L11 1.5' stroke='%23a0a0a8' stroke-width='1.7' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
       }
 
       /* ── v1.9.0: unified hover-scale utility ────────────────────────────
@@ -328,8 +467,42 @@
          CSS rules at the same level — the new `background-color`
          declaration only fills in the gap for elements that had none.
       ────────────────────────────────────────────────────────────────── */
-      .mgt-hover-scale {
-        transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease, border-radius 120ms ease;
+      /* ONE transition declaration for BOTH motion classes, and it has to
+         stay that way.
+
+         `transition` is a shorthand: when two rules of equal specificity
+         set it, the later one REPLACES the earlier one outright — the
+         properties do not merge. `.mgt-hover-scale` and `.mgt-press` are
+         both single-class selectors, so an element carrying both got only
+         whichever rule appeared later in this file. That is exactly what
+         happened: `.mgt-press` was defined below and listed only `filter`
+         and `background-color`, so every button with both classes silently
+         lost its `transform` transition and its hover SNAPPED to 1.08
+         instead of easing.
+
+         It went unnoticed while only 11 buttons had `.mgt-press`. Phase 22
+         put it on all 48, at which point every interactive surface in the
+         app was snapping. Measured in DEV before the fix: an element with
+         both classes computed `transition: filter 0.16s, background-color
+         0.16s` — no transform at all.
+
+         Listing both selectors here means neither can shadow the other.
+         An element with only one class carries a few transitions for
+         properties it never changes, which costs nothing.
+
+         `outline-color` / `outline-offset` are in the list so the
+         :focus-visible ring below fades in and out rather than snapping,
+         matching how hover already behaves. */
+      .mgt-hover-scale,
+      .mgt-press {
+        transition:
+          transform 120ms ease,
+          background-color 120ms ease,
+          box-shadow 120ms ease,
+          border-radius 120ms ease,
+          filter 160ms ease-out,
+          outline-color 140ms ease,
+          outline-offset 140ms ease;
       }
       /* v15.1.1: the :hover rule is wrapped in
          `@media (hover: hover) and (pointer: fine)` — iOS Safari keeps
@@ -363,12 +536,132 @@
            Elements that already have inline border-radius (most buttons
            via BTN.base, pills via 999, schedule cells via 10) keep their
            inline value because inline styles beat CSS at the same level.
-           12px matches S.surfaceSoft / S.card / BTN.base in
-           src/lib/constants.js. */
-        border-radius: 12px;
+
+           v16.0.0 pill-radius pass: the `border-radius` declaration that
+           used to live here is GONE, matching MGT Bookings v17.7.0. It
+           hard-set a card radius on hover, which would have squared off
+           every pill button and input the instant the pointer touched it.
+
+           Deleted rather than set to `inherit` — `inherit` resolves
+           against the PARENT's radius, so a bare element inside a square
+           parent goes square anyway, which is the opposite of the intent.
+           Bookings reached the same conclusion during its rollout.
+
+           Deleting it was safe in Bookings because nothing there relied on
+           it. Scheduling DID have three such surfaces — the Toggle row,
+           the Collapsible header and the Fld-wrapped Settings row, none of
+           which carried a radius of their own — so they were each given an
+           explicit one in atoms.jsx / S.fldRow as part of this change.
+           Nothing now depends on this rule for its shape. */
         position: relative;
         z-index: 2;
       }
+      }
+
+      /* ── v16.0.0: motion system, ported from MGT Bookings ───────────────
+         Scheduling had exactly one global class (.mgt-hover-scale) plus two
+         @keyframes declared inline inside ScheduleGrid. Everything below is
+         the shared vocabulary the two apps now have in common. Consumers are
+         the animation atoms in src/components/atoms.jsx — see Presence /
+         ModalPresence / SlideView there.
+
+         Durations are deliberately short and mostly `linear` for the modal
+         set: an enter/exit pair must feel symmetric, and easing a 180ms
+         fade both ways reads as sluggish.
+      ────────────────────────────────────────────────────────────────── */
+
+      /* Modal open/close. Desktop = scrim fade + card fade/scale;
+         mobile = slide-up / slide-down sheet. Driven by <ModalPresence>
+         toggling the *-in / *-out class on Overlay's nodes. */
+      @keyframes mgt-scrim-in  { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes mgt-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+      @keyframes mgt-card-in   { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+      @keyframes mgt-card-out  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(.97); } }
+      @keyframes mgt-sheet-in  { from { transform: translateY(100%); } to { transform: translateY(0); } }
+      @keyframes mgt-sheet-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+      .mgt-scrim-in  { animation: mgt-scrim-in  180ms linear both; }
+      .mgt-scrim-out { animation: mgt-scrim-out 180ms linear both; }
+      .mgt-card-in   { animation: mgt-card-in   180ms linear both; }
+      .mgt-card-out  { animation: mgt-card-out  180ms linear both; }
+      .mgt-sheet-in  { animation: mgt-sheet-in  200ms linear both; }
+      .mgt-sheet-out { animation: mgt-sheet-out 200ms linear both; }
+
+      /* Directional view transitions — tab switch (AppShell) and week
+         navigation (ScheduleGrid). The incoming view slides in from the
+         side it conceptually came from; the outgoing one is not animated
+         (it unmounts), which keeps the swap crisp instead of crossfaded. */
+      @keyframes mgt-view-in-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+      @keyframes mgt-view-in-left  { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+      .mgt-view-in-right { animation: mgt-view-in-right 220ms ease-out both; }
+      .mgt-view-in-left  { animation: mgt-view-in-left  220ms ease-out both; }
+
+      /* Plain crossfade for content swaps with no direction to express. */
+      @keyframes mgt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+      .mgt-fade-in { animation: mgt-fade-in 180ms ease-out both; }
+
+      /* Press feedback. Uses `filter: brightness()` rather than a transform
+         SPECIFICALLY so it never fights .mgt-hover-scale's hover transform —
+         an element can be hovered (scaled) and pressed (dimmed) at once.
+         The `transition` that used to live here moved up to the shared
+         declaration alongside .mgt-hover-scale; see the note there for why
+         splitting it across two rules was silently breaking hover. */
+      .mgt-press:active:not(:disabled) { filter: brightness(0.86); }
+
+      /* ── v16.0.0: hide a scroll container's scrollbar ──────────────────
+         `scrollbarWidth: none` as an inline style only reaches Firefox, and
+         `msOverflowStyle` only legacy Edge — WebKit needs a pseudo-element,
+         which inline styles cannot express. So AppShell's tab track was
+         still painting a scrollbar in Safari and Chrome, iOS Safari
+         included, despite the inline properties. All three engines here,
+         once. The container still scrolls; only the bar is hidden. */
+      .mgt-no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+      .mgt-no-scrollbar::-webkit-scrollbar { width: 0; height: 0; }
+
+      /* ── v16.0.0: focus-visible ring ───────────────────────────────────
+         NEITHER app had any focus affordance before this — the clearest
+         accessibility gap in both. A keyboard user tabbing through the app
+         had no way to tell where they were.
+
+         `:focus-visible` (not `:focus`) so a mouse click on a button does
+         NOT paint a ring, while Tab does. Per spec, text inputs match
+         focus-visible on any focus including click, which is what we want:
+         a focused field should always read as focused.
+
+         `outline` rather than `box-shadow` because it follows the
+         element's border-radius automatically and, being outside the box
+         model, cannot reflow the layout or fight the inset shadow that
+         S.inputBase paints. The offset keeps it clear of the element's own
+         border. NB S.inputBase's `outline: "none"` was removed so this
+         rule can reach inputs — an inline style would otherwise win. */
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* ── Reduced motion ────────────────────────────────────────────────
+         Two independent kill switches, both collapsing every animation and
+         transition to ~instant:
+           1. the OS-level `prefers-reduced-motion` setting;
+           2. a per-device toggle in Settings → Display writing
+              localStorage["mgt-reduce-motion"] = "1", which the inline
+              script at the bottom of this file stamps onto <html> as
+              data-motion="reduce" BEFORE React mounts.
+         The !important beats inline `transition:` / `animation:` styles.
+         Any WAAPI animation added later must check the same attribute in
+         JS — CSS cannot reach the Web Animations API. */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.001ms !important;
+          animation-delay: 0ms !important;
+          transition-duration: 0.001ms !important;
+        }
+      }
+      :root[data-motion="reduce"] *,
+      :root[data-motion="reduce"] *::before,
+      :root[data-motion="reduce"] *::after {
+        animation-duration: 0.001ms !important;
+        animation-delay: 0ms !important;
+        transition-duration: 0.001ms !important;
       }
     </style>
   </head>
@@ -376,7 +669,13 @@
     <!-- v0.11.0: paint the correct theme before React mounts, so the page
          doesn't flash light-on-load for a user whose system is dark (or
          vice-versa). React's useThemeMode hook takes over after mount;
-         this only owns the initial paint. -->
+         this only owns the initial paint.
+
+         v16.0.0: also stamps data-motion="reduce" from the per-device
+         "Reduce animations" preference, for the same reason — an animation
+         that fires once during the first paint can't be un-fired by a
+         React effect. Must stay in sync with the toggle in
+         Settings → Display (localStorage key "mgt-reduce-motion"). -->
     <script>
       (function () {
         try {
@@ -384,6 +683,13 @@
           document.documentElement.dataset.theme = dark ? "dark" : "light";
         } catch (e) {
           /* leave the default data-theme="light" from the html tag */
+        }
+        try {
+          if (localStorage.getItem("mgt-reduce-motion") === "1") {
+            document.documentElement.dataset.motion = "reduce";
+          }
+        } catch (e) {
+          /* Safari private mode throws on localStorage — motion stays on */
         }
       })();
     </script>

@@ -22,8 +22,9 @@
 //   isMobile             (bool)             — forwarded to the warning modal's Overlay.
 
 import { useState, forwardRef, useImperativeHandle } from "react";
-import { BTN } from "../lib/constants.js";
+import { BTN, BTN_SIZE } from "../lib/constants.js";
 import { isWeekComplete, countEmptyCells } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import ExportWarningModal from "./ExportWarningModal.jsx";
 
 // pdf-export.js (and its jspdf dependency tree, ~150KB gz with html2canvas
@@ -87,8 +88,7 @@ function ExportButton({
   const style = {
     ...BTN.base,
     ...(canClick ? BTN.primary : BTN.ghost),
-    padding: "6px 12px",
-    fontSize: 13,
+    ...BTN_SIZE.md,
     opacity: canClick ? 1 : 0.5,
     cursor: canClick ? "pointer" : "not-allowed",
   };
@@ -103,7 +103,7 @@ function ExportButton({
     <>
       <button
         type="button"
-        className="mgt-hover-scale"
+        className="mgt-hover-scale mgt-press"
         onClick={handleClick}
         disabled={!canClick}
         style={style}
@@ -111,13 +111,17 @@ function ExportButton({
       >
         Export PDF
       </button>
-      <ExportWarningModal
-        open={warnOpen}
-        emptyCount={emptyCount}
-        isMobile={isMobile === true}
-        onClose={function () { setWarnOpen(false); }}
-        onConfirm={handleConfirmIncomplete}
-      />
+      <ModalPresence show={warnOpen}>
+        {warnOpen ? (
+          <ExportWarningModal
+            open
+            emptyCount={emptyCount}
+            isMobile={isMobile === true}
+            onClose={function () { setWarnOpen(false); }}
+            onConfirm={handleConfirmIncomplete}
+          />
+        ) : null}
+      </ModalPresence>
     </>
   );
 }

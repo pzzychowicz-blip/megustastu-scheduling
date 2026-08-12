@@ -83,8 +83,9 @@
 //   isMobile              (bool)
 
 import { useState } from "react";
-import { S } from "../lib/constants.js";
+import { R, S } from "../lib/constants.js";
 import { addDays, employeeTenureOverlapsDates } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import EmployeeFairnessModal from "./EmployeeFairnessModal.jsx";
 
 export default function MonthlyFairnessPanel({
@@ -180,7 +181,7 @@ export default function MonthlyFairnessPanel({
             border: "1px solid var(--hairline-strong)",
             boxSizing: "border-box",
           }}
-          title="No target — nothing to deviate from"
+          title="No target"
         />
       );
     }
@@ -203,7 +204,7 @@ export default function MonthlyFairnessPanel({
           border: "1px solid var(--hairline-strong)",
           boxSizing: "border-box",
         }}
-        title={(delta >= 0 ? "+" : "") + fmtHours(delta) + " vs target — click for details"}
+        title={(delta >= 0 ? "+" : "") + fmtHours(delta) + " vs target"}
       >
         {/* Centre notch — short vertical mark, doesn't dominate */}
         <div
@@ -261,7 +262,7 @@ export default function MonthlyFairnessPanel({
         padding: 12,
       }}
     >
-      <div style={{ ...S.h2, margin: 0, marginBottom: 8, fontSize: 14 }}>
+      <div style={{ ...S.panelTitle, marginBottom: 8 }}>
         Last 28 days · fairness
       </div>
 
@@ -314,16 +315,16 @@ export default function MonthlyFairnessPanel({
             fontFamily: "inherit",
             fontSize: "inherit",
             textAlign: "left",
-            borderRadius: 8,
+            borderRadius: R.pill,
           };
 
           const nameNode = interactiveHighlight ? (
             <button
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-press"
               onClick={function () { onHighlight(isSelected ? null : r.id); }}
               aria-pressed={isSelected ? "true" : "false"}
-              title={r.name + " — click to highlight"}
+              title={"Highlight " + r.name}
               style={nameBtnStyle}
             >
               {nameContent}
@@ -335,7 +336,7 @@ export default function MonthlyFairnessPanel({
           const barBlock = canDrillDown ? (
             <button
               type="button"
-              className="mgt-hover-scale"
+              className="mgt-hover-scale mgt-press"
               onClick={function () { setDetailEmployeeId(r.id); }}
               style={{
                 background: "transparent",
@@ -348,7 +349,7 @@ export default function MonthlyFairnessPanel({
                 lineHeight: 0,
                 flexShrink: 0,
               }}
-              title={"Click for monthly stats — " + r.name}
+              title={"Monthly stats for " + r.name}
               aria-label={"Open monthly stats for " + r.name}
             >
               {deltaBar(r)}
@@ -364,10 +365,18 @@ export default function MonthlyFairnessPanel({
             flexWrap: "wrap",
             width: "100%",
             padding: "6px 8px",
-            borderRadius: 8,
+            borderRadius: R.pill,
             border: isSelected ? "1px solid var(--border-active-on)" : "1px solid transparent",
             background: isSelected ? "var(--bg-active-on)" : "transparent",
             boxShadow: isSelected ? "0 0 0 2px var(--bg-active-on)" : "none",
+            // v16.0.0 (phase 31): these three flip together when the manager
+            // picks someone from the "Shifts assigned" pills above, and they
+            // used to snap. This row is a plain <div> — the hover-scale /
+            // press classes (which carry the app's shared transition) are on
+            // the name BUTTON inside it, not here — so it needs its own.
+            // Border WIDTH is 1px in both states on purpose: only the colour
+            // changes, so the highlight can never reflow the row.
+            transition: "background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease",
             boxSizing: "border-box",
             // Font defaults — restored from the first commit's
             // baseRowStyle. The name span doesn't set fontSize, so
@@ -388,21 +397,25 @@ export default function MonthlyFairnessPanel({
         })}
       </div>
 
-      <EmployeeFairnessModal
-        open={detailEmployee !== null}
-        employee={detailEmployee}
-        weekStart={weekStart}
-        shifts={shifts}
-        requests={requests}
-        shiftTemplate={shiftTemplate}
-        configRevisions={configRevisions}
-        settings={settings}
-        dayRequiredRoles={dayRequiredRoles}
-        openingDays={openingDays}
-        isMobile={isMobile}
-        onClose={function () { setDetailEmployeeId(null); }}
-        onJumpToWeek={typeof onJumpToWeek === "function" ? handleJumpToWeekFromModal : undefined}
-      />
+      <ModalPresence show={detailEmployee !== null}>
+        {detailEmployee !== null ? (
+          <EmployeeFairnessModal
+            open
+            employee={detailEmployee}
+            weekStart={weekStart}
+            shifts={shifts}
+            requests={requests}
+            shiftTemplate={shiftTemplate}
+            configRevisions={configRevisions}
+            settings={settings}
+            dayRequiredRoles={dayRequiredRoles}
+            openingDays={openingDays}
+            isMobile={isMobile}
+            onClose={function () { setDetailEmployeeId(null); }}
+            onJumpToWeek={typeof onJumpToWeek === "function" ? handleJumpToWeekFromModal : undefined}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

@@ -30,8 +30,9 @@
 //   isMobile   (bool)
 
 import { useState } from "react";
-import { S, REQUEST_TYPES } from "../lib/constants.js";
+import { R, S, BADGE_SIZE, REQUEST_TYPES } from "../lib/constants.js";
 import { addDays, isoDate, parseIsoDate } from "../lib/schedule-logic.js";
+import { ModalPresence } from "./atoms.jsx";
 import RequestPreviewModal from "./RequestPreviewModal.jsx";
 
 // Local copy of the RequestsList row formatter so we don't introduce a
@@ -57,7 +58,7 @@ function typeMeta(key) {
   for (let i = 0; i < REQUEST_TYPES.length; i++) {
     if (REQUEST_TYPES[i].key === key) return REQUEST_TYPES[i];
   }
-  return { key: key, label: key, palette: null };
+  return { key: key, label: key, solidPalette: null };
 }
 
 export default function WeeklyRequestsPreview({ requests, employees, weekStart, isMobile }) {
@@ -91,7 +92,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
       archived: emp ? emp.active === false : false,
       type: r.type,
       typeLabel: typeMeta(r.type).label,
-      palette: typeMeta(r.type).palette,
+      palette: typeMeta(r.type).solidPalette,
       range: formatRange(from, to),
       dateFrom: from,
     });
@@ -112,7 +113,7 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
         padding: 12,
       }}
     >
-      <div style={{ ...S.h2, margin: 0, marginBottom: 8, fontSize: 14 }}>
+      <div style={{ ...S.panelTitle, marginBottom: 8 }}>
         Requests this week
       </div>
 
@@ -155,13 +156,15 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
                   primary interactive surface in the app). */}
               <button
                 type="button"
-                className="mgt-hover-scale"
+                className="mgt-hover-scale mgt-press"
                 onClick={function () { setPreviewRequest(r.record); }}
                 title="Preview request"
                 style={{
-                  padding: "1px 8px",
-                  borderRadius: 999,
-                  fontSize: 11,
+                  // v16.0.0 (phase 24): badge metrics. This one cannot be
+                  // a TBadge — it is a <button> that opens the preview
+                  // modal — so it spreads the token the atom spreads.
+                  ...BADGE_SIZE.base,
+                  borderRadius: R.pill,
                   fontWeight: 500,
                   background: r.palette ? r.palette.bg : "var(--bg-pill)",
                   color: r.palette ? r.palette.text : "var(--text-secondary)",
@@ -184,13 +187,17 @@ export default function WeeklyRequestsPreview({ requests, employees, weekStart, 
       {/* v1.9.0: read-only preview modal. Owned locally — ScheduleGrid
           doesn't see this state. The modal closes via Close button,
           backdrop click, or Esc (handled by the Overlay atom). */}
-      <RequestPreviewModal
-        open={previewRequest !== null}
-        request={previewRequest}
-        employees={employees}
-        isMobile={isMobile}
-        onClose={function () { setPreviewRequest(null); }}
-      />
+      <ModalPresence show={previewRequest !== null}>
+        {previewRequest !== null ? (
+          <RequestPreviewModal
+            open
+            request={previewRequest}
+            employees={employees}
+            isMobile={isMobile}
+            onClose={function () { setPreviewRequest(null); }}
+          />
+        ) : null}
+      </ModalPresence>
     </div>
   );
 }

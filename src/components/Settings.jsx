@@ -83,17 +83,13 @@
 // SECTIONS.foh.label / .kitchen.label drive the card titles so renaming
 // a section in constants.js propagates automatically.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  S, BTN, SECTIONS,
+  R, S, BTN, BTN_SIZE, BADGE_SIZE, pillTone, SECTIONS,
   DEFAULT_SHIFT_TEMPLATE,
   OPERATING_HOURS,
   DEFAULT_OPENING_DAYS,
   DEFAULT_GENERATOR_STRICT_PREFERENCE,
-  DEFAULT_GENERATOR_BANNER_AUTO_DISMISS,
-  DEFAULT_GENERATOR_BANNER_DURATION_SEC,
-  GENERATOR_BANNER_DURATION_MIN,
-  GENERATOR_BANNER_DURATION_MAX,
   DEFAULT_MIN_CONSECUTIVE_DAYS_OFF,
   MIN_CONSECUTIVE_DAYS_OFF_MIN,
   MIN_CONSECUTIVE_DAYS_OFF_MAX,
@@ -117,10 +113,17 @@ import {
   parseIsoDate,
   formatWeekRange,
 } from "../lib/schedule-logic.js";
-import { Collapsible, Toggle, Fld, mkInp, mkBtn } from "./atoms.jsx";
+import { Collapsible, Toggle, Fld, mkInp, mkBtn, Reveal } from "./atoms.jsx";
 // v1.14.0: footer credit reads version directly from the single source
 // of truth so a version bump propagates here automatically.
 import { __APP_SIGNATURE__ } from "../App.jsx";
+
+// v16.0.0: per-device "Reduce animations" preference. localStorage, NOT
+// /settings — see the handler in the Display section for why. This exact
+// key is also read by the no-flash inline script in index.html, which
+// stamps data-motion="reduce" before React mounts; change one and you must
+// change the other. Shared verbatim with MGT Bookings.
+const REDUCE_MOTION_KEY = "mgt-reduce-motion";
 
 // ── Deep-clone the template for local edit state ─────────────────────────
 // DEFAULT_SHIFT_TEMPLATE is shallow-frozen; nested objects are not. Cloning
@@ -226,6 +229,49 @@ function blockError(block, hours) {
       }
     }
   }
+  // v16.0.0: per-weekday overrides. Walked in WEEKDAYS (Mon..Sun) order so
+  // the reported message is deterministic rather than depending on object
+  // key order. Unlike the block-level count, a weekday count of 0 is legal
+  // — that's "this row doesn't run today".
+  //
+  // This gate is load-bearing beyond the message: the debounced template
+  // auto-save only fires when all four blockError results are null, so a
+  // half-typed weekday count (NaN mid-keystroke) correctly holds the write
+  // back, exactly as the block-level count does.
+  const wd = block.weekdays;
+  if (wd && typeof wd === "object") {
+    for (let d = 0; d < WEEKDAYS.length; d++) {
+      const key = WEEKDAYS[d].key;
+      const e = wd[key];
+      if (!e) continue;
+      const dayName = WEEKDAYS[d].label;
+      if (typeof e.count !== "number" || !Number.isFinite(e.count) || e.count < 0) {
+        return dayName + ": count must be 0 or more.";
+      }
+      if (e.count === 0) continue;   // no times to validate
+      if (!Array.isArray(e.times) || e.times.length !== e.count) {
+        return dayName + ": each shift needs its own start and end times.";
+      }
+      for (let i = 0; i < e.times.length; i++) {
+        const t = e.times[i];
+        const prefix = dayName + (e.times.length > 1 ? " shift " + (i + 1) : "") + ": ";
+        if (!t || !t.start || !t.end) {
+          return prefix + "start and end times required.";
+        }
+        if (t.start >= t.end) {
+          return prefix + "end time must be after start.";
+        }
+        if (hours && hours.operatingStart && hours.operatingEnd) {
+          if (t.start < hours.operatingStart) {
+            return prefix + "start cannot be earlier than operating start (" + hours.operatingStart + ").";
+          }
+          if (t.end > hours.operatingEnd) {
+            return prefix + "end cannot be later than operating end (" + hours.operatingEnd + ").";
+          }
+        }
+      }
+    }
+  }
   return null;
 }
 
@@ -305,6 +351,30 @@ function blockDirty(a, b) {
       if ((aSolo[i] && aSolo[i].end) !== (bSolo[i] && bSolo[i].end)) return true;
     }
   }
+  // v16.0.0: per-weekday axis. Both sides normalize to {} for "no
+  // overrides" — the form may hold an empty object while a saved doc OMITS
+  // the key, and those two MUST compare equal. Otherwise the dirty dot
+  // never clears and the 800ms debounce re-writes the revision on every
+  // Firebase echo, which is the exact failure the v15.1.0 comment below
+  // the auto-save effect warns about.
+  const aWd = (a.weekdays && typeof a.weekdays === "object") ? a.weekdays : {};
+  const bWd = (bMat.weekdays && typeof bMat.weekdays === "object") ? bMat.weekdays : {};
+  const aKeys = Object.keys(aWd).sort();
+  const bKeys = Object.keys(bWd).sort();
+  if (aKeys.length !== bKeys.length) return true;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return true;
+    const ae = aWd[aKeys[i]];
+    const be = bWd[bKeys[i]];
+    if ((ae && ae.count) !== (be && be.count)) return true;
+    const at = Array.isArray(ae && ae.times) ? ae.times : [];
+    const bt = Array.isArray(be && be.times) ? be.times : [];
+    if (at.length !== bt.length) return true;
+    for (let j = 0; j < at.length; j++) {
+      if ((at[j] && at[j].start) !== (bt[j] && bt[j].start)) return true;
+      if ((at[j] && at[j].end) !== (bt[j] && bt[j].end)) return true;
+    }
+  }
   return false;
 }
 
@@ -325,6 +395,26 @@ function serializeTemplateForSave(formTemplate) {
       out.soloTimes = block.soloTimes.map(function (t) {
         return { start: t.start, end: t.end };
       });
+    }
+    // v16.0.0: per-weekday overrides, same discipline as soloTimes. Emitted
+    // in Mon..Sun order for a canonical, readable doc. A count of 0 writes
+    // NO `times` key (an empty array is unrepresentable in RTDB), and an
+    // empty result omits `weekdays` entirely rather than writing {}.
+    const wd = block.weekdays;
+    if (wd && typeof wd === "object") {
+      const outWd = {};
+      WEEKDAYS.forEach(function (d) {
+        const e = wd[d.key];
+        if (!e || !Number.isFinite(e.count) || e.count < 0) return;
+        if (e.count === 0) { outWd[d.key] = { count: 0 }; return; }
+        outWd[d.key] = {
+          count: e.count,
+          times: (Array.isArray(e.times) ? e.times : []).map(function (t) {
+            return { start: t.start, end: t.end };
+          }),
+        };
+      });
+      if (Object.keys(outWd).length > 0) out.weekdays = outWd;
     }
     return out;
   }
@@ -380,6 +470,54 @@ export default function Settings({
     setEffectiveFromIso(isoDate(startOfWeek(parsed)));
   }
 
+  // ── Pending-delete ledger (v16.0.0) ────────────────────────────────────
+  // `deleteConfigRevision` is fire-and-forget: the `configRevisions` prop
+  // still carries the removed record until Firebase echoes back. Every
+  // read below goes through `visibleRevisions` so the forms, the dirty
+  // baseline, the merge-target id lookup, and the Scheduled-changes list
+  // all see the SAME map within one render.
+  //
+  // Without it the delete handler seeded the forms from a locally filtered
+  // map while `resolvedAtPicker` kept resolving against the live prop. The
+  // two disagreed for as long as the echo took, the section read dirty,
+  // and the 800 ms auto-save wrote the record straight back — same id via
+  // findRevisionIdForMonday when the picker sat on the deleted revision's
+  // own Monday, or a phantom new revision at the picker week otherwise.
+  // That was the "removed change comes back a second later" bug.
+  //
+  // The ledger is optimistic, so it is cleared as soon as the delete
+  // settles: on success the record is already gone from the prop, and on
+  // REJECTION (rules, offline) Firebase rolls it back and the row must
+  // reappear rather than stay hidden behind a delete that never landed.
+  const [pendingDeletedIds, setPendingDeletedIds] = useState([]);
+  const visibleRevisions = useMemo(function () {
+    if (pendingDeletedIds.length === 0) return configRevisions || {};
+    const out = { ...(configRevisions || {}) };
+    pendingDeletedIds.forEach(function (id) { delete out[id]; });
+    return out;
+  }, [configRevisions, pendingDeletedIds]);
+
+  function forgetPendingDelete(id) {
+    setPendingDeletedIds(function (prev) {
+      return prev.filter(function (pid) { return pid !== id; });
+    });
+  }
+
+  // Hide the record locally, then release the ledger entry once the write
+  // settles either way. `deleteConfigRevision` reports its own failure as
+  // a write warning — this only owns the local visibility.
+  function deleteRevisionOptimistically(id, isSilent) {
+    setPendingDeletedIds(function (prev) {
+      return prev.indexOf(id) === -1 ? prev.concat([id]) : prev;
+    });
+    const settled = deleteConfigRevision(id, isSilent);
+    if (settled && typeof settled.then === "function") {
+      settled.then(function () { forgetPendingDelete(id); });
+      return;
+    }
+    forgetPendingDelete(id);
+  }
+
   // ── Seed local form state ──────────────────────────────────────────────
   // We deliberately do NOT re-sync from props after mount. Manager-only
   // app, single tab editing — if the prop changes mid-edit it's because
@@ -390,7 +528,7 @@ export default function Settings({
   // base) and re-seed whenever the picker changes — see the effect below.
   const [form, setForm] = useState(function () {
     const resolved = resolveConfigForWeek(
-      configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+      visibleRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
     );
     return cloneTemplate(resolved.shiftTemplate || DEFAULT_SHIFT_TEMPLATE);
   });
@@ -417,7 +555,7 @@ export default function Settings({
   // week, like the template form above.
   const [openingDaysForm, setOpeningDaysForm] = useState(function () {
     const resolved = resolveConfigForWeek(
-      configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+      visibleRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
     );
     return normalizeOpeningDays(resolved.openingDays || DEFAULT_OPENING_DAYS);
   });
@@ -428,18 +566,21 @@ export default function Settings({
   // the 800 ms debounce window when the picker changes are dropped — the
   // save effects carry `effectiveFromIso` in their dep arrays, so their
   // cleanup clears the timers in the same commit, before this re-seed.
+  // `revMapOverride` exists for handlers that seed in the SAME tick as a
+  // delete: the ledger's state update hasn't applied yet, so the closed-over
+  // `visibleRevisions` still carries the record being removed.
   function seedFormsFor(iso, revMapOverride) {
     const resolved = resolveConfigForWeek(
-      revMapOverride || configRevisions, settings, shiftTemplate, parseIsoDate(iso)
+      revMapOverride || visibleRevisions, settings, shiftTemplate, parseIsoDate(iso)
     );
     setForm(cloneTemplate(resolved.shiftTemplate || DEFAULT_SHIFT_TEMPLATE));
     setOpeningDaysForm(normalizeOpeningDays(resolved.openingDays || DEFAULT_OPENING_DAYS));
   }
   const effectiveFromSeededRef = useRef(false);
   // handleReset sets this before moving the picker: it has ALREADY seeded
-  // the forms to defaults, and the configRevisions prop is stale at that
-  // moment (the delete echoes haven't landed) — a re-seed here would
-  // resurrect just-deleted revision values into the form.
+  // the forms to defaults, and its ledger writes haven't applied yet at
+  // that point in the tick — a re-seed here would resurrect just-deleted
+  // revision values into the form.
   const skipNextReseedRef = useRef(false);
   useEffect(function () {
     if (!effectiveFromSeededRef.current) {
@@ -458,6 +599,37 @@ export default function Settings({
   // the matching pill via a relative-parent + absolute-popover layout.
   const [openDayPopover, setOpenDayPopover] = useState(null);
   const popoverRef = useRef(null);
+
+  // v16.0.0: the per-weekday template popover. A COMPOSITE STRING key
+  // ("foh|evening|sat") rather than an object, so the existing
+  // `cur === key ? null : key` toggle idiom still works and we never
+  // compare object identities.
+  //
+  // Separate state from `openDayPopover` on purpose: that one lives in the
+  // Operating-time section and this one in FoH / Kitchen, and `openSection`
+  // allows only one accordion open at a time — so the two can never both
+  // be showing, and their close handlers can't fight.
+  const [tplDayPopover, setTplDayPopover] = useState(null);
+  // ONE ref, attached conditionally to whichever block currently owns the
+  // open popover. `renderBlock` is a plain function called four times per
+  // render, so it cannot call useRef itself; and since only one popover can
+  // be open, one ref is all that's ever needed. React attaches refs before
+  // effects run, so it is always current when the listener registers.
+  const tplPopoverRef = useRef(null);
+  useEffect(function () {
+    if (!tplDayPopover) return undefined;
+    function onDocMouseDown(e) {
+      const node = tplPopoverRef.current;
+      if (node && !node.contains(e.target)) setTplDayPopover(null);
+    }
+    function onKey(e) { if (e.key === "Escape") setTplDayPopover(null); }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return function () {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [tplDayPopover]);
   useEffect(function () {
     if (!openDayPopover) return undefined;
     function handleDocMouseDown(e) {
@@ -573,6 +745,11 @@ export default function Settings({
         ...prev,
         [section]: {
           ...prev[section],
+          // v16.0.0: the spread carries `weekdays` through untouched, and
+          // that is deliberate — per-weekday overrides are explicit manager
+          // intent, so changing the block's base count must not silently
+          // rewrite them. A larger override is absorbed by the union ladder;
+          // a smaller one was always legal.
           [dayPart]: { ...block, count: parsed, times: newTimes, soloTimes: newSolo },
         },
       };
@@ -641,6 +818,91 @@ export default function Settings({
     });
   }
 
+  // ── v16.0.0: per-weekday override editing ─────────────────────────────
+  // The form holds `weekdays` as an object (possibly empty); the SAVED doc
+  // omits the key entirely. `blockDirty` and `serializeTemplateForSave`
+  // both normalize {} ↔ absent, so the two shapes never disagree.
+  //
+  // Small read helper so `undefined` vs `{}` is resolved in exactly one
+  // place rather than at every call site.
+  function weekdaysOf(block) {
+    return (block && block.weekdays && typeof block.weekdays === "object") ? block.weekdays : {};
+  }
+
+  function setWeekdayEntry(section, dayPart, wk, updater) {
+    setForm(function (prev) {
+      const block = prev[section][dayPart];
+      const wd = { ...weekdaysOf(block) };
+      const next = updater(wd[wk], block);
+      if (next === null) delete wd[wk];
+      else wd[wk] = next;
+      return {
+        ...prev,
+        [section]: { ...prev[section], [dayPart]: { ...block, weekdays: wd } },
+      };
+    });
+  }
+
+  // ON  → seed the override from the block's own count + times, so the
+  //       popover opens showing what the day currently inherits.
+  // OFF → DELETE the key. Never null: the whole shape depends on "absent
+  //       means inherits", and a null would survive as a real key in form
+  //       state and confuse blockDirty.
+  function onWeekdayOverrideToggle(section, dayPart, wk, nextOn) {
+    setWeekdayEntry(section, dayPart, wk, function (_cur, block) {
+      if (!nextOn) return null;
+      return {
+        count: block.count,
+        times: (Array.isArray(block.times) ? block.times : []).map(function (t) {
+          return { start: t.start, end: t.end };
+        }),
+      };
+    });
+  }
+
+  // Same grow/truncate + last-entry-extend rule the block-level count uses,
+  // applied to the override's own times array. Count 0 keeps `times: []` in
+  // FORM state only — serializeTemplateForSave drops it on the way out.
+  function onWeekdayCountChange(section, dayPart, wk, e) {
+    const raw = e.target.value;
+    const parsed = raw === "" ? NaN : Number(raw);
+    setWeekdayEntry(section, dayPart, wk, function (cur, block) {
+      const base = cur || { count: block.count, times: [] };
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        // Hold the invalid value so the field stays editable mid-keystroke;
+        // blockError refuses to save until it becomes a number again.
+        return { ...base, count: parsed };
+      }
+      const target = Math.round(parsed);
+      let times = Array.isArray(base.times) ? base.times.slice() : [];
+      if (times.length > target) times = times.slice(0, target);
+      else if (times.length < target) {
+        const fallback = times[times.length - 1]
+          || (Array.isArray(block.times) ? block.times[times.length] : null)
+          || (Array.isArray(block.times) ? block.times[block.times.length - 1] : null)
+          || { start: OPERATING_HOURS.start, end: OPERATING_HOURS.end };
+        while (times.length < target) times.push({ start: fallback.start, end: fallback.end });
+      }
+      return { count: target, times: times };
+    });
+  }
+
+  function onWeekdayTimeChange(section, dayPart, wk, slotIndex, field, e) {
+    const value = e.target.value;
+    setWeekdayEntry(section, dayPart, wk, function (cur, block) {
+      const base = cur || {
+        count: block.count,
+        times: (Array.isArray(block.times) ? block.times : []).map(function (t) {
+          return { start: t.start, end: t.end };
+        }),
+      };
+      const times = (Array.isArray(base.times) ? base.times : []).map(function (t, i) {
+        return i === slotIndex ? { ...t, [field]: value } : t;
+      });
+      return { ...base, times: times };
+    });
+  }
+
   // v0.7.0: operating-hours updater.
   function onHoursChange(field, e) {
     const value = e.target.value;
@@ -675,6 +937,30 @@ export default function Settings({
     saveSettings({ ...(settings || {}), allowIncompleteExport: nextValue });
   }
 
+  // v16.0.0: "Reduce animations" — the ONE preference on this tab that does
+  // NOT live in /settings. It is per-device by design (a weak tablet and a
+  // fast laptop should be able to disagree), so it is written to
+  // localStorage and applied by stamping `data-motion="reduce"` on <html>,
+  // which the two kill-switch rules in index.html key off. The same key is
+  // read by the no-flash inline script before React mounts, so the
+  // preference is honoured from the very first paint.
+  //
+  // Reading in a lazy useState initializer rather than an effect keeps the
+  // Toggle's first render truthful — an effect would paint "off" for a
+  // frame on a device that has it on.
+  const [reduceMotion, setReduceMotion] = useState(function () {
+    try { return localStorage.getItem(REDUCE_MOTION_KEY) === "1"; } catch (_e) { return false; }
+  });
+  function onReduceMotionChange(nextValue) {
+    setReduceMotion(nextValue);
+    try {
+      if (nextValue) localStorage.setItem(REDUCE_MOTION_KEY, "1");
+      else localStorage.removeItem(REDUCE_MOTION_KEY);
+    } catch (_e) { /* Safari private mode — the DOM flip below still applies */ }
+    if (nextValue) document.documentElement.dataset.motion = "reduce";
+    else delete document.documentElement.dataset.motion;
+  }
+
   // v0.11.0: Dark mode auto-save. Same pattern as showRolePills above.
   // `isDark` is the currently-applied resolved value (from AppShell's
   // useThemeMode hook); we save the explicit boolean so the user's choice
@@ -703,31 +989,6 @@ export default function Settings({
   // toggle or editing the duration takes effect on the NEXT generator
   // run (or, if a banner is already showing, on the next render that
   // re-runs the auto-dismiss effect).
-  function onBannerAutoDismissChange(nextValue) {
-    saveSettings({ ...(settings || {}), generatorBannerAutoDismiss: nextValue });
-  }
-  const bannerAutoDismiss =
-    settings && typeof settings.generatorBannerAutoDismiss === "boolean"
-      ? settings.generatorBannerAutoDismiss
-      : DEFAULT_GENERATOR_BANNER_AUTO_DISMISS;
-  const bannerDurationSec =
-    settings && Number.isFinite(settings.generatorBannerDurationSec)
-      ? Math.max(
-          GENERATOR_BANNER_DURATION_MIN,
-          Math.min(GENERATOR_BANNER_DURATION_MAX, settings.generatorBannerDurationSec)
-        )
-      : DEFAULT_GENERATOR_BANNER_DURATION_SEC;
-  // Saves only when the user finishes typing a valid integer in the
-  // allowed range. Empty / NaN / out-of-range → no save (preserves the
-  // last valid value while the user edits). Click-step + arrow keys
-  // on <input type="number"> also fire onChange with a valid integer
-  // so the stepper UX still saves on every step.
-  function onBannerDurationChange(rawValue) {
-    const n = parseInt(rawValue, 10);
-    if (!Number.isFinite(n)) return;
-    if (n < GENERATOR_BANNER_DURATION_MIN || n > GENERATOR_BANNER_DURATION_MAX) return;
-    saveSettings({ ...(settings || {}), generatorBannerDurationSec: n });
-  }
 
   // v1.11.0: Scheduling rules — three knobs that used to be hard-coded.
   // Same defensive read + auto-save pattern as the v1.0.0 / v1.9.4
@@ -784,7 +1045,7 @@ export default function Settings({
   // `effectiveFrom` + at least one axis — collections have no empty-object
   // write guard, so this is where the invariant is enforced.
   function findRevisionIdForMonday(iso) {
-    const map = configRevisions || {};
+    const map = visibleRevisions;
     let bestId = null;
     Object.keys(map).forEach(function (id) {
       const rev = map[id];
@@ -798,7 +1059,7 @@ export default function Settings({
     const existingId = findRevisionIdForMonday(effectiveFromIso);
     if (existingId) {
       upsertConfigRevision({
-        ...(configRevisions[existingId] || {}),
+        ...(visibleRevisions[existingId] || {}),
         id: existingId,
         effectiveFrom: effectiveFromIso,
         [axisKey]: value,
@@ -807,13 +1068,15 @@ export default function Settings({
     }
     upsertConfigRevision({ effectiveFrom: effectiveFromIso, [axisKey]: value });
   }
-  // Remove a scheduled change. The immediate re-seed runs against a
-  // LOCALLY filtered map — re-seeding from the live prop would re-seed
-  // the just-deleted values (the Firebase echo hasn't landed yet), leave
-  // the form dirty against the post-delete baseline, and the debounced
-  // save would silently re-create the revision.
+  // Remove a scheduled change. Both halves of this handler read the SAME
+  // post-delete map: the ledger hides the record from every derived read
+  // on the next render (including the dirty baseline), and `filtered`
+  // covers this tick, where the ledger's state update hasn't applied yet.
+  // Before v16.0.0 only the form seeding was filtered while the baseline
+  // kept resolving the live prop, which is what made the debounced save
+  // re-create the revision ~800 ms later.
   function handleRemoveRevision(id) {
-    const rev = (configRevisions || {})[id];
+    const rev = visibleRevisions[id];
     if (!rev) return;
     const ok = window.confirm(
       "Remove the scheduled change for the week of " +
@@ -821,8 +1084,8 @@ export default function Settings({
       "? Weeks from that Monday fall back to the previous configuration."
     );
     if (!ok) return;
-    deleteConfigRevision(id);
-    const filtered = { ...(configRevisions || {}) };
+    deleteRevisionOptimistically(id);
+    const filtered = { ...visibleRevisions };
     delete filtered[id];
     seedFormsFor(effectiveFromIso, filtered);
   }
@@ -891,7 +1154,7 @@ export default function Settings({
   // echo). resolveConfigForWeek is cheap (linear scan over a handful of
   // revisions), so a per-render call is fine.
   const resolvedAtPicker = resolveConfigForWeek(
-    configRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
+    visibleRevisions, settings, shiftTemplate, parseIsoDate(effectiveFromIso)
   );
   const savedTemplate = resolvedAtPicker.shiftTemplate || DEFAULT_SHIFT_TEMPLATE;
   const fohDirty =
@@ -951,11 +1214,14 @@ export default function Settings({
   }, [hoursDirty, hoursForm, opsErr, settings, saveSettings]);
 
   // Opening days → config revision at the effective-from week (v15.1.0).
-  // `effectiveFromIso` + `configRevisions` sit in the dep array on
+  // `effectiveFromIso` + `visibleRevisions` sit in the dep array on
   // purpose: a picker change (or a revision delete) clears any pending
   // timer in the same commit, so a stale form can never be written
   // against the new effective date. Dirty auto-clears once the revision
   // echo lands (the baseline then matches the form).
+  // v16.0.0: the dep is the ledger-filtered map, not the raw prop, so a
+  // delete cancels the pending timer immediately rather than waiting on
+  // the Firebase echo to change the prop's identity.
   useEffect(function () {
     if (!openDaysFormDirty) return undefined;
     if (openDaysErr !== null) return undefined;
@@ -963,9 +1229,9 @@ export default function Settings({
       upsertRevisionAxis("openingDays", normalizeOpeningDays(openingDaysForm));
     }, 800);
     return function () { clearTimeout(t); };
-    // upsertRevisionAxis closes over effectiveFromIso + configRevisions,
+    // upsertRevisionAxis closes over effectiveFromIso + visibleRevisions,
     // both of which are in the deps — the closure is never stale.
-  }, [openDaysFormDirty, openingDaysForm, openDaysErr, effectiveFromIso, configRevisions]);
+  }, [openDaysFormDirty, openingDaysForm, openDaysErr, effectiveFromIso, visibleRevisions]);
 
   // Shift template: FoH + Kitchen blocks → config revision (v15.1.0).
   // Saved as one template object so an in-flight FoH edit doesn't race a
@@ -983,7 +1249,7 @@ export default function Settings({
     }, 800);
     return function () { clearTimeout(t); };
   }, [fohDirty, kitchenDirty, form, errors.fohDay, errors.fohEvening,
-      errors.kitchenDay, errors.kitchenEvening, effectiveFromIso, configRevisions]);
+      errors.kitchenDay, errors.kitchenEvening, effectiveFromIso, visibleRevisions]);
 
   function handleReset() {
     const ok = window.confirm(
@@ -1023,8 +1289,6 @@ export default function Settings({
       openingDays:    defaultOpenDays,
       showRolePills:  true,   // v0.9.0 default
       generatorStrictPreference:    DEFAULT_GENERATOR_STRICT_PREFERENCE,    // v1.0.0
-      generatorBannerAutoDismiss:   DEFAULT_GENERATOR_BANNER_AUTO_DISMISS,  // v1.9.4
-      generatorBannerDurationSec:   DEFAULT_GENERATOR_BANNER_DURATION_SEC,  // v1.9.4
       minConsecutiveDaysOff:        DEFAULT_MIN_CONSECUTIVE_DAYS_OFF,       // v1.11.0
       maxConsecutiveWorkingDays:    DEFAULT_MAX_CONSECUTIVE_WORKING_DAYS,   // v1.11.0
       dayRequiredRoles:             defaultDayRequired,                     // v1.11.0
@@ -1036,8 +1300,12 @@ export default function Settings({
     // earliest revision (the resolver would keep picking the revision over
     // the freshly-reset base). Silent deletes: this is one user action,
     // the confirm above already covered it.
-    Object.keys(configRevisions || {}).forEach(function (id) {
-      deleteConfigRevision(id, true);
+    // v16.0.0: routed through the pending-delete ledger like the per-row
+    // Remove, so the freshly-defaulted forms and the dirty baseline agree
+    // straight away instead of the baseline resolving revisions that are
+    // on their way out.
+    Object.keys(visibleRevisions).forEach(function (id) {
+      deleteRevisionOptimistically(id, true);
     });
     // Only arm the skip when the picker will actually move — a no-op
     // state set never fires the effect, and the stale flag would then
@@ -1089,6 +1357,13 @@ export default function Settings({
     const soloTimes = soloOn ? block.soloTimes : [];
     const partLabel = dayPart === "day" ? "day" : "evening";
     const siblingLabel = dayPart === "day" ? "evening" : "day";
+
+    // v16.0.0: per-weekday overrides for this block, plus whether THIS
+    // block is the one currently showing a popover (only one can be, so a
+    // single shared ref is attached to whichever block owns it).
+    const weekdays = weekdaysOf(block);
+    const blockOwnsPopover = Boolean(tplDayPopover)
+      && tplDayPopover.indexOf(section + "|" + dayPart + "|") === 0;
 
     return (
       <div style={{ marginBottom: 14 }}>
@@ -1146,8 +1421,7 @@ export default function Settings({
             checked={soloOn}
             onChange={function (next) { onSoloToggle(section, dayPart, next); }}
             label={"Different times on " + partLabel + "-only days"}
-            helper={"Used on weekdays where the " + siblingLabel +
-              " part is closed (restaurant runs " + partLabel + " only)."}
+            helper={"Used when " + siblingLabel + " is closed"}
             className="mgt-hover-scale"
           />
           {soloOn ? soloTimes.map(function (t, i) {
@@ -1185,6 +1459,179 @@ export default function Settings({
           }) : null}
         </div>
 
+        {/* ── v16.0.0: per-weekday overrides ──────────────────────────────
+            One pill per weekday, mirroring the "Open days" picker in the
+            Operating-time section. Each pill shows what that weekday does:
+              —    inherits the settings above
+              ×N   overrides with N people
+              off  doesn't run that weekday at all
+            Clicking opens a popover to edit that weekday's headcount and
+            per-slot times. Opening does NOT create the override — the
+            first actual edit does. */}
+        <div style={{ marginTop: 12 }} ref={blockOwnsPopover ? tplPopoverRef : null}>
+          <div style={{ ...S.fldLabel, marginBottom: 6 }}>Adjust for specific days</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {WEEKDAYS.map(function (d) {
+              const entry = weekdays[d.key];
+              const isOverride = Boolean(entry);
+              const isOff = isOverride && entry.count === 0;
+              const stateLabel = !isOverride
+                ? "—"
+                : (isOff ? "off" : "×" + (Number.isFinite(entry.count) ? entry.count : "?"));
+              const bg = !isOverride
+                ? "var(--bg-pill)"
+                : (isOff ? "var(--accent-tint-soft)" : "var(--accent)");
+              const fg = !isOverride
+                ? "var(--text-muted)"
+                : (isOff ? "var(--accent-on-tint)" : "var(--text-on-accent)");
+              const border = !isOverride
+                ? "var(--btn-ghost-border)"
+                : (isOff ? "var(--accent-tint-strong)" : "var(--accent-deep)");
+              const popKey = section + "|" + dayPart + "|" + d.key;
+              const popped = tplDayPopover === popKey;
+              return (
+                <div key={d.key} style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    className="mgt-hover-scale mgt-press"
+                    onClick={function () {
+                      setTplDayPopover(function (cur) { return cur === popKey ? null : popKey; });
+                    }}
+                    aria-haspopup="dialog"
+                    aria-expanded={popped ? "true" : "false"}
+                    style={{
+                      ...BTN.base, ...BTN_SIZE.sm, borderRadius: R.pill,
+                      minWidth: 56, background: bg, color: fg, border: "1px solid " + border,
+                      display: "flex", flexDirection: "column", alignItems: "center",
+                      gap: 2, lineHeight: 1.1,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{d.label}</span>
+                    <span style={{ fontSize: 10, opacity: 0.85 }}>{stateLabel}</span>
+                  </button>
+                  {popped ? (
+                    <div
+                      role="dialog"
+                      aria-label={d.label + " — " + label}
+                      // v16.0.0 (phase 25): popovers used to appear with a
+                      // hard cut. `.mgt-fade-in` was defined in index.html
+                      // by the parity pass and had ZERO consumers — a dead
+                      // token, which CLAUDE.md rates worse than no token.
+                      // Enter-only is right here: the popover dismisses on
+                      // outside-click and should get out of the way at once.
+                      className="mgt-fade-in"
+                      style={{
+                        // Anchored ABOVE the pill: the pill row sits at the
+                        // bottom of each block, so a below-anchored popover
+                        // would cover the NEXT block's pill row — exactly
+                        // what the manager is comparing against.
+                        position: "absolute",
+                        bottom: "calc(100% + 6px)",
+                        left: 0,
+                        zIndex: 50,
+                        minWidth: 280,
+                        // --bg-overlay-sheet, NOT --bg-card: the latter is
+                        // 0.45 opacity and the rows beneath bleed through.
+                        background: "var(--bg-overlay-sheet)",
+                        border: "1px solid var(--hairline-strong)",
+                        borderRadius: R.sheet,
+                        boxShadow: "var(--shadow-overlay)",
+                        padding: 10,
+                        display: "flex", flexDirection: "column", gap: 8,
+                      }}
+                    >
+                      <div style={{
+                        fontSize: 11, color: "var(--text-secondary)", fontWeight: 600,
+                        textTransform: "uppercase", letterSpacing: "0.04em",
+                      }}>
+                        {d.label} — {label}
+                      </div>
+
+                      {isOverride ? (
+                        <>
+                          <Fld label="People this day">
+                            {mkInp({
+                              type: "number", min: 0, step: 1, className: "mgt-hover-scale",
+                              value: Number.isFinite(entry.count) ? entry.count : "",
+                              onChange: function (e) { onWeekdayCountChange(section, dayPart, d.key, e); },
+                              style: { maxWidth: 100 },
+                            })}
+                          </Fld>
+
+                          {isOff ? (
+                            <div style={{ ...S.muted, fontSize: 12 }}>
+                              Not scheduled on {d.label}.
+                            </div>
+                          ) : (
+                            // Bounded + internally scrolling so the popover
+                            // stays a predictable size at any headcount,
+                            // which is what makes above-anchoring safe.
+                            <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                              {(Array.isArray(entry.times) ? entry.times : []).map(function (t, i) {
+                                return (
+                                  <div key={"wd-" + i} style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "70px 1fr 1fr",
+                                    gap: 8, alignItems: "end", marginTop: i === 0 ? 0 : 6,
+                                  }}>
+                                    <div style={{
+                                      fontSize: 12, fontWeight: 600, color: "var(--text-primary)",
+                                      alignSelf: "center", paddingBottom: 6,
+                                    }}>
+                                      {slotLabelFor(section, dayPart, i, entry.count)}
+                                    </div>
+                                    <Fld label="Start">
+                                      {mkInp({
+                                        type: "time", className: "mgt-hover-scale", value: t.start,
+                                        onChange: function (e) { onWeekdayTimeChange(section, dayPart, d.key, i, "start", e); },
+                                      })}
+                                    </Fld>
+                                    <Fld label="End">
+                                      {mkInp({
+                                        type: "time", className: "mgt-hover-scale", value: t.end,
+                                        onChange: function (e) { onWeekdayTimeChange(section, dayPart, d.key, i, "end", e); },
+                                      })}
+                                    </Fld>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {mkBtn({
+                            type: "button", className: "mgt-hover-scale", variant: "ghost",
+                            onClick: function () { onWeekdayOverrideToggle(section, dayPart, d.key, false); },
+                            children: "Use the same as every day",
+                            style: { fontSize: 12, padding: "6px 10px" },
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ ...S.muted, fontSize: 12 }}>
+                            {d.label} currently uses the times above
+                            ({block.count} {block.count === 1 ? "person" : "people"}).
+                          </div>
+                          {mkBtn({
+                            type: "button", className: "mgt-hover-scale", variant: "secondary",
+                            onClick: function () { onWeekdayOverrideToggle(section, dayPart, d.key, true); },
+                            children: "Set different times for " + d.label,
+                            style: { fontSize: 12, padding: "6px 10px" },
+                          })}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
+            Tap a day to give it its own headcount and times. Days marked “—”
+            follow the settings above. A per-day setting takes precedence over
+            the {partLabel}-only times.
+          </div>
+        </div>
+
         {err ? (
           <div style={{ fontSize: 12, color: "var(--text-danger)", marginTop: 4 }}>
             {err}
@@ -1213,8 +1660,8 @@ export default function Settings({
   // v15.1.0: scheduled-changes list for the effective-from card. Sorted
   // by effectiveFrom ascending (then id for deterministic duplicate
   // order, which Settings itself never creates).
-  const revisionList = Object.keys(configRevisions || {})
-    .map(function (id) { return { ...(configRevisions[id] || {}), id: id }; })
+  const revisionList = Object.keys(visibleRevisions)
+    .map(function (id) { return { ...(visibleRevisions[id] || {}), id: id }; })
     .filter(function (r) { return Boolean(r.effectiveFrom); })
     .sort(function (a, b) {
       if (a.effectiveFrom !== b.effectiveFrom) {
@@ -1226,12 +1673,8 @@ export default function Settings({
 
   return (
     <div>
-      <p style={{ ...S.body, margin: "0 0 16px 0" }}>
-        Configure how many staff each section needs per day part, and the
-        default shift times. Changes affect new cells; existing shifts keep
-        their own per-cell times until edited.
-      </p>
-
+      {/* v16.0.0 (phase 40): the tab opened with a paragraph describing
+          what a Settings tab is for. The section headings below say it. */}
       {/* v15.1.0: effective-from week picker + scheduled-changes list.
           Lives OUTSIDE the single-open accordion on purpose — it governs
           three sections (Operating time's open days, FoH, Kitchen) and
@@ -1250,13 +1693,9 @@ export default function Settings({
               Changes take effect from
             </div>
             <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
-              {"Week of " + formatWeekRange(parseIsoDate(effectiveFromIso)) + ". " +
-                (pickerHasRevision
-                  ? "Editing the scheduled change for this week."
-                  : "Open-day / shift-time edits below will be saved as a change starting this week.")}
-              {effectiveFromIso < currentMondayIso
-                ? " This is a past week — changes apply retroactively to it and to later weeks."
-                : " Earlier weeks keep their current configuration."}
+              {"Week of " + formatWeekRange(parseIsoDate(effectiveFromIso))
+                + (pickerHasRevision ? ", editing an existing change" : "")
+                + (effectiveFromIso < currentMondayIso ? ", applies retroactively" : "")}
             </div>
           </div>
           {mkInp({
@@ -1273,6 +1712,7 @@ export default function Settings({
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {revisionList.map(function (rev) {
                 const isPastRev = rev.effectiveFrom < currentMondayIso;
+                const isPicked = rev.effectiveFrom === effectiveFromIso;
                 return (
                   <div
                     key={rev.id}
@@ -1282,55 +1722,83 @@ export default function Settings({
                       gap: 8,
                       flexWrap: "wrap",
                       padding: "6px 8px",
-                      borderRadius: 8,
+                      borderRadius: R.inset,
                       background: "var(--bg-chip)",
-                      border: "1px solid var(--hairline)",
+                      // v16.0.0 (phase 45): the row the picker currently
+                      // points at reads back which change is being edited —
+                      // the header line says "editing an existing change"
+                      // but not WHICH one once there are several.
+                      border: isPicked
+                        ? "1px solid var(--accent-tint-strong)"
+                        : "1px solid var(--hairline)",
                     }}
                   >
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
-                      {"Week of " + formatWeekRange(parseIsoDate(rev.effectiveFrom))}
-                    </span>
-                    {rev.openingDays ? (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: "1px 8px",
-                          borderRadius: 999,
-                          background: "var(--accent-tint-soft)",
-                          color: "var(--accent-on-tint)",
-                          border: "1px solid var(--accent-tint-strong)",
-                        }}
-                      >
-                        Opening days
-                      </span>
-                    ) : null}
-                    {rev.shiftTemplate ? (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: "1px 8px",
-                          borderRadius: 999,
-                          background: "var(--accent-tint-soft)",
-                          color: "var(--accent-on-tint)",
-                          border: "1px solid var(--accent-tint-strong)",
-                        }}
-                      >
-                        Shift times
-                      </span>
-                    ) : null}
-                    {isPastRev ? (
-                      <span style={{ ...S.muted, fontSize: 10 }}>(already in effect)</span>
-                    ) : null}
+                    {/* v16.0.0 (phase 45): second path to the picker —
+                        clicking a row jumps the effective-from date to that
+                        revision's Monday, so editing an existing change no
+                        longer means retyping its date. Content-sized button
+                        with Remove as a SIBLING (never nested — invalid
+                        HTML), matching the MonthlyFairnessPanel row and the
+                        WeeklyRequestsPreview pill. */}
                     <button
                       type="button"
-                      className="mgt-hover-scale"
+                      className="mgt-hover-scale mgt-press"
+                      onClick={function () { setEffectiveFromIso(rev.effectiveFrom); }}
+                      title={"Edit the change for the week of "
+                        + formatWeekRange(parseIsoDate(rev.effectiveFrom))}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        padding: "4px 8px",
+                        borderRadius: R.inset,
+                        background: "transparent",
+                        border: "none",
+                        textAlign: "left",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                        {"Week of " + formatWeekRange(parseIsoDate(rev.effectiveFrom))}
+                      </span>
+                      {/* v16.0.0 (phase 33): these two axis badges were a
+                          byte-for-byte duplicated <span> at 1px 8px / 10 —
+                          a fourth hand-rolled badge, off the BADGE_SIZE
+                          scale and differing from every other badge in the
+                          app. One definition, rendered per present axis. */}
+                      {[
+                        rev.openingDays ? "Opening days" : null,
+                        rev.shiftTemplate ? "Shift times" : null,
+                      ].filter(Boolean).map(function (axisLabel) {
+                        return (
+                          <span
+                            key={axisLabel}
+                            style={{
+                              ...BADGE_SIZE.base,
+                              borderRadius: R.pill,
+                              background: "var(--accent-tint-soft)",
+                              color: "var(--accent-on-tint)",
+                              border: "1px solid var(--accent-tint-strong)",
+                            }}
+                          >
+                            {axisLabel}
+                          </span>
+                        );
+                      })}
+                      {isPastRev ? (
+                        <span style={{ ...S.muted, fontSize: 10 }}>(already in effect)</span>
+                      ) : null}
+                    </button>
+                    <button
+                      type="button"
+                      className="mgt-hover-scale mgt-press"
                       onClick={function () { handleRemoveRevision(rev.id); }}
                       style={{
                         ...BTN.base,
+                        ...BTN_SIZE.sm,
                         marginLeft: "auto",
-                        padding: "4px 10px",
-                        fontSize: 11,
-                        borderRadius: 8,
+                        borderRadius: R.pill,
                         background: "var(--bg-pill)",
                         color: "var(--text-danger)",
                         border: "1px solid var(--btn-ghost-border)",
@@ -1423,7 +1891,7 @@ export default function Settings({
                   <div key={d.key} style={{ position: "relative" }}>
                     <button
                       type="button"
-                      className="mgt-hover-scale"
+                      className="mgt-hover-scale mgt-press"
                       onClick={function () {
                         setOpenDayPopover(function (cur) {
                           return cur === d.key ? null : d.key;
@@ -1433,9 +1901,8 @@ export default function Settings({
                       aria-expanded={popped ? "true" : "false"}
                       style={{
                         ...BTN.base,
-                        padding: "6px 10px",
-                        fontSize: 12,
-                        borderRadius: 8,
+                        ...BTN_SIZE.sm,
+                        borderRadius: R.pill,
                         minWidth: 56,
                         background: bg,
                         color: fg,
@@ -1460,6 +1927,7 @@ export default function Settings({
                       <div
                         role="dialog"
                         aria-label={d.label + " open hours"}
+                        className="mgt-fade-in"
                         style={{
                           position: "absolute",
                           bottom: "calc(100% + 6px)",
@@ -1477,7 +1945,7 @@ export default function Settings({
                           // it.
                           background: "var(--bg-overlay-sheet)",
                           border: "1px solid var(--hairline-strong)",
-                          borderRadius: 10,
+                          borderRadius: R.sheet,
                           boxShadow: "var(--shadow-overlay)",
                           padding: 10,
                           display: "flex",
@@ -1505,19 +1973,16 @@ export default function Settings({
                             <button
                               key={opt.key}
                               type="button"
-                              className="mgt-hover-scale"
+                              className="mgt-hover-scale mgt-press"
                               onClick={function () {
                                 setOpeningDayPart(d.key, opt.key, !opt.on);
                               }}
                               style={{
                                 ...BTN.base,
-                                padding: "8px 12px",
-                                fontSize: 13,
-                                borderRadius: 8,
+                                ...BTN_SIZE.md,
+                                borderRadius: R.pill,
                                 textAlign: "left",
-                                background: opt.on ? "var(--accent)" : "var(--bg-pill)",
-                                color: opt.on ? "var(--text-on-accent)" : "var(--text-primary)",
-                                border: "1px solid " + (opt.on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                                ...pillTone(opt.on),
                                 display: "flex",
                                 justifyContent: "space-between",
                                 alignItems: "center",
@@ -1543,7 +2008,7 @@ export default function Settings({
               </div>
             ) : (
               <div style={{ ...S.muted, marginTop: 6, fontSize: 11 }}>
-                Tap a day to pick which shifts are open. Closed halves are hidden from the schedule grid and excluded from PDF export.
+                Closed halves are hidden from the grid and the PDF
               </div>
             )}
           </div>
@@ -1564,7 +2029,6 @@ export default function Settings({
             checked={showRolePills}
             onChange={onShowRolePillsChange}
             label="Show role pills on schedule cells"
-            helper="The small coloured tag (Bar / Floor / Chef / Plating / Pot) next to each assignee's name in the schedule grid. Off hides them; the Employees tab badges are unaffected."
             className="mgt-hover-scale"
           />
           {/* v0.11.0: dark mode. First-time default follows OS preference;
@@ -1574,9 +2038,7 @@ export default function Settings({
             checked={isDark === true}
             onChange={onDarkModeChange}
             label="Dark mode"
-            helper={darkModeFollowingSystem
-              ? "Following your system preference. Tap to override."
-              : null}
+            helper={darkModeFollowingSystem ? "Following system" : null}
             className="mgt-hover-scale"
           />
           {/* v15.2.0: opt-in to exporting a week with empty cells. Off by
@@ -1587,7 +2049,18 @@ export default function Settings({
             checked={allowIncompleteExport}
             onChange={onAllowIncompleteExportChange}
             label="Allow exporting incomplete schedules"
-            helper="When on, Export PDF works even with empty cells — you'll get a warning before the PDF is generated."
+            className="mgt-hover-scale"
+          />
+          {/* v16.0.0: reduce animations. PER-DEVICE, so it is stored in
+              localStorage rather than /settings — the manager's phone and
+              the office laptop can disagree, and a weak device shouldn't
+              have its preference synced onto a fast one. Mirrors MGT
+              Bookings' identical toggle. */}
+          <Toggle
+            checked={reduceMotion}
+            onChange={onReduceMotionChange}
+            label="Reduce animations"
+            helper="This device only"
             className="mgt-hover-scale"
           />
         </Collapsible>
@@ -1633,17 +2106,14 @@ export default function Settings({
                   <button
                     key={n}
                     type="button"
-                    className="mgt-hover-scale"
+                    className="mgt-hover-scale mgt-press"
                     onClick={function () { onMinConsecutiveDaysOffChange(n); }}
                     style={{
                       ...BTN.base,
-                      padding: "6px 14px",
-                      fontSize: 13,
-                      borderRadius: 8,
+                      ...BTN_SIZE.md,
+                      borderRadius: R.pill,
                       minWidth: 40,
-                      background: on ? "var(--accent)" : "var(--bg-pill)",
-                      color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                      border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                      ...pillTone(on),
                     }}
                   >
                     {n}
@@ -1690,9 +2160,7 @@ export default function Settings({
             checked={pastWeeksLocked}
             onChange={onPastWeeksLockedChange}
             label="Lock past weeks (read-only)"
-            helper={pastWeeksLocked
-              ? "Weeks that have fully ended are read-only on the Schedule tab — no edits, generating, or clearing. Turn off to allow editing history."
-              : "Past weeks stay fully editable. Careful — edits to history feed the fairness statistics."}
+            helper={pastWeeksLocked ? null : "History feeds the fairness statistics"}
             className="mgt-hover-scale"
           />
 
@@ -1742,16 +2210,13 @@ export default function Settings({
                         <button
                           key={role}
                           type="button"
-                          className="mgt-hover-scale"
+                          className="mgt-hover-scale mgt-press"
                           onClick={function () { onDayRequiredRoleToggle(sectionKey, role); }}
                           style={{
                             ...BTN.base,
-                            padding: "6px 12px",
-                            fontSize: 12,
-                            borderRadius: 999,
-                            background: on ? "var(--accent)" : "var(--bg-pill)",
-                            color: on ? "var(--text-on-accent)" : "var(--text-primary)",
-                            border: "1px solid " + (on ? "var(--accent-deep)" : "var(--btn-ghost-border)"),
+                            ...BTN_SIZE.md,
+                            borderRadius: R.pill,
+                            ...pillTone(on),
                           }}
                         >
                           {role}
@@ -1789,60 +2254,10 @@ export default function Settings({
             onChange={onStrictPreferenceChange}
             label="Strict shift-preference matching"
             helper={strictPreference
-              ? "Hard — generator only assigns preference-matching employees. May leave cells empty when no preferred candidate is available."
-              : "Soft mode (default) — generator tries preferred employees first, falls back if no one fits."}
+              ? "Only preference-matching staff, cells may stay empty"
+              : "Preferred staff first, falls back to anyone eligible"}
             className="mgt-hover-scale"
           />
-          <Toggle
-            checked={bannerAutoDismiss === true}
-            onChange={onBannerAutoDismissChange}
-            label="Auto-dismiss results banner"
-            helper={bannerAutoDismiss
-              ? "Banner appearing above the schedule fades after " + bannerDurationSec +
-                "s. Adjust the duration below."
-              : "Banner stays visible until you close it (×) or run the generator again."}
-            className="mgt-hover-scale"
-          />
-          {bannerAutoDismiss ? (
-            // v1.9.4 (alignment fix): the previous <Fld> wrapper had no
-            // horizontal padding, so the duration row sat 12px further
-            // left than the Toggle rows above (which carry padding:
-            // "10px 12px" via Toggle's internal rowStyle). The row
-            // below mirrors Toggle's flex-row layout — label/helper
-            // on the left, control on the right — so the three rows
-            // (strict preference, auto-dismiss, banner duration)
-            // share the same horizontal inset and visual rhythm.
-            // Field-only hover-scale per v1.9.0: className lives on
-            // the input, not the wrapping row, so the label stays
-            // anchored while the editable surface lifts on hover.
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "10px 12px",
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
-                  Banner duration
-                </div>
-                <div style={{ ...S.muted, fontSize: 11, marginTop: 2 }}>
-                  {GENERATOR_BANNER_DURATION_MIN + "–" + GENERATOR_BANNER_DURATION_MAX + " seconds"}
-                </div>
-              </div>
-              {mkInp({
-                type: "number",
-                min: GENERATOR_BANNER_DURATION_MIN,
-                max: GENERATOR_BANNER_DURATION_MAX,
-                step: 1,
-                className: "mgt-hover-scale",
-                value: bannerDurationSec,
-                onChange: function (e) { onBannerDurationChange(e.target.value); },
-                style: { width: 120, flexShrink: 0 },
-              })}
-            </div>
-          ) : null}
         </Collapsible>
 
         <Collapsible
